@@ -71,12 +71,7 @@ public class SyncFunction
 
             // ── Optionally clear before syncing ───────────────────────────────
             if (request.ClearFirst)
-            {
-                if (vendors.Count > 0)
-                    await _tableStorage.DeleteProductVariantsByVendorsAsync(vendors);
-                else
-                    await _tableStorage.DeleteAllProductVariantsAsync();
-            }
+                await _tableStorage.DeleteAllProductVariantsAsync();
 
             // ── Fetch and upsert ──────────────────────────────────────────────
             _logger.LogInformation("Starting product sync. Mode={Mode} Query={Query}", request.Mode, shopifyQuery ?? "(all)");

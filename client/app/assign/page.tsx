@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
@@ -8,7 +8,7 @@ import { useScanner } from "@/hooks/useScanner";
 import { CachedVariant } from "@/lib/types";
 import {
   ArrowLeft, Search, Tag, CheckCircle2, X, ScanLine,
-  RefreshCw, Filter, ChevronDown,
+  RefreshCw, Filter, ChevronDown, ChevronRight,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -19,6 +19,8 @@ interface BannerState {
   message: string;
 }
 
+const PAGE_SIZE = 50;
+
 export default function AssignPage() {
   const router = useRouter();
   const { handleScan, playBeep } = useScanner();
@@ -26,10 +28,18 @@ export default function AssignPage() {
   // ── Product list state ──────────────────────────────────────────────────
   const [variants, setVariants] = useState<CachedVariant[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  const [missingCount, setMissingCount] = useState(0);
+  const [totalInStorage, setTotalInStorage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [vendors, setVendors] = useState<string[]>([]);
 
   // ── Filter state ────────────────────────────────────────────────────────
   const [filterText, setFilterText] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterBarcode, setFilterBarcode] = useState<"all" | "yes" | "no">("all");
   const [filterVendor, setFilterVendor] = useState("all");
 
@@ -47,53 +57,55 @@ export default function AssignPage() {
   const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
   const [banner, setBanner] = useState<BannerState | null>(null);
 
-  // ── Load products on mount ──────────────────────────────────────────────
+  // Debounce text search — 300 ms
   useEffect(() => {
-    loadProducts();
-  }, []);
+    const timer = setTimeout(() => setDebouncedSearch(filterText), 300);
+    return () => clearTimeout(timer);
+  }, [filterText]);
 
-  const loadProducts = async () => {
-    setLoadingList(true);
+  // When any filter changes, reset to page 1 and reload
+  useEffect(() => {
+    setPage(1);
+    setVariants([]);
+    loadPage(1, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, filterBarcode, filterVendor]);
+
+  const buildUrl = (p: number) => {
+    const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
+    if (debouncedSearch.trim())          params.set("search", debouncedSearch.trim());
+    if (filterVendor !== "all")          params.set("vendor", filterVendor);
+    if (filterBarcode !== "all")         params.set("hasBarcode", filterBarcode);
+    return `/api/products?${params}`;
+  };
+
+  const loadPage = async (p: number, append: boolean) => {
+    if (p === 1) setLoadingList(true);
+    else         setLoadingMore(true);
     try {
-      const res = await fetch("/api/products");
+      const res  = await fetch(buildUrl(p));
       const data = await res.json();
-      setVariants(data.variants ?? []);
+      const incoming: CachedVariant[] = data.variants ?? [];
+      setVariants(prev => append ? [...prev, ...incoming] : incoming);
+      setTotal(data.total ?? 0);
+      setMissingCount(data.missingCount ?? 0);
+      setTotalInStorage(data.totalInStorage ?? 0);
+      setHasMore(data.hasMore ?? false);
       setLastSync(data.lastSync ?? null);
+      if (data.vendors?.length) setVendors(data.vendors);
     } catch {
       setBanner({ type: "error", message: "Failed to load product list" });
     } finally {
       setLoadingList(false);
+      setLoadingMore(false);
     }
   };
 
-  // ── Derived: filtered list ──────────────────────────────────────────────
-  const vendors = useMemo(
-    () => Array.from(new Set(variants.map((v) => v.vendor))).filter(Boolean).sort(),
-    [variants]
-  );
-
-  const filteredVariants = useMemo(() => {
-    return variants.filter((v) => {
-      if (filterBarcode === "yes" && !v.barcode) return false;
-      if (filterBarcode === "no" && v.barcode) return false;
-      if (filterVendor !== "all" && v.vendor !== filterVendor) return false;
-      if (filterText.trim().length > 0) {
-        const q = filterText.toLowerCase();
-        return (
-          v.productTitle.toLowerCase().includes(q) ||
-          v.variantTitle.toLowerCase().includes(q) ||
-          (v.sku?.toLowerCase().includes(q) ?? false) ||
-          (v.barcode?.toLowerCase().includes(q) ?? false)
-        );
-      }
-      return true;
-    });
-  }, [variants, filterBarcode, filterVendor, filterText]);
-
-  const missingBarcodeCount = useMemo(
-    () => variants.filter((v) => !v.barcode).length,
-    [variants]
-  );
+  const handleLoadMore = () => {
+    const next = page + 1;
+    setPage(next);
+    loadPage(next, true);
+  };
 
   // ── Sync ────────────────────────────────────────────────────────────────
   const handleSync = async () => {
@@ -112,7 +124,9 @@ export default function AssignPage() {
       const data = await res.json();
       if (data.ok) {
         setSyncOpen(false);
-        await loadProducts();
+        setPage(1);
+        setVariants([]);
+        await loadPage(1, false);
         setBanner({ type: "success", message: `Synced ${data.synced} variants` });
       } else {
         setBanner({ type: "error", message: data.error || "Sync failed" });
@@ -161,7 +175,6 @@ export default function AssignPage() {
 
       if (data.ok) {
         navigator.vibrate?.(100);
-        // Update local list immediately
         setVariants((prev) =>
           prev.map((v) =>
             v.variantId === selectedVariant.variantId ? { ...v, barcode: scannedBarcode } : v
@@ -215,7 +228,7 @@ export default function AssignPage() {
         )}
       </div>
 
-      {/* Step indicator (scan/confirm steps only) */}
+      {/* Step indicator */}
       {step !== "list" && step !== "done" && (
         <div className="flex items-center gap-2 px-4 py-2 bg-slate-900/50 border-b border-slate-800/50">
           {(["scan", "confirm"] as const).map((s, i) => {
@@ -311,12 +324,12 @@ export default function AssignPage() {
             </div>
 
             {/* Stats row */}
-            {!loadingList && variants.length > 0 && (
+            {!loadingList && totalInStorage > 0 && (
               <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                 <span>
-                  {filteredVariants.length} of {variants.length} variants
-                  {missingBarcodeCount > 0 && (
-                    <span className="text-orange-400 ml-2">· {missingBarcodeCount} without barcode</span>
+                  {total} variant{total !== 1 ? "s" : ""}
+                  {missingCount > 0 && (
+                    <span className="text-orange-400 ml-2">· {missingCount} without barcode</span>
                   )}
                 </span>
                 {formattedLastSync && <span>Synced {formattedLastSync}</span>}
@@ -339,7 +352,7 @@ export default function AssignPage() {
             )}
 
             {/* Empty: not synced yet */}
-            {!loadingList && variants.length === 0 && (
+            {!loadingList && totalInStorage === 0 && variants.length === 0 && (
               <div className="flex flex-col items-center justify-center py-14 text-slate-500 gap-3">
                 <RefreshCw className="w-10 h-10 opacity-30" />
                 <p className="text-sm font-medium">No products synced yet</p>
@@ -356,7 +369,7 @@ export default function AssignPage() {
             )}
 
             {/* Empty: filter has no results */}
-            {!loadingList && variants.length > 0 && filteredVariants.length === 0 && (
+            {!loadingList && totalInStorage > 0 && total === 0 && (
               <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-2">
                 <Search className="w-10 h-10 opacity-30" />
                 <p className="text-sm">No variants match your filters</p>
@@ -364,9 +377,9 @@ export default function AssignPage() {
             )}
 
             {/* Variant list */}
-            {!loadingList && filteredVariants.length > 0 && (
+            {!loadingList && variants.length > 0 && (
               <div className="space-y-2">
-                {filteredVariants.map((variant) => (
+                {variants.map((variant) => (
                   <button
                     key={variant.variantId}
                     onClick={() => handleSelectVariant(variant)}
@@ -414,6 +427,27 @@ export default function AssignPage() {
                     <Tag className="w-4 h-4 text-slate-600 shrink-0" />
                   </button>
                 ))}
+
+                {/* Load more */}
+                {hasMore && (
+                  <button
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                    className="w-full py-3 bg-slate-900 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800 rounded-xl text-sm text-slate-400 transition-all flex items-center justify-center gap-2 min-h-[48px]"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        Loading…
+                      </>
+                    ) : (
+                      <>
+                        <ChevronRight className="w-4 h-4" />
+                        Load more ({total - variants.length} remaining)
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             )}
           </>
@@ -634,8 +668,8 @@ export default function AssignPage() {
                 <p className="text-sm text-slate-300">Clear before sync</p>
                 <p className="text-xs text-slate-500 mt-0.5">
                   {syncVendors.trim()
-                    ? "Deletes all entries for the specified vendors, then re-syncs them fresh."
-                    : "Deletes all cached variants, then re-syncs. Use to remove stale data."}
+                    ? "Removes existing entries for the specified vendors before re-syncing them."
+                    : "Removes all cached variants before re-syncing. Use to remove stale data."}
                 </p>
               </div>
             </label>
