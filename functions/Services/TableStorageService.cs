@@ -118,15 +118,20 @@ public class TableStorageService
 
     public async Task BulkUpsertProductVariantsAsync(IEnumerable<ProductVariantEntity> entities)
     {
-        foreach (var group in entities.GroupBy(e => e.PartitionKey))
-        {
-            foreach (var chunk in group.Chunk(100))
+        // Each product is a separate partition key — write all partitions concurrently.
+        // Chunks within a partition stay sequential (Table Storage requires same-partition transactions).
+        var tasks = entities
+            .GroupBy(e => e.PartitionKey)
+            .Select(group => Task.Run(async () =>
             {
-                var actions = chunk.Select(e =>
-                    new TableTransactionAction(TableTransactionActionType.UpsertReplace, e));
-                await _productVariants.SubmitTransactionAsync(actions);
-            }
-        }
+                foreach (var chunk in group.Chunk(100))
+                {
+                    var actions = chunk.Select(e =>
+                        new TableTransactionAction(TableTransactionActionType.UpsertReplace, e));
+                    await _productVariants.SubmitTransactionAsync(actions);
+                }
+            }));
+        await Task.WhenAll(tasks);
     }
 
     public async Task DeleteProductVariantsByProductIdAsync(string numericProductId)
