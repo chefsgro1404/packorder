@@ -1,0 +1,41 @@
+name: Deploy Frontend to Production (SWA)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: cd client && npm ci
+
+      - name: Build
+        run: cd client && npm run build
+        env:
+          AZURE_FUNCTIONS_URL: ${{ secrets.FUNCTIONS_URL_PROD }}
+          INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET_PROD }}
+          NEXT_PUBLIC_APP_NAME: ShipScan
+
+      - name: Deploy to Azure Static Web Apps (Production)
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.SWA_DEPLOYMENT_TOKEN_PROD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: client
+          output_location: .next
+          skip_app_build: true

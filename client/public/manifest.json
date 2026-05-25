@@ -1,0 +1,11 @@
+{
+  "name": "ShipScan",
+  "short_name": "ShipScan",
+  "description": "Shopify POS and Ship Scanner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020817",
+  "theme_color": "#0f172a",
+  "orientation": "portrait",
+  "icons": []
+}

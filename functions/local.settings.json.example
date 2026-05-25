@@ -1,0 +1,26 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
+
+    "ShopifyStoreDomain": "your-store.myshopify.com",
+    "ShopifyAccessToken": "shpat_REPLACE_ME",
+    "ShopifyApiVersion": "2025-01",
+
+    "AppEmail": "admin@example.com",
+    "AppPassword": "REPLACE_with_a_strong_password",
+
+    "JwtSecret": "REPLACE_with_any_64plus_char_random_string_for_local_dev_only_aaa",
+    "JwtRefreshSecret": "REPLACE_with_a_DIFFERENT_64plus_char_random_string_for_refresh_bbb",
+    "JwtExpiresIn": "24h",
+    "JwtRefreshExpiresIn": "30d",
+    "CookieSecure": "false",
+
+    "InternalApiSecret": "REPLACE_must_match_INTERNAL_API_SECRET_in_client_env_local",
+
+    "ShopifyWebhookSecret": "REPLACE_with_webhook_secret_from_shopify_partner_dashboard",
+
+    "AllowedOrigins": "http://localhost:3000"
+  }
+}

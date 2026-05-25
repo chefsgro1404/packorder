@@ -1,0 +1,7 @@
+# .NET build output
+bin/
+obj/
+
+# OS
+.DS_Store
+Thumbs.db

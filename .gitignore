@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env.local
+.env.*.local
+.env
+
+# Claude Code
+.claude/
+
+# Azurite local storage emulator
+__azurite_db_*.json
+__blobstorage__/
+__queuestorage__/
+.azurite/
+AzuriteConfig
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+.next/
+publish/
+deploy.zip
+
+# Azure Functions local settings (contains secrets)
+functions/local.settings.json
+
+# .NET build output
+bin/
+obj/
+
+# IDE
+.vscode/settings.json
+.idea/
+*.user

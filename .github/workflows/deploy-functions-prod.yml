@@ -1,0 +1,45 @@
+name: Deploy Functions to Production
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  FUNC_APP_NAME: 'shipscan-api-prod'
+  RESOURCE_GROUP: 'shipscan-resource'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Run tests
+        run: dotnet test functions.tests/ShipScan.Functions.Tests.csproj --verbosity normal
+
+      - name: Build
+        run: dotnet publish functions/ShipScan.Functions.csproj --configuration Release --output ./publish
+
+      - name: Create deployment package
+        run: cd publish && zip -r ../deploy.zip . && cd ..
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS_PROD }}
+
+      - name: Deploy to Azure Functions (Production)
+        run: |
+          az functionapp deployment source config-zip \
+            --name ${{ env.FUNC_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --src deploy.zip

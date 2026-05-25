@@ -1,0 +1,13 @@
+# .NET build output
+bin/
+obj/
+
+# Local development settings (contains secrets — never commit)
+local.settings.json
+
+# Publish output
+publish/
+
+# OS
+.DS_Store
+Thumbs.db
