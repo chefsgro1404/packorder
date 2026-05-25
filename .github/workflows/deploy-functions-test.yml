@@ -1,10 +1,6 @@
 name: Deploy Functions to Test
 
 on:
-  push:
-    branches: [develop]
-    paths:
-      - 'functions/**'
   workflow_dispatch:
 
 env:

@@ -1,10 +1,6 @@
 name: Deploy Frontend to Production (SWA)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'client/**'
   workflow_dispatch:
 
 jobs:

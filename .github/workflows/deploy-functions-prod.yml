@@ -1,10 +1,6 @@
 name: Deploy Functions to Production
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'functions/**'
   workflow_dispatch:
 
 env:
