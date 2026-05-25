@@ -485,7 +485,9 @@ public class ShopifyService
                 var vendor = product["vendor"]?.ToString() ?? "";
                 var rawTags = product["tags"]?.ToObject<List<string>>() ?? new List<string>();
                 var tagsJson = JsonConvert.SerializeObject(rawTags);
-                var imageUrl = product["featuredImage"]?["url"]?.ToString();
+                var featuredImageToken = product["featuredImage"];
+                var imageUrl = featuredImageToken != null && featuredImageToken.Type != JTokenType.Null
+                    ? featuredImageToken["url"]?.ToString() : null;
 
                 foreach (var ve in (product["variants"]?["edges"] as JArray) ?? new JArray())
                 {
