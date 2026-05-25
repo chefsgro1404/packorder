@@ -237,6 +237,97 @@ public class ShopifyServiceTests
     }
 
     [Fact]
+    public async Task FetchAllProductVariantsAsync_NullFeaturedImage_DoesNotThrow()
+    {
+        var shopifyResponse = new
+        {
+            data = new
+            {
+                products = new
+                {
+                    pageInfo = new { hasNextPage = false, endCursor = (string?)null },
+                    edges = new[]
+                    {
+                        new
+                        {
+                            node = new
+                            {
+                                id = "gid://shopify/Product/1",
+                                title = "Widget",
+                                vendor = "Acme",
+                                tags = new string[] { },
+                                updatedAt = "2025-01-01T00:00:00Z",
+                                featuredImage = (object?)null,
+                                variants = new
+                                {
+                                    edges = new[]
+                                    {
+                                        new { node = new { id = "gid://shopify/ProductVariant/10", sku = "W-001", barcode = "111", title = "Default Title", price = "5.00" } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var svc = CreateService(MockHandler(shopifyResponse));
+        var results = await svc.FetchAllProductVariantsAsync();
+
+        Assert.Single(results);
+        Assert.Null(results[0].ImageUrl);
+        Assert.Equal("W-001", results[0].Sku);
+    }
+
+    [Fact]
+    public async Task FetchAllProductVariantsAsync_WithImage_MapsCorrectly()
+    {
+        var shopifyResponse = new
+        {
+            data = new
+            {
+                products = new
+                {
+                    pageInfo = new { hasNextPage = false, endCursor = (string?)null },
+                    edges = new[]
+                    {
+                        new
+                        {
+                            node = new
+                            {
+                                id = "gid://shopify/Product/2",
+                                title = "Gadget",
+                                vendor = "Corp",
+                                tags = new[] { "featured" },
+                                updatedAt = "2025-06-01T00:00:00Z",
+                                featuredImage = new { url = "https://cdn.shopify.com/img.jpg" },
+                                variants = new
+                                {
+                                    edges = new[]
+                                    {
+                                        new { node = new { id = "gid://shopify/ProductVariant/20", sku = "G-001", barcode = "222", title = "Red", price = "12.00" } },
+                                        new { node = new { id = "gid://shopify/ProductVariant/21", sku = "G-002", barcode = (string?)null, title = "Blue", price = "12.00" } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var svc = CreateService(MockHandler(shopifyResponse));
+        var results = await svc.FetchAllProductVariantsAsync();
+
+        Assert.Equal(2, results.Count);
+        Assert.Equal("https://cdn.shopify.com/img.jpg", results[0].ImageUrl);
+        Assert.Equal("https://cdn.shopify.com/img.jpg", results[1].ImageUrl);
+        Assert.Equal("Corp", results[0].Vendor);
+        Assert.Null(results[1].Barcode);
+    }
+
+    [Fact]
     public async Task SearchVariantsByProductTitleAsync_ReturnsFlattened()
     {
         var shopifyResponse = new
