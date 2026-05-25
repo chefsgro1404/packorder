@@ -22,8 +22,6 @@ jobs:
       - name: Build
         run: cd client && npm run build
         env:
-          AZURE_FUNCTIONS_URL: ${{ secrets.FUNCTIONS_URL_TEST }}
-          INTERNAL_API_SECRET: ${{ secrets.INTERNAL_API_SECRET_TEST }}
           NEXT_PUBLIC_APP_NAME: ShipScan
 
       - name: Deploy to Azure Static Web Apps (Test)
