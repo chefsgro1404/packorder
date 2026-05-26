@@ -111,6 +111,24 @@ export interface DraftOrder {
   };
 }
 
+export interface AssignVariant {
+  variantId: string;
+  variantTitle: string;
+  sku: string | null;
+  barcode: string | null;
+  price: string;
+}
+
+export interface AssignProduct {
+  productId: string;
+  productTitle: string;
+  vendor: string;
+  imageUrl: string | null;
+  status: "ACTIVE" | "DRAFT" | "ARCHIVED";
+  tags: string[];
+  variants: AssignVariant[];
+}
+
 export interface CachedVariant {
   productId: string;
   variantId: string;

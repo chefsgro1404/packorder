@@ -6,10 +6,10 @@ import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
 import { SyncModal } from "@/components/SyncModal";
 import { useScanner } from "@/hooks/useScanner";
-import { CachedVariant } from "@/lib/types";
+import { CachedVariant, AssignProduct, AssignVariant } from "@/lib/types";
 import {
   ArrowLeft, Search, Tag, CheckCircle2, X, ScanLine,
-  RefreshCw, Filter, ChevronDown, ChevronRight,
+  RefreshCw, Filter, ChevronDown,
 } from "lucide-react";
 import Image from "next/image";
 
@@ -24,8 +24,6 @@ interface BannerState {
 
 const PAGE_SIZE = 50;
 
-// ── URL helpers ──────────────────────────────────────────────────────────────
-
 function buildApiUrl(
   search: string,
   vendor: string,
@@ -34,48 +32,61 @@ function buildApiUrl(
   page: number
 ) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
-  if (search.trim())       params.set("search",     search.trim());
-  if (vendor !== "all")    params.set("vendor",     vendor);
+  if (search.trim())        params.set("search",     search.trim());
+  if (vendor !== "all")     params.set("vendor",     vendor);
   if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
-  if (status !== "all")    params.set("status",     status);
+  if (status !== "all")     params.set("status",     status);
   return `/api/products?${params}`;
+}
+
+function toCachedVariant(product: AssignProduct, variant: AssignVariant): CachedVariant {
+  return {
+    productId:    product.productId,
+    variantId:    variant.variantId,
+    productTitle: product.productTitle,
+    variantTitle: variant.variantTitle,
+    sku:          variant.sku,
+    barcode:      variant.barcode,
+    vendor:       product.vendor,
+    tags:         product.tags,
+    imageUrl:     product.imageUrl,
+    price:        variant.price,
+    status:       product.status,
+  };
 }
 
 // ── Inner page (needs useSearchParams, wrapped in Suspense below) ─────────────
 
 function AssignPageInner() {
-  const router     = useRouter();
-  const pathname   = usePathname();
+  const router       = useRouter();
+  const pathname     = usePathname();
   const searchParams = useSearchParams();
   const { handleScan, playBeep } = useScanner();
 
-  // Read initial filter state from URL
   const urlSearch     = searchParams.get("search")     ?? "";
   const urlVendor     = searchParams.get("vendor")     ?? "all";
   const urlHasBarcode = (searchParams.get("hasBarcode") ?? "all") as BarcodeFilter;
   const urlStatus     = (searchParams.get("status")    ?? "all") as StatusFilter;
 
-  // Local search input (debounced before going to URL)
   const [searchInput, setSearchInput] = useState(urlSearch);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // List state
-  const [variants, setVariants] = useState<CachedVariant[]>([]);
-  const [loading, setLoading]   = useState(true);
+  const [products, setProducts]       = useState<AssignProduct[]>([]);
+  const [loading, setLoading]         = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [page, setPage]         = useState(1);
-  const [hasMore, setHasMore]   = useState(false);
-  const [total, setTotal]       = useState(0);
+  const [page, setPage]               = useState(1);
+  const [hasMore, setHasMore]         = useState(false);
+  const [total, setTotal]             = useState(0);
   const [missingCount, setMissingCount] = useState(0);
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const [vendors, setVendors]   = useState<string[]>([]);
-  const [syncOpen, setSyncOpen] = useState(false);
-  const [banner, setBanner]     = useState<BannerState | null>(null);
+  const [lastSync, setLastSync]       = useState<string | null>(null);
+  const [vendors, setVendors]         = useState<string[]>([]);
+  const [syncOpen, setSyncOpen]       = useState(false);
+  const [banner, setBanner]           = useState<BannerState | null>(null);
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
 
-  // Assignment flow
-  const [step, setStep]                   = useState<AssignStep>("list");
-  const [selectedVariant, setSelectedVariant] = useState<CachedVariant | null>(null);
-  const [scannedBarcode, setScannedBarcode]   = useState<string | null>(null);
+  const [step, setStep]                         = useState<AssignStep>("list");
+  const [selectedVariant, setSelectedVariant]   = useState<CachedVariant | null>(null);
+  const [scannedBarcode, setScannedBarcode]     = useState<string | null>(null);
 
   // ── URL updater ─────────────────────────────────────────────────────────
   const pushFilters = useCallback(
@@ -106,8 +117,8 @@ function AssignPageInner() {
       try {
         const res  = await fetch(buildApiUrl(search, vendor, hasBarcode, status, p));
         const data = await res.json();
-        const incoming: CachedVariant[] = data.variants ?? [];
-        setVariants(prev => append ? [...prev, ...incoming] : incoming);
+        const incoming: AssignProduct[] = data.products ?? [];
+        setProducts(prev => append ? [...prev, ...incoming] : incoming);
         setTotal(data.total ?? 0);
         setMissingCount(data.missingCount ?? 0);
         setHasMore(data.hasMore ?? false);
@@ -126,12 +137,13 @@ function AssignPageInner() {
   // ── Re-fetch when URL search params change ────────────────────────────────
   useEffect(() => {
     setPage(1);
-    setVariants([]);
+    setProducts([]);
+    setExpandedProducts(new Set());
     fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, 1, false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);   // searchParams object reference changes on every URL update
+  }, [searchParams]);
 
-  // ── Debounce text search → push to URL ───────────────────────────────────
+  // ── Filter handlers ──────────────────────────────────────────────────────
   const handleSearchChange = (value: string) => {
     setSearchInput(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -140,9 +152,9 @@ function AssignPageInner() {
     }, 300);
   };
 
-  const handleVendorChange     = (v: string)             => pushFilters(urlSearch, v,    urlHasBarcode, urlStatus);
-  const handleHasBarcodeChange = (v: BarcodeFilter)      => pushFilters(urlSearch, urlVendor, v,   urlStatus);
-  const handleStatusChange     = (v: StatusFilter)       => pushFilters(urlSearch, urlVendor, urlHasBarcode, v);
+  const handleVendorChange     = (v: string)        => pushFilters(urlSearch, v,         urlHasBarcode, urlStatus);
+  const handleHasBarcodeChange = (v: BarcodeFilter) => pushFilters(urlSearch, urlVendor, v,             urlStatus);
+  const handleStatusChange     = (v: StatusFilter)  => pushFilters(urlSearch, urlVendor, urlHasBarcode, v);
 
   const handleLoadMore = () => {
     const next = page + 1;
@@ -150,11 +162,22 @@ function AssignPageInner() {
     fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, next, true);
   };
 
+  // ── Product expand/collapse ───────────────────────────────────────────────
+  const toggleExpand = (productId: string) => {
+    setExpandedProducts(prev => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  };
+
   // ── Sync ─────────────────────────────────────────────────────────────────
   const handleSynced = async (count: number) => {
     setSyncOpen(false);
     setPage(1);
-    setVariants([]);
+    setProducts([]);
+    setExpandedProducts(new Set());
     await fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, 1, false);
     setBanner({ type: "success", message: `Synced ${count} variants` });
   };
@@ -195,8 +218,13 @@ function AssignPageInner() {
       const data = await res.json();
       if (data.ok) {
         navigator.vibrate?.(100);
-        setVariants(prev =>
-          prev.map(v => v.variantId === selectedVariant.variantId ? { ...v, barcode: scannedBarcode } : v)
+        setProducts(prev =>
+          prev.map(product => ({
+            ...product,
+            variants: product.variants.map(v =>
+              v.variantId === selectedVariant.variantId ? { ...v, barcode: scannedBarcode } : v
+            ),
+          }))
         );
         setStep("done");
       } else {
@@ -351,7 +379,7 @@ function AssignPageInner() {
             {!loading && (
               <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                 <span>
-                  {total} variant{total !== 1 ? "s" : ""}
+                  {total} product{total !== 1 ? "s" : ""}
                   {missingCount > 0 && <span className="text-orange-400 ml-2">· {missingCount} without barcode</span>}
                 </span>
                 {formattedLastSync && <span>Synced {formattedLastSync}</span>}
@@ -394,50 +422,98 @@ function AssignPageInner() {
               </div>
             )}
 
-            {/* Variant list */}
-            {!loading && variants.length > 0 && (
+            {/* Product list */}
+            {!loading && products.length > 0 && (
               <div className="space-y-2">
-                {variants.map((variant) => (
-                  <button
-                    key={variant.variantId}
-                    onClick={() => handleSelectVariant(variant)}
-                    className="w-full flex items-center gap-3 p-3 bg-slate-900 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800 rounded-xl transition-all duration-150 active:scale-[0.98] text-left"
-                  >
-                    {variant.imageUrl ? (
-                      <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
-                        <Image src={variant.imageUrl} alt={variant.productTitle} fill className="object-cover" sizes="48px" />
-                      </div>
-                    ) : (
-                      <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
-                        <span className="text-xl">📦</span>
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-slate-100 text-sm leading-tight truncate">
-                        {variant.variantTitle !== "Default Title" ? variant.variantTitle : variant.productTitle}
-                      </p>
-                      {variant.variantTitle !== "Default Title" && (
-                        <p className="text-xs text-slate-500 mt-0.5 truncate">{variant.productTitle}</p>
-                      )}
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {variant.sku && <span className="text-xs font-mono text-slate-500">{variant.sku}</span>}
-                        {variant.barcode ? (
-                          <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+                {products.map((product) => {
+                  const isSingleDefault =
+                    product.variants.length === 1 &&
+                    product.variants[0].variantTitle === "Default Title";
+
+                  if (isSingleDefault) {
+                    const v  = product.variants[0];
+                    const cv = toCachedVariant(product, v);
+                    return (
+                      <ProductRow
+                        key={product.productId}
+                        product={product}
+                        variant={v}
+                        onClick={() => handleSelectVariant(cv)}
+                      />
+                    );
+                  }
+
+                  const isExpanded = expandedProducts.has(product.productId);
+                  return (
+                    <div key={product.productId} className="rounded-xl overflow-hidden border border-slate-700">
+                      {/* Product header */}
+                      <button
+                        onClick={() => toggleExpand(product.productId)}
+                        className="w-full flex items-center gap-3 p-3 bg-slate-900 hover:bg-slate-800 transition-colors text-left"
+                      >
+                        {product.imageUrl ? (
+                          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+                            <Image src={product.imageUrl} alt={product.productTitle} fill className="object-cover" sizes="48px" />
+                          </div>
                         ) : (
-                          <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+                          <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                            <span className="text-xl">📦</span>
+                          </div>
                         )}
-                        {variant.status !== "ACTIVE" && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded border ${
-                            variant.status === "DRAFT"
-                              ? "bg-yellow-900/40 text-yellow-400 border-yellow-800/50"
-                              : "bg-slate-700/40 text-slate-500 border-slate-600/50"
-                          }`}>{variant.status.toLowerCase()}</span>
-                        )}
-                      </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-100 text-sm leading-tight truncate">
+                            {product.productTitle}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1 flex-wrap">
+                            {product.vendor && (
+                              <span className="text-xs text-slate-500">{product.vendor}</span>
+                            )}
+                            <StatusBadge status={product.status} />
+                            <span className="text-xs text-slate-500">
+                              {product.variants.length} variant{product.variants.length !== 1 ? "s" : ""}
+                            </span>
+                          </div>
+                        </div>
+                        <ChevronDown
+                          className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-200 ${isExpanded ? "" : "-rotate-90"}`}
+                        />
+                      </button>
+
+                      {/* Expanded variants */}
+                      {isExpanded && (
+                        <div className="border-t border-slate-800">
+                          {product.variants.map((v, i) => {
+                            const cv = toCachedVariant(product, v);
+                            return (
+                              <button
+                                key={v.variantId}
+                                onClick={() => handleSelectVariant(cv)}
+                                className={`w-full flex items-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-900 transition-colors text-left ${
+                                  i < product.variants.length - 1 ? "border-b border-slate-800/60" : ""
+                                }`}
+                              >
+                                <div className="w-8 h-8 rounded-md bg-slate-800/60 flex items-center justify-center shrink-0">
+                                  <Tag className="w-3.5 h-3.5 text-slate-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-slate-200 font-medium truncate">{v.variantTitle}</p>
+                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                    {v.sku && <span className="text-xs font-mono text-slate-500">{v.sku}</span>}
+                                    {v.barcode ? (
+                                      <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+                                    ) : (
+                                      <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <Tag className="w-4 h-4 text-slate-600 shrink-0" />
-                  </button>
-                ))}
+                  );
+                })}
 
                 {/* Load more */}
                 {hasMore && (
@@ -449,7 +525,7 @@ function AssignPageInner() {
                     {loadingMore ? (
                       <><RefreshCw className="w-4 h-4 animate-spin" />Loading…</>
                     ) : (
-                      <><ChevronRight className="w-4 h-4" />Load more ({total - variants.length} remaining)</>
+                      <><ChevronDown className="w-4 h-4" />Load more ({total - products.length} remaining)</>
                     )}
                   </button>
                 )}
@@ -591,6 +667,59 @@ function AssignPageInner() {
         onError={handleSyncError}
       />
     </main>
+  );
+}
+
+// ── Shared sub-components ─────────────────────────────────────────────────────
+
+function StatusBadge({ status }: { status: "ACTIVE" | "DRAFT" | "ARCHIVED" }) {
+  if (status === "ACTIVE") {
+    return <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">Active</span>;
+  }
+  if (status === "DRAFT") {
+    return <span className="text-xs px-1.5 py-0.5 bg-yellow-900/40 text-yellow-400 rounded border border-yellow-800/50">Draft</span>;
+  }
+  return <span className="text-xs px-1.5 py-0.5 bg-slate-700/40 text-slate-500 rounded border border-slate-600/50">Archived</span>;
+}
+
+function ProductRow({
+  product,
+  variant,
+  onClick,
+}: {
+  product: AssignProduct;
+  variant: AssignVariant;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3 p-3 bg-slate-900 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800 rounded-xl transition-all duration-150 active:scale-[0.98] text-left"
+    >
+      {product.imageUrl ? (
+        <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+          <Image src={product.imageUrl} alt={product.productTitle} fill className="object-cover" sizes="48px" />
+        </div>
+      ) : (
+        <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+          <span className="text-xl">📦</span>
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-slate-100 text-sm leading-tight truncate">{product.productTitle}</p>
+        <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {product.vendor && <span className="text-xs text-slate-500">{product.vendor}</span>}
+          <StatusBadge status={product.status} />
+          {variant.sku && <span className="text-xs font-mono text-slate-500">{variant.sku}</span>}
+          {variant.barcode ? (
+            <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+          ) : (
+            <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+          )}
+        </div>
+      </div>
+      <Tag className="w-4 h-4 text-slate-600 shrink-0" />
+    </button>
   );
 }
 

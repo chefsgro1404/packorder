@@ -83,31 +83,44 @@ public class ProductListFunction
             }
 
             var filteredList = filtered.ToList();
-            var total        = filteredList.Count;
             var missingCount = filteredList.Count(e => string.IsNullOrEmpty(e.Barcode));
 
-            var pageItems = filteredList
+            // Group by product — pagination is over products, not variants
+            var grouped = filteredList
+                .GroupBy(e => e.ProductId)
+                .ToList();
+
+            var total = grouped.Count;
+
+            var pageProducts = grouped
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
-                .Select(e => new
+                .Select(g =>
                 {
-                    productId    = e.ProductId,
-                    variantId    = e.VariantId,
-                    productTitle = e.ProductTitle,
-                    variantTitle = e.VariantTitle,
-                    sku          = e.Sku,
-                    barcode      = e.Barcode,
-                    vendor       = e.Vendor,
-                    tags         = JsonConvert.DeserializeObject<List<string>>(e.Tags ?? "[]") ?? new List<string>(),
-                    imageUrl     = e.ImageUrl,
-                    price        = e.Price,
-                    status       = e.Status
+                    var first = g.First();
+                    return new
+                    {
+                        productId    = first.ProductId,
+                        productTitle = first.ProductTitle,
+                        vendor       = first.Vendor,
+                        imageUrl     = first.ImageUrl,
+                        status       = first.Status,
+                        tags         = JsonConvert.DeserializeObject<List<string>>(first.Tags ?? "[]") ?? new List<string>(),
+                        variants     = g.Select(e => new
+                        {
+                            variantId    = e.VariantId,
+                            variantTitle = e.VariantTitle,
+                            sku          = e.Sku,
+                            barcode      = e.Barcode,
+                            price        = e.Price,
+                        }).ToList(),
+                    };
                 })
                 .ToList();
 
             return await ResponseHelper.WriteSuccess(req, new
             {
-                variants       = pageItems,
+                products       = pageProducts,
                 total,
                 missingCount,
                 totalInStorage = entities.Count,
