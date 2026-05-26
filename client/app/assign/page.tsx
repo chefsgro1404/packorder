@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
+import { SyncModal } from "@/components/SyncModal";
 import { useScanner } from "@/hooks/useScanner";
 import { CachedVariant } from "@/lib/types";
 import {
@@ -45,11 +46,6 @@ export default function AssignPage() {
 
   // ── Sync modal state ────────────────────────────────────────────────────
   const [syncOpen, setSyncOpen] = useState(false);
-  const [syncMode, setSyncMode] = useState<"incremental" | "full">("incremental");
-  const [syncVendors, setSyncVendors] = useState("");
-  const [syncTags, setSyncTags] = useState("");
-  const [syncClear, setSyncClear] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   // ── Assignment flow state ───────────────────────────────────────────────
   const [step, setStep] = useState<AssignStep>("list");
@@ -107,35 +103,17 @@ export default function AssignPage() {
     loadPage(next, true);
   };
 
-  // ── Sync ────────────────────────────────────────────────────────────────
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode: syncMode,
-          vendors: syncVendors.split(",").map((v) => v.trim()).filter(Boolean),
-          tags: syncTags.split(",").map((t) => t.trim()).filter(Boolean),
-          clearFirst: syncClear,
-        }),
-      });
-      const data = await res.json();
-      if (data.ok) {
-        setSyncOpen(false);
-        setPage(1);
-        setVariants([]);
-        await loadPage(1, false);
-        setBanner({ type: "success", message: `Synced ${data.synced} variants` });
-      } else {
-        setBanner({ type: "error", message: data.error || "Sync failed" });
-      }
-    } catch {
-      setBanner({ type: "error", message: "Sync failed — check your connection" });
-    } finally {
-      setSyncing(false);
-    }
+  // ── Sync callbacks ───────────────────────────────────────────────────────
+  const handleSynced = async (count: number) => {
+    setSyncOpen(false);
+    setPage(1);
+    setVariants([]);
+    await loadPage(1, false);
+    setBanner({ type: "success", message: `Synced ${count} variants` });
+  };
+
+  const handleSyncError = (message: string) => {
+    setBanner({ type: "error", message });
   };
 
   // ── Assignment flow ─────────────────────────────────────────────────────
@@ -590,121 +568,13 @@ export default function AssignPage() {
         )}
       </div>
 
-      {/* ── Sync modal ─────────────────────────────────────────────────── */}
-      {syncOpen && (
-        <div
-          className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setSyncOpen(false); }}
-        >
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-slate-100 text-base">Sync Products</h2>
-              <button onClick={() => setSyncOpen(false)} className="text-slate-500 hover:text-slate-300">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Mode */}
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-slate-400 uppercase tracking-wide">Mode</p>
-              <div className="flex rounded-lg overflow-hidden border border-slate-700 text-sm">
-                <button
-                  onClick={() => setSyncMode("incremental")}
-                  className={`flex-1 py-2.5 transition-colors ${syncMode === "incremental" ? "bg-purple-700 text-white font-medium" : "bg-slate-800 text-slate-400 hover:text-slate-200"}`}
-                >
-                  Update changed
-                </button>
-                <button
-                  onClick={() => setSyncMode("full")}
-                  className={`flex-1 py-2.5 transition-colors ${syncMode === "full" ? "bg-purple-700 text-white font-medium" : "bg-slate-800 text-slate-400 hover:text-slate-200"}`}
-                >
-                  Sync all
-                </button>
-              </div>
-              <p className="text-xs text-slate-500">
-                {syncMode === "incremental"
-                  ? "Only fetches products updated since your last sync."
-                  : "Fetches all products matching the filters and upserts them."}
-              </p>
-            </div>
-
-            {/* Vendor filter */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                Vendor filter <span className="text-slate-600 normal-case">(optional, comma-separated)</span>
-              </label>
-              <input
-                type="text"
-                value={syncVendors}
-                onChange={(e) => setSyncVendors(e.target.value)}
-                placeholder="e.g. Apple, Samsung"
-                className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            {/* Tag filter */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-                Tag filter <span className="text-slate-600 normal-case">(optional, comma-separated)</span>
-              </label>
-              <input
-                type="text"
-                value={syncTags}
-                onChange={(e) => setSyncTags(e.target.value)}
-                placeholder="e.g. seasonal, clearance"
-                className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            {/* Clear before sync */}
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={syncClear}
-                onChange={(e) => setSyncClear(e.target.checked)}
-                className="mt-0.5 w-4 h-4 rounded accent-purple-600"
-              />
-              <div>
-                <p className="text-sm text-slate-300">Clear before sync</p>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {syncVendors.trim()
-                    ? "Removes existing entries for the specified vendors before re-syncing them."
-                    : "Removes all cached variants before re-syncing. Use to remove stale data."}
-                </p>
-              </div>
-            </label>
-
-            {formattedLastSync && (
-              <p className="text-xs text-slate-500">Last synced: {formattedLastSync}</p>
-            )}
-
-            {/* Actions */}
-            <div className="flex gap-3 pt-1">
-              <button
-                onClick={() => setSyncOpen(false)}
-                disabled={syncing}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm font-medium text-slate-300 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                className="flex-1 py-3 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-xl text-sm font-bold text-white transition-colors flex items-center justify-center gap-2"
-              >
-                {syncing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                    Syncing…
-                  </>
-                ) : (
-                  "Sync now"
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SyncModal
+        open={syncOpen}
+        lastSync={lastSync}
+        onClose={() => setSyncOpen(false)}
+        onSynced={handleSynced}
+        onError={handleSyncError}
+      />
     </main>
   );
 }
