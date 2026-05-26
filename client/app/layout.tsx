@@ -33,7 +33,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="screen-orientation" content="portrait" />
       </head>
-      <body className="bg-slate-900 text-slate-100 min-h-screen antialiased">
+      <body className="bg-slate-950 text-slate-100 min-h-screen antialiased">
 <div className="max-w-md mx-auto min-h-screen bg-slate-950 shadow-2xl shadow-black/50">
           {children}
         </div>
