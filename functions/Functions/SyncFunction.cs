@@ -60,21 +60,13 @@ public class SyncFunction
             else if (tags.Count > 1)
                 queryParts.Add($"({string.Join(" OR ", tags.Select(t => $"tag:{t}"))})");
 
-            if (request.Mode == "incremental")
-            {
-                var lastSync = await _tableStorage.GetLastSyncAsync();
-                if (lastSync != null)
-                    queryParts.Add($"updated_at:>{lastSync.LastSyncedAt:yyyy-MM-ddTHH:mm:ssZ}");
-            }
-
             var shopifyQuery = queryParts.Count > 0 ? string.Join(" ", queryParts) : null;
 
-            // ── Optionally clear before syncing ───────────────────────────────
-            if (request.ClearFirst)
-                await _tableStorage.DeleteAllProductVariantsAsync();
+            // Always clear the table so the result exactly matches what was synced
+            await _tableStorage.DeleteAllProductVariantsAsync();
 
             // ── Fetch and upsert ──────────────────────────────────────────────
-            _logger.LogInformation("Starting product sync. Mode={Mode} Query={Query}", request.Mode, shopifyQuery ?? "(all)");
+            _logger.LogInformation("Starting product sync. Query={Query}", shopifyQuery ?? "(all)");
 
             var entities = await _shopify.FetchAllProductVariantsAsync(shopifyQuery);
             await _tableStorage.BulkUpsertProductVariantsAsync(entities);
@@ -89,8 +81,7 @@ public class SyncFunction
             return await ResponseHelper.WriteSuccess(req, new
             {
                 ok     = true,
-                synced = entities.Count,
-                mode   = request.Mode
+                synced = entities.Count
             }, _allowedOrigins);
         }
         catch (Exception ex)

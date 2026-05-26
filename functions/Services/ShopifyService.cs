@@ -452,7 +452,7 @@ public class ShopifyService
             pageInfo { hasNextPage endCursor }
             edges {
               node {
-                id title vendor tags updatedAt
+                id title vendor tags status updatedAt
                 featuredImage { url }
                 variants(first: 100) {
                   edges { node { id sku barcode title price } }
@@ -483,6 +483,7 @@ public class ShopifyService
                 var numericProductId = productId.Split('/').Last();
                 var productTitle = product["title"]!.ToString();
                 var vendor = product["vendor"]?.ToString() ?? "";
+                var status = product["status"]?.ToString() ?? "ACTIVE";
                 var rawTags = product["tags"]?.ToObject<List<string>>() ?? new List<string>();
                 var tagsJson = JsonConvert.SerializeObject(rawTags);
                 var featuredImageToken = product["featuredImage"];
@@ -504,6 +505,7 @@ public class ShopifyService
                         Sku = v["sku"]?.ToString(),
                         Barcode = string.IsNullOrWhiteSpace(v["barcode"]?.ToString()) ? null : v["barcode"]!.ToString(),
                         Vendor = vendor,
+                        Status = status,
                         Tags = tagsJson,
                         ImageUrl = imageUrl,
                         Price = v["price"]?.ToString() ?? "0.00"

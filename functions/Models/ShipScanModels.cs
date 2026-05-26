@@ -345,6 +345,7 @@ public class ProductVariantEntity : ITableEntity
     public string Tags { get; set; } = "[]";       // JSON-encoded string array
     public string? ImageUrl { get; set; }
     public string Price { get; set; } = "0.00";
+    public string Status { get; set; } = "ACTIVE"; // ACTIVE | DRAFT | ARCHIVED
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -362,17 +363,11 @@ public class SyncSettingsEntity : ITableEntity
 
 public class SyncRequest
 {
-    [JsonProperty("mode")]
-    public string Mode { get; set; } = "incremental"; // "incremental" | "full"
-
     [JsonProperty("vendors")]
     public List<string>? Vendors { get; set; }
 
     [JsonProperty("tags")]
     public List<string>? Tags { get; set; }
-
-    [JsonProperty("clearFirst")]
-    public bool ClearFirst { get; set; }
 }
 
 // Webhook REST payload models (Shopify sends numeric IDs, snake_case)

@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useCallback, useEffect, useRef, Suspense } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
 import { SyncModal } from "@/components/SyncModal";
@@ -14,6 +14,8 @@ import {
 import Image from "next/image";
 
 type AssignStep = "list" | "scan" | "confirm" | "saving" | "done";
+type BarcodeFilter = "all" | "yes" | "no";
+type StatusFilter = "all" | "ACTIVE" | "DRAFT" | "ARCHIVED";
 
 interface BannerState {
   type: "success" | "error" | "warning" | "info";
@@ -22,103 +24,145 @@ interface BannerState {
 
 const PAGE_SIZE = 50;
 
-export default function AssignPage() {
-  const router = useRouter();
+// ── URL helpers ──────────────────────────────────────────────────────────────
+
+function buildApiUrl(
+  search: string,
+  vendor: string,
+  hasBarcode: BarcodeFilter,
+  status: StatusFilter,
+  page: number
+) {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+  if (search.trim())       params.set("search",     search.trim());
+  if (vendor !== "all")    params.set("vendor",     vendor);
+  if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
+  if (status !== "all")    params.set("status",     status);
+  return `/api/products?${params}`;
+}
+
+// ── Inner page (needs useSearchParams, wrapped in Suspense below) ─────────────
+
+function AssignPageInner() {
+  const router     = useRouter();
+  const pathname   = usePathname();
+  const searchParams = useSearchParams();
   const { handleScan, playBeep } = useScanner();
 
-  // ── Product list state ──────────────────────────────────────────────────
+  // Read initial filter state from URL
+  const urlSearch     = searchParams.get("search")     ?? "";
+  const urlVendor     = searchParams.get("vendor")     ?? "all";
+  const urlHasBarcode = (searchParams.get("hasBarcode") ?? "all") as BarcodeFilter;
+  const urlStatus     = (searchParams.get("status")    ?? "all") as StatusFilter;
+
+  // Local search input (debounced before going to URL)
+  const [searchInput, setSearchInput] = useState(urlSearch);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // List state
   const [variants, setVariants] = useState<CachedVariant[]>([]);
-  const [loadingList, setLoadingList] = useState(true);
+  const [loading, setLoading]   = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [lastSync, setLastSync] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
+  const [page, setPage]         = useState(1);
+  const [hasMore, setHasMore]   = useState(false);
+  const [total, setTotal]       = useState(0);
   const [missingCount, setMissingCount] = useState(0);
-  const [totalInStorage, setTotalInStorage] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
-  const [page, setPage] = useState(1);
-  const [vendors, setVendors] = useState<string[]>([]);
-
-  // ── Filter state ────────────────────────────────────────────────────────
-  const [filterText, setFilterText] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [filterBarcode, setFilterBarcode] = useState<"all" | "yes" | "no">("all");
-  const [filterVendor, setFilterVendor] = useState("all");
-
-  // ── Sync modal state ────────────────────────────────────────────────────
+  const [lastSync, setLastSync] = useState<string | null>(null);
+  const [vendors, setVendors]   = useState<string[]>([]);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [banner, setBanner]     = useState<BannerState | null>(null);
 
-  // ── Assignment flow state ───────────────────────────────────────────────
-  const [step, setStep] = useState<AssignStep>("list");
+  // Assignment flow
+  const [step, setStep]                   = useState<AssignStep>("list");
   const [selectedVariant, setSelectedVariant] = useState<CachedVariant | null>(null);
-  const [scannedBarcode, setScannedBarcode] = useState<string | null>(null);
-  const [banner, setBanner] = useState<BannerState | null>(null);
+  const [scannedBarcode, setScannedBarcode]   = useState<string | null>(null);
 
-  // Debounce text search — 300 ms
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(filterText), 300);
-    return () => clearTimeout(timer);
-  }, [filterText]);
+  // ── URL updater ─────────────────────────────────────────────────────────
+  const pushFilters = useCallback(
+    (search: string, vendor: string, hasBarcode: BarcodeFilter, status: StatusFilter) => {
+      const params = new URLSearchParams();
+      if (search.trim())        params.set("search",     search.trim());
+      if (vendor !== "all")     params.set("vendor",     vendor);
+      if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
+      if (status !== "all")     params.set("status",     status);
+      router.replace(`${pathname}?${params}`, { scroll: false });
+    },
+    [router, pathname]
+  );
 
-  // When any filter changes, reset to page 1 and reload
+  // ── Fetch a page ─────────────────────────────────────────────────────────
+  const fetchPage = useCallback(
+    async (
+      search: string,
+      vendor: string,
+      hasBarcode: BarcodeFilter,
+      status: StatusFilter,
+      p: number,
+      append: boolean
+    ) => {
+      if (p === 1) setLoading(true);
+      else         setLoadingMore(true);
+
+      try {
+        const res  = await fetch(buildApiUrl(search, vendor, hasBarcode, status, p));
+        const data = await res.json();
+        const incoming: CachedVariant[] = data.variants ?? [];
+        setVariants(prev => append ? [...prev, ...incoming] : incoming);
+        setTotal(data.total ?? 0);
+        setMissingCount(data.missingCount ?? 0);
+        setHasMore(data.hasMore ?? false);
+        setLastSync(data.lastSync ?? null);
+        if (data.vendors?.length) setVendors(data.vendors);
+      } catch {
+        setBanner({ type: "error", message: "Failed to load product list" });
+      } finally {
+        setLoading(false);
+        setLoadingMore(false);
+      }
+    },
+    []
+  );
+
+  // ── Re-fetch when URL search params change ────────────────────────────────
   useEffect(() => {
     setPage(1);
     setVariants([]);
-    loadPage(1, false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, filterBarcode, filterVendor]);
+    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, 1, false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);   // searchParams object reference changes on every URL update
 
-  const buildUrl = (p: number) => {
-    const params = new URLSearchParams({ page: String(p), pageSize: String(PAGE_SIZE) });
-    if (debouncedSearch.trim())          params.set("search", debouncedSearch.trim());
-    if (filterVendor !== "all")          params.set("vendor", filterVendor);
-    if (filterBarcode !== "all")         params.set("hasBarcode", filterBarcode);
-    return `/api/products?${params}`;
+  // ── Debounce text search → push to URL ───────────────────────────────────
+  const handleSearchChange = (value: string) => {
+    setSearchInput(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      pushFilters(value, urlVendor, urlHasBarcode, urlStatus);
+    }, 300);
   };
 
-  const loadPage = async (p: number, append: boolean) => {
-    if (p === 1) setLoadingList(true);
-    else         setLoadingMore(true);
-    try {
-      const res  = await fetch(buildUrl(p));
-      const data = await res.json();
-      const incoming: CachedVariant[] = data.variants ?? [];
-      setVariants(prev => append ? [...prev, ...incoming] : incoming);
-      setTotal(data.total ?? 0);
-      setMissingCount(data.missingCount ?? 0);
-      setTotalInStorage(data.totalInStorage ?? 0);
-      setHasMore(data.hasMore ?? false);
-      setLastSync(data.lastSync ?? null);
-      if (data.vendors?.length) setVendors(data.vendors);
-    } catch {
-      setBanner({ type: "error", message: "Failed to load product list" });
-    } finally {
-      setLoadingList(false);
-      setLoadingMore(false);
-    }
-  };
+  const handleVendorChange     = (v: string)             => pushFilters(urlSearch, v,    urlHasBarcode, urlStatus);
+  const handleHasBarcodeChange = (v: BarcodeFilter)      => pushFilters(urlSearch, urlVendor, v,   urlStatus);
+  const handleStatusChange     = (v: StatusFilter)       => pushFilters(urlSearch, urlVendor, urlHasBarcode, v);
 
   const handleLoadMore = () => {
     const next = page + 1;
     setPage(next);
-    loadPage(next, true);
+    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, next, true);
   };
 
-  // ── Sync callbacks ───────────────────────────────────────────────────────
+  // ── Sync ─────────────────────────────────────────────────────────────────
   const handleSynced = async (count: number) => {
     setSyncOpen(false);
     setPage(1);
     setVariants([]);
-    await loadPage(1, false);
+    await fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, 1, false);
     setBanner({ type: "success", message: `Synced ${count} variants` });
   };
+  const handleSyncError = (msg: string) => setBanner({ type: "error", message: msg });
 
-  const handleSyncError = (message: string) => {
-    setBanner({ type: "error", message });
-  };
-
-  // ── Assignment flow ─────────────────────────────────────────────────────
-  const handleSelectVariant = (variant: CachedVariant) => {
-    setSelectedVariant(variant);
+  // ── Assignment flow ───────────────────────────────────────────────────────
+  const handleSelectVariant = (v: CachedVariant) => {
+    setSelectedVariant(v);
     setStep("scan");
     setScannedBarcode(null);
     setBanner(null);
@@ -138,7 +182,6 @@ export default function AssignPage() {
   const handleConfirm = async () => {
     if (!selectedVariant || !scannedBarcode) return;
     setStep("saving");
-
     try {
       const res = await fetch("/api/variant", {
         method: "PATCH",
@@ -146,17 +189,14 @@ export default function AssignPage() {
         body: JSON.stringify({
           productId: selectedVariant.productId,
           variantId: selectedVariant.variantId,
-          barcode: scannedBarcode,
+          barcode:   scannedBarcode,
         }),
       });
       const data = await res.json();
-
       if (data.ok) {
         navigator.vibrate?.(100);
-        setVariants((prev) =>
-          prev.map((v) =>
-            v.variantId === selectedVariant.variantId ? { ...v, barcode: scannedBarcode } : v
-          )
+        setVariants(prev =>
+          prev.map(v => v.variantId === selectedVariant.variantId ? { ...v, barcode: scannedBarcode } : v)
         );
         setStep("done");
       } else {
@@ -177,9 +217,7 @@ export default function AssignPage() {
   };
 
   const formattedLastSync = lastSync
-    ? new Date(lastSync).toLocaleString(undefined, {
-        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-      })
+    ? new Date(lastSync).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : null;
 
   return (
@@ -187,7 +225,7 @@ export default function AssignPage() {
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 sticky top-0 z-10">
         <button
-          onClick={() => (step === "list" ? router.push("/") : handleReset())}
+          onClick={() => step === "list" ? router.push("/") : handleReset()}
           className="p-2 -ml-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -211,15 +249,13 @@ export default function AssignPage() {
         <div className="flex items-center gap-2 px-4 py-2 bg-slate-900/50 border-b border-slate-800/50">
           {(["scan", "confirm"] as const).map((s, i) => {
             const active = step === s || (step === "saving" && s === "confirm");
-            const done = s === "scan" && (step === "confirm" || step === "saving");
+            const done   = s === "scan" && (step === "confirm" || step === "saving");
             return (
               <div key={s} className="flex items-center gap-2">
                 {i > 0 && <div className="w-6 h-px bg-slate-700" />}
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
                   active ? "bg-purple-600 text-white" : done ? "bg-purple-900/50 text-purple-400" : "bg-slate-800 text-slate-500"
-                }`}>
-                  {i + 1}
-                </div>
+                }`}>{i + 1}</div>
                 <span className={`text-xs ${active ? "text-slate-200 font-medium" : "text-slate-500"}`}>
                   {s === "scan" ? "Scan" : "Confirm"}
                 </span>
@@ -231,106 +267,110 @@ export default function AssignPage() {
 
       <div className="flex-1 flex flex-col gap-4 p-4 overflow-y-auto pb-safe">
         {banner && (
-          <StatusBanner
-            type={banner.type}
-            message={banner.message}
-            autoDismiss={4000}
-            onDismiss={() => setBanner(null)}
-          />
+          <StatusBanner type={banner.type} message={banner.message} autoDismiss={4000} onDismiss={() => setBanner(null)} />
         )}
 
-        {/* ── List view ──────────────────────────────────────────────── */}
+        {/* ── List ──────────────────────────────────────────────────────── */}
         {step === "list" && (
           <>
-            {/* Filter bar */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                <input
-                  type="text"
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  placeholder="Search by name, SKU or barcode…"
-                  className="w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-base focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[48px]"
-                />
-                {filterText && (
-                  <button
-                    onClick={() => setFilterText("")}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <div className="flex gap-2">
-                {/* Barcode filter */}
-                <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs font-medium">
-                  {(["all", "yes", "no"] as const).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => setFilterBarcode(v)}
-                      className={`px-3 py-2 transition-colors min-h-[36px] ${
-                        filterBarcode === v
-                          ? "bg-purple-700 text-white"
-                          : "bg-slate-900 text-slate-400 hover:text-slate-200"
-                      }`}
-                    >
-                      {v === "all" ? "All" : v === "yes" ? "Has barcode" : "No barcode"}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Vendor filter */}
-                {vendors.length > 0 && (
-                  <div className="relative flex-1 min-w-0">
-                    <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                    <select
-                      value={filterVendor}
-                      onChange={(e) => setFilterVendor(e.target.value)}
-                      className="w-full pl-8 pr-7 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[36px]"
-                    >
-                      <option value="all">All vendors</option>
-                      {vendors.map((v) => (
-                        <option key={v} value={v}>{v}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                  </div>
-                )}
-              </div>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+              <input
+                type="text"
+                value={searchInput}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Search by name, SKU or barcode…"
+                className="w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-base focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[48px]"
+              />
+              {searchInput && (
+                <button
+                  onClick={() => { setSearchInput(""); pushFilters("", urlVendor, urlHasBarcode, urlStatus); }}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
             </div>
 
-            {/* Stats row */}
-            {!loadingList && totalInStorage > 0 && (
+            {/* Filter row */}
+            <div className="flex flex-wrap gap-2">
+              {/* Barcode filter */}
+              <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs font-medium">
+                {(["all", "yes", "no"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => handleHasBarcodeChange(v)}
+                    className={`px-3 py-2 transition-colors min-h-[36px] ${
+                      urlHasBarcode === v ? "bg-purple-700 text-white" : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {v === "all" ? "All" : v === "yes" ? "Has barcode" : "No barcode"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Status filter */}
+              <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs font-medium">
+                {([
+                  { value: "all",      label: "Any status" },
+                  { value: "ACTIVE",   label: "Active" },
+                  { value: "DRAFT",    label: "Draft" },
+                  { value: "ARCHIVED", label: "Archived" },
+                ] as const).map(({ value, label }) => (
+                  <button
+                    key={value}
+                    onClick={() => handleStatusChange(value)}
+                    className={`px-3 py-2 transition-colors min-h-[36px] ${
+                      urlStatus === value ? "bg-purple-700 text-white" : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Vendor filter */}
+              {vendors.length > 0 && (
+                <div className="relative">
+                  <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                  <select
+                    value={urlVendor}
+                    onChange={(e) => handleVendorChange(e.target.value)}
+                    className="pl-8 pr-7 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[36px]"
+                  >
+                    <option value="all">All vendors</option>
+                    {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                </div>
+              )}
+            </div>
+
+            {/* Stats */}
+            {!loading && (
               <div className="flex items-center justify-between text-xs text-slate-500 px-1">
                 <span>
                   {total} variant{total !== 1 ? "s" : ""}
-                  {missingCount > 0 && (
-                    <span className="text-orange-400 ml-2">· {missingCount} without barcode</span>
-                  )}
+                  {missingCount > 0 && <span className="text-orange-400 ml-2">· {missingCount} without barcode</span>}
                 </span>
                 {formattedLastSync && <span>Synced {formattedLastSync}</span>}
               </div>
             )}
 
-            {/* Loading state */}
-            {loadingList && (
+            {/* Loading */}
+            {loading && (
               <div className="flex items-center justify-center py-12">
                 <div className="flex gap-2">
                   {[0, 1, 2].map((i) => (
-                    <div
-                      key={i}
-                      className="w-2 h-2 rounded-full bg-purple-400 animate-bounce"
-                      style={{ animationDelay: `${i * 150}ms` }}
-                    />
+                    <div key={i} className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
                   ))}
                 </div>
               </div>
             )}
 
-            {/* Empty: not synced yet */}
-            {!loadingList && totalInStorage === 0 && variants.length === 0 && (
+            {/* Empty — never synced */}
+            {!loading && total === 0 && vendors.length === 0 && (
               <div className="flex flex-col items-center justify-center py-14 text-slate-500 gap-3">
                 <RefreshCw className="w-10 h-10 opacity-30" />
                 <p className="text-sm font-medium">No products synced yet</p>
@@ -346,8 +386,8 @@ export default function AssignPage() {
               </div>
             )}
 
-            {/* Empty: filter has no results */}
-            {!loadingList && totalInStorage > 0 && total === 0 && (
+            {/* Empty — filter has no results */}
+            {!loading && total === 0 && vendors.length > 0 && (
               <div className="flex flex-col items-center justify-center py-10 text-slate-500 gap-2">
                 <Search className="w-10 h-10 opacity-30" />
                 <p className="text-sm">No variants match your filters</p>
@@ -355,7 +395,7 @@ export default function AssignPage() {
             )}
 
             {/* Variant list */}
-            {!loadingList && variants.length > 0 && (
+            {!loading && variants.length > 0 && (
               <div className="space-y-2">
                 {variants.map((variant) => (
                   <button
@@ -365,13 +405,7 @@ export default function AssignPage() {
                   >
                     {variant.imageUrl ? (
                       <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
-                        <Image
-                          src={variant.imageUrl}
-                          alt={variant.productTitle}
-                          fill
-                          className="object-cover"
-                          sizes="48px"
-                        />
+                        <Image src={variant.imageUrl} alt={variant.productTitle} fill className="object-cover" sizes="48px" />
                       </div>
                     ) : (
                       <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
@@ -380,25 +414,24 @@ export default function AssignPage() {
                     )}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-slate-100 text-sm leading-tight truncate">
-                        {variant.variantTitle !== "Default Title"
-                          ? variant.variantTitle
-                          : variant.productTitle}
+                        {variant.variantTitle !== "Default Title" ? variant.variantTitle : variant.productTitle}
                       </p>
                       {variant.variantTitle !== "Default Title" && (
                         <p className="text-xs text-slate-500 mt-0.5 truncate">{variant.productTitle}</p>
                       )}
-                      <div className="flex items-center gap-2 mt-1">
-                        {variant.sku && (
-                          <span className="text-xs font-mono text-slate-500">{variant.sku}</span>
-                        )}
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {variant.sku && <span className="text-xs font-mono text-slate-500">{variant.sku}</span>}
                         {variant.barcode ? (
-                          <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">
-                            has barcode
-                          </span>
+                          <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
                         ) : (
-                          <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">
-                            no barcode
-                          </span>
+                          <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+                        )}
+                        {variant.status !== "ACTIVE" && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded border ${
+                            variant.status === "DRAFT"
+                              ? "bg-yellow-900/40 text-yellow-400 border-yellow-800/50"
+                              : "bg-slate-700/40 text-slate-500 border-slate-600/50"
+                          }`}>{variant.status.toLowerCase()}</span>
                         )}
                       </div>
                     </div>
@@ -414,15 +447,9 @@ export default function AssignPage() {
                     className="w-full py-3 bg-slate-900 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800 rounded-xl text-sm text-slate-400 transition-all flex items-center justify-center gap-2 min-h-[48px]"
                   >
                     {loadingMore ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                        Loading…
-                      </>
+                      <><RefreshCw className="w-4 h-4 animate-spin" />Loading…</>
                     ) : (
-                      <>
-                        <ChevronRight className="w-4 h-4" />
-                        Load more ({total - variants.length} remaining)
-                      </>
+                      <><ChevronRight className="w-4 h-4" />Load more ({total - variants.length} remaining)</>
                     )}
                   </button>
                 )}
@@ -431,7 +458,7 @@ export default function AssignPage() {
           </>
         )}
 
-        {/* ── Step: Scan barcode ─────────────────────────────────────── */}
+        {/* ── Scan ──────────────────────────────────────────────────────── */}
         {step === "scan" && selectedVariant && (
           <>
             <div className="flex items-center gap-3 p-3 bg-purple-950/40 border border-purple-800/50 rounded-xl">
@@ -446,37 +473,30 @@ export default function AssignPage() {
               )}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-slate-200 truncate">
-                  {selectedVariant.variantTitle !== "Default Title"
-                    ? selectedVariant.variantTitle
-                    : selectedVariant.productTitle}
+                  {selectedVariant.variantTitle !== "Default Title" ? selectedVariant.variantTitle : selectedVariant.productTitle}
                 </p>
                 {selectedVariant.variantTitle !== "Default Title" && (
                   <p className="text-xs text-slate-500">{selectedVariant.productTitle}</p>
                 )}
                 {selectedVariant.barcode && (
-                  <p className="text-xs text-orange-400 mt-0.5">
-                    Will replace: <span className="font-mono">{selectedVariant.barcode}</span>
-                  </p>
+                  <p className="text-xs text-orange-400 mt-0.5">Will replace: <span className="font-mono">{selectedVariant.barcode}</span></p>
                 )}
               </div>
               <button onClick={handleReset} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
-
             <div className="space-y-1">
               <p className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                <ScanLine className="w-4 h-4 text-purple-400" />
-                Scan the barcode label
+                <ScanLine className="w-4 h-4 text-purple-400" />Scan the barcode label
               </p>
               <p className="text-xs text-slate-500">Point the camera at the product barcode or sticker.</p>
             </div>
-
             <BarcodeScanner onScan={onBarcodeScan} active={step === "scan"} />
           </>
         )}
 
-        {/* ── Step: Confirm ──────────────────────────────────────────── */}
+        {/* ── Confirm ───────────────────────────────────────────────────── */}
         {(step === "confirm" || step === "saving") && selectedVariant && scannedBarcode && (
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-4">
@@ -493,9 +513,7 @@ export default function AssignPage() {
                 )}
                 <div>
                   <p className="font-semibold text-slate-100">
-                    {selectedVariant.variantTitle !== "Default Title"
-                      ? selectedVariant.variantTitle
-                      : selectedVariant.productTitle}
+                    {selectedVariant.variantTitle !== "Default Title" ? selectedVariant.variantTitle : selectedVariant.productTitle}
                   </p>
                   {selectedVariant.variantTitle !== "Default Title" && (
                     <p className="text-sm text-slate-500">{selectedVariant.productTitle}</p>
@@ -505,7 +523,6 @@ export default function AssignPage() {
                   )}
                 </div>
               </div>
-
               <div className="border-t border-slate-800 pt-3 space-y-2">
                 {selectedVariant.barcode && (
                   <div className="flex items-center justify-between text-sm">
@@ -519,7 +536,6 @@ export default function AssignPage() {
                 </div>
               </div>
             </div>
-
             <button
               onClick={handleConfirm}
               disabled={step === "saving"}
@@ -528,7 +544,6 @@ export default function AssignPage() {
               <Tag className="w-5 h-5" />
               {step === "saving" ? "Saving…" : "Save to Shopify"}
             </button>
-
             <button
               onClick={() => { setStep("scan"); setScannedBarcode(null); }}
               disabled={step === "saving"}
@@ -539,7 +554,7 @@ export default function AssignPage() {
           </div>
         )}
 
-        {/* ── Done ───────────────────────────────────────────────────── */}
+        {/* ── Done ──────────────────────────────────────────────────────── */}
         {step === "done" && selectedVariant && scannedBarcode && (
           <div className="flex flex-col items-center justify-center flex-1 gap-5 animate-in fade-in duration-300 py-8">
             <div className="w-24 h-24 rounded-full bg-purple-900/50 border-2 border-purple-500 flex items-center justify-center">
@@ -576,5 +591,14 @@ export default function AssignPage() {
         onError={handleSyncError}
       />
     </main>
+  );
+}
+
+// Suspense wrapper required for useSearchParams in App Router
+export default function AssignPage() {
+  return (
+    <Suspense fallback={null}>
+      <AssignPageInner />
+    </Suspense>
   );
 }

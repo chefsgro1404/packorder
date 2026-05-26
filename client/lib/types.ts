@@ -122,6 +122,7 @@ export interface CachedVariant {
   tags: string[];
   imageUrl: string | null;
   price: string;
+  status: "ACTIVE" | "DRAFT" | "ARCHIVED";
 }
 
 export interface CachedOrderLineItem {

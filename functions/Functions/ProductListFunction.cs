@@ -45,6 +45,7 @@ public class ProductListFunction
             var search      = qs["search"]?.Trim();
             var vendor      = qs["vendor"]?.Trim();
             var hasBarcodeQ = qs["hasBarcode"]?.Trim(); // "yes" | "no" | absent
+            var statusQ     = qs["status"]?.Trim().ToUpperInvariant(); // "ACTIVE" | "DRAFT" | "ARCHIVED" | absent
 
             var entities = await _tableStorage.GetAllProductVariantsAsync();
             var lastSync = await _tableStorage.GetLastSyncAsync();
@@ -62,6 +63,9 @@ public class ProductListFunction
 
             if (!string.IsNullOrEmpty(vendor))
                 filtered = filtered.Where(e => string.Equals(e.Vendor, vendor, StringComparison.OrdinalIgnoreCase));
+
+            if (!string.IsNullOrEmpty(statusQ))
+                filtered = filtered.Where(e => string.Equals(e.Status, statusQ, StringComparison.OrdinalIgnoreCase));
 
             if (hasBarcodeQ == "yes")
                 filtered = filtered.Where(e => !string.IsNullOrEmpty(e.Barcode));
@@ -96,7 +100,8 @@ public class ProductListFunction
                     vendor       = e.Vendor,
                     tags         = JsonConvert.DeserializeObject<List<string>>(e.Tags ?? "[]") ?? new List<string>(),
                     imageUrl     = e.ImageUrl,
-                    price        = e.Price
+                    price        = e.Price,
+                    status       = e.Status
                 })
                 .ToList();
 
