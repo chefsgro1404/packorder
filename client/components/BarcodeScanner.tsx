@@ -55,7 +55,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
 
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 280, height: 280 } },
+        { fps: 15, qrbox: { width: 300, height: 120 } },
         (decodedText: string) => {
           setFlash(true);
           setTimeout(() => setFlash(false), 300);
@@ -153,12 +153,13 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
               }`}
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative w-56 h-56">
+              <div className="relative w-72 h-28">
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-lg" />
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-lg" />
                 <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-lg" />
                 <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-lg" />
                 <div className="absolute inset-0 border border-blue-400/20 rounded-lg" />
+                <div className="absolute inset-x-6 top-1/2 -translate-y-px h-px bg-blue-400/40" />
               </div>
             </div>
           </div>
