@@ -55,7 +55,13 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
 
       await scanner.start(
         { facingMode: "environment" },
-        { fps: 15, qrbox: { width: 300, height: 120 } },
+        {
+          fps: 15,
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
+            width: Math.round(viewfinderWidth * 0.85),
+            height: Math.round(viewfinderHeight * 0.45),
+          }),
+        },
         (decodedText: string) => {
           setFlash(true);
           setTimeout(() => setFlash(false), 300);
