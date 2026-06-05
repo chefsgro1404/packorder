@@ -10,22 +10,29 @@ interface BarcodeScannerProps {
 }
 
 function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const scannerRef = useRef<unknown>(null);
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const nativeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const nativeStreamRef = useRef<MediaStream | null>(null);
+  const scanningRef    = useRef(false);
+  const scannerRef     = useRef<{ stop: () => void } | null>(null);
+  const activeRef      = useRef(active);
+
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState("");
   const [flash, setFlash] = useState(false);
-  const onScanRef = useRef(onScan);
-  const onErrorRef = useRef(onError);
 
-  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+  const onScanRef  = useRef(onScan);
+  const onErrorRef = useRef(onError);
+  useEffect(() => { onScanRef.current  = onScan;  }, [onScan]);
   useEffect(() => { onErrorRef.current = onError; }, [onError]);
+  useEffect(() => { activeRef.current  = active;  }, [active]);
 
   const captureFrame = useCallback((): string => {
-    const video = containerRef.current?.querySelector("video") as HTMLVideoElement | null;
+    const video = nativeVideoRef.current
+      ?? (containerRef.current?.querySelector("video") as HTMLVideoElement | null);
     if (!video || !video.videoWidth) return "";
     const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
+    canvas.width  = video.videoWidth;
     canvas.height = video.videoHeight;
     const ctx = canvas.getContext("2d");
     if (!ctx) return "";
@@ -33,62 +40,127 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
     return canvas.toDataURL("image/jpeg", 0.8);
   }, []);
 
-  const startScanner = useCallback(async () => {
+  // ── Native BarcodeDetector (Safari 17.4+, Chrome desktop/Android) ─────────
+  const stopNative = useCallback(() => {
+    scanningRef.current = false;
+    nativeStreamRef.current?.getTracks().forEach(t => t.stop());
+    nativeStreamRef.current = null;
+    nativeVideoRef.current?.remove();
+    nativeVideoRef.current = null;
+  }, []);
+
+  const startNative = useCallback(async () => {
     if (!containerRef.current) return;
+
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    nativeStreamRef.current = stream;
+
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    video.setAttribute("playsinline", "true");
+    video.style.cssText = "width:100%;height:100%;object-fit:cover;";
+    containerRef.current.appendChild(video);
+    nativeVideoRef.current = video;
+    await video.play();
+
+    type DetectorInstance = { detect(src: HTMLVideoElement): Promise<{ rawValue: string }[]> };
+    const BarcodeDetectorCtor = (window as unknown as {
+      BarcodeDetector: new (opts: { formats: string[] }) => DetectorInstance;
+    }).BarcodeDetector;
+    const detector = new BarcodeDetectorCtor({
+      formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code", "data_matrix"],
+    });
+
+    scanningRef.current = true;
+    (async () => {
+      while (scanningRef.current) {
+        try {
+          if (nativeVideoRef.current && nativeVideoRef.current.readyState >= 2) {
+            const results = await detector.detect(nativeVideoRef.current);
+            if (results.length > 0 && scanningRef.current) {
+              setFlash(true);
+              setTimeout(() => setFlash(false), 300);
+              onScanRef.current(results[0].rawValue, captureFrame());
+            }
+          }
+        } catch { /* per-frame errors are normal */ }
+        await new Promise<void>(r => setTimeout(r, 100));
+      }
+    })();
+  }, [captureFrame]);
+
+  // ── ZXing fallback with TRY_HARDER — better real-world 1D scanning ────────
+  const stopZXing = useCallback(() => {
+    scannerRef.current?.stop();
+    scannerRef.current = null;
+    nativeVideoRef.current?.remove();
+    nativeVideoRef.current = null;
+  }, []);
+
+  const startZXing = useCallback(async () => {
+    if (!containerRef.current) return;
+
+    const { BrowserMultiFormatReader } = await import("@zxing/browser");
+    const { DecodeHintType, BarcodeFormat } = await import("@zxing/library");
+
+    const hints = new Map();
+    hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+      BarcodeFormat.EAN_13,
+      BarcodeFormat.EAN_8,
+      BarcodeFormat.UPC_A,
+      BarcodeFormat.UPC_E,
+      BarcodeFormat.CODE_128,
+      BarcodeFormat.CODE_39,
+      BarcodeFormat.QR_CODE,
+      BarcodeFormat.DATA_MATRIX,
+    ]);
+    hints.set(DecodeHintType.TRY_HARDER, true);
+
+    const codeReader = new BrowserMultiFormatReader(hints, {
+      delayBetweenScanAttempts: 100,
+    });
+
+    const video = document.createElement("video");
+    video.setAttribute("playsinline", "true");
+    video.style.cssText = "width:100%;height:100%;object-fit:cover;";
+    containerRef.current.appendChild(video);
+    nativeVideoRef.current = video;
+
+    const controls = await codeReader.decodeFromConstraints(
+      { video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
+      video,
+      (result) => {
+        if (!result) return;
+        setFlash(true);
+        setTimeout(() => setFlash(false), 300);
+        onScanRef.current(result.getText(), captureFrame());
+      }
+    );
+
+    scannerRef.current = controls;
+  }, [captureFrame]);
+
+  // ── Unified start / stop ──────────────────────────────────────────────────
+  const stopScanner = useCallback(() => {
+    stopNative();
+    stopZXing();
+  }, [stopNative, stopZXing]);
+
+  const startScanner = useCallback(async () => {
     try {
-      const { Html5Qrcode, Html5QrcodeSupportedFormats } = await import("html5-qrcode");
-      const scanner = new Html5Qrcode("barcode-scanner-container", {
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.UPC_E,
-          Html5QrcodeSupportedFormats.CODE_128,
-          Html5QrcodeSupportedFormats.CODE_39,
-
-          Html5QrcodeSupportedFormats.QR_CODE,
-          Html5QrcodeSupportedFormats.DATA_MATRIX,
-        ],
-        verbose: false,
-      });
-      scannerRef.current = scanner;
-
-      await scanner.start(
-        { facingMode: "environment" },
-        {
-          fps: 15,
-          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => ({
-            width: Math.round(viewfinderWidth * 0.85),
-            height: Math.round(viewfinderHeight * 0.45),
-          }),
-        },
-        (decodedText: string) => {
-          setFlash(true);
-          setTimeout(() => setFlash(false), 300);
-          onScanRef.current(decodedText, captureFrame());
-        },
-        () => {}
-      );
+      if ("BarcodeDetector" in window) {
+        await startNative();
+      } else {
+        await startZXing();
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setCameraError(message);
       onErrorRef.current?.(message);
     }
-  }, [captureFrame]);
-
-  const stopScanner = useCallback(async () => {
-    if (!scannerRef.current) return;
-    const scanner = scannerRef.current as { isScanning: boolean; stop: () => Promise<void>; clear: () => void };
-    try {
-      if (scanner.isScanning) {
-        await scanner.stop();
-        scanner.clear();
-      }
-    } catch {
-      // ignore cleanup errors
-    }
-    scannerRef.current = null;
-  }, []);
+  }, [startNative, startZXing]);
 
   useEffect(() => {
     if (active && !cameraError) {
@@ -105,7 +177,9 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
     let wakeLock: { release: () => Promise<void> } | null = null;
     const acquire = async () => {
       try {
-        wakeLock = await (navigator as unknown as { wakeLock: { request: (type: string) => Promise<{ release: () => Promise<void> }> } }).wakeLock.request("screen");
+        wakeLock = await (navigator as unknown as {
+          wakeLock: { request: (t: string) => Promise<{ release: () => Promise<void> }> };
+        }).wakeLock.request("screen");
       } catch { /* not supported */ }
     };
     acquire();
@@ -124,8 +198,9 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
     <div className="relative w-full select-none">
       {cameraError ? (
         <div className="flex flex-col items-center gap-4 p-6 bg-slate-900 rounded-2xl border border-slate-700">
-          <div className="text-slate-400 text-sm text-center">
-            Camera unavailable. Enter barcode manually.
+          <div className="text-slate-400 text-sm text-center space-y-1">
+            <p>Camera unavailable. Enter barcode manually.</p>
+            <p className="text-xs text-red-400 break-all">{cameraError}</p>
           </div>
           <form onSubmit={handleManualSubmit} className="flex gap-2 w-full">
             <input
@@ -151,7 +226,6 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
             ref={containerRef}
             className="scanner-container w-full h-64 bg-slate-900"
           />
-          {/* Scanning overlay corners */}
           <div className="absolute inset-0 pointer-events-none">
             <div
               className={`absolute inset-0 transition-colors duration-150 ${
@@ -159,13 +233,12 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
               }`}
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative w-72 h-28">
+              <div className="relative w-56 h-56">
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-lg" />
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-lg" />
                 <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-lg" />
                 <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-lg" />
                 <div className="absolute inset-0 border border-blue-400/20 rounded-lg" />
-                <div className="absolute inset-x-6 top-1/2 -translate-y-px h-px bg-blue-400/40" />
               </div>
             </div>
           </div>
@@ -188,12 +261,14 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
   );
 }
 
-// Must be dynamically imported — html5-qrcode uses window on init
 export const BarcodeScanner = dynamic(
   () => Promise.resolve(BarcodeScannerInner),
-  { ssr: false, loading: () => (
-    <div className="w-full h-64 bg-slate-900 rounded-2xl flex items-center justify-center">
-      <div className="text-slate-500 text-sm">Loading camera...</div>
-    </div>
-  )}
+  {
+    ssr: false,
+    loading: () => (
+      <div className="w-full h-64 bg-slate-900 rounded-2xl flex items-center justify-center">
+        <div className="text-slate-500 text-sm">Loading camera…</div>
+      </div>
+    ),
+  }
 );
