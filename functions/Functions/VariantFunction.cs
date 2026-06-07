@@ -86,7 +86,7 @@ public class VariantFunction
 
             if (string.IsNullOrWhiteSpace(request?.ProductId) ||
                 string.IsNullOrWhiteSpace(request.VariantId) ||
-                string.IsNullOrWhiteSpace(request.Barcode))
+                request.Barcode == null)
                 return await ResponseHelper.WriteError(req,
                     "productId, variantId and barcode are required",
                     HttpStatusCode.BadRequest, _allowedOrigins);

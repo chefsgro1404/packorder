@@ -9,11 +9,11 @@ import { useScanner } from "@/hooks/useScanner";
 import { CachedVariant, AssignProduct, AssignVariant } from "@/lib/types";
 import {
   ArrowLeft, Search, Tag, CheckCircle2, X, ScanLine,
-  RefreshCw, Filter, ChevronDown,
+  RefreshCw, Filter, ChevronDown, Trash2,
 } from "lucide-react";
 import Image from "next/image";
 
-type AssignStep = "list" | "scan" | "confirm" | "saving" | "done";
+type AssignStep = "list" | "scan" | "confirm" | "saving" | "done" | "remove-confirm" | "removing";
 type BarcodeFilter = "all" | "yes" | "no";
 type StatusFilter = "all" | "ACTIVE" | "DRAFT" | "ARCHIVED";
 
@@ -244,6 +244,49 @@ function AssignPageInner() {
     setBanner(null);
   };
 
+  const handleRemoveBarcode = (v: CachedVariant) => {
+    setSelectedVariant(v);
+    setStep("remove-confirm");
+    setBanner(null);
+  };
+
+  const handleConfirmRemove = async () => {
+    if (!selectedVariant) return;
+    setStep("removing");
+    try {
+      const res = await fetch("/api/variant", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: selectedVariant.productId,
+          variantId: selectedVariant.variantId,
+          barcode:   "",
+        }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        navigator.vibrate?.(100);
+        setProducts(prev =>
+          prev.map(product => ({
+            ...product,
+            variants: product.variants.map(v =>
+              v.variantId === selectedVariant.variantId ? { ...v, barcode: "" } : v
+            ),
+          }))
+        );
+        setBanner({ type: "success", message: "Barcode removed" });
+        setStep("list");
+        setSelectedVariant(null);
+      } else {
+        setBanner({ type: "error", message: data.error || "Failed to remove barcode" });
+        setStep("remove-confirm");
+      }
+    } catch {
+      setBanner({ type: "error", message: "Network error. Try again." });
+      setStep("remove-confirm");
+    }
+  };
+
   const formattedLastSync = lastSync
     ? new Date(lastSync).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
     : null;
@@ -253,7 +296,7 @@ function AssignPageInner() {
       {/* Top bar */}
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 sticky top-0 z-10">
         <button
-          onClick={() => step === "list" ? router.push("/") : handleReset()}
+          onClick={() => (step === "list" || step === "done") ? router.push("/") : handleReset()}
           className="p-2 -ml-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -273,7 +316,7 @@ function AssignPageInner() {
       </div>
 
       {/* Step indicator */}
-      {step !== "list" && step !== "done" && (
+      {step !== "list" && step !== "done" && step !== "remove-confirm" && step !== "removing" && (
         <div className="flex items-center gap-2 px-4 py-2 bg-slate-900/50 border-b border-slate-800/50">
           {(["scan", "confirm"] as const).map((s, i) => {
             const active = step === s || (step === "saving" && s === "confirm");
@@ -439,6 +482,7 @@ function AssignPageInner() {
                         product={product}
                         variant={v}
                         onClick={() => handleSelectVariant(cv)}
+                        onRemove={() => handleRemoveBarcode(cv)}
                       />
                     );
                   }
@@ -485,28 +529,39 @@ function AssignPageInner() {
                           {product.variants.map((v, i) => {
                             const cv = toCachedVariant(product, v);
                             return (
-                              <button
+                              <div
                                 key={v.variantId}
-                                onClick={() => handleSelectVariant(cv)}
-                                className={`w-full flex items-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-900 transition-colors text-left ${
-                                  i < product.variants.length - 1 ? "border-b border-slate-800/60" : ""
-                                }`}
+                                className={`flex items-center ${i < product.variants.length - 1 ? "border-b border-slate-800/60" : ""}`}
                               >
-                                <div className="w-8 h-8 rounded-md bg-slate-800/60 flex items-center justify-center shrink-0">
-                                  <Tag className="w-3.5 h-3.5 text-slate-600" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-slate-200 font-medium truncate">{v.variantTitle}</p>
-                                  <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                    {v.sku && <span className="text-xs font-mono text-slate-500">{v.sku}</span>}
-                                    {v.barcode ? (
-                                      <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
-                                    ) : (
-                                      <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
-                                    )}
+                                <button
+                                  onClick={() => handleSelectVariant(cv)}
+                                  className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-900 transition-colors text-left min-w-0"
+                                >
+                                  <div className="w-8 h-8 rounded-md bg-slate-800/60 flex items-center justify-center shrink-0">
+                                    <Tag className="w-3.5 h-3.5 text-slate-600" />
                                   </div>
-                                </div>
-                              </button>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm text-slate-200 font-medium truncate">{v.variantTitle}</p>
+                                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                      {v.sku && <span className="text-xs font-mono text-slate-500">{v.sku}</span>}
+                                      {v.barcode ? (
+                                        <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+                                      ) : (
+                                        <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </button>
+                                {v.barcode && (
+                                  <button
+                                    onClick={() => handleRemoveBarcode(cv)}
+                                    className="px-3 py-3 text-slate-600 hover:text-red-400 transition-colors shrink-0 bg-slate-950 hover:bg-slate-900"
+                                    title="Remove barcode"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
                             );
                           })}
                         </div>
@@ -630,6 +685,58 @@ function AssignPageInner() {
           </div>
         )}
 
+        {/* ── Remove confirm ────────────────────────────────────────────── */}
+        {(step === "remove-confirm" || step === "removing") && selectedVariant && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 border border-red-900/50 rounded-2xl p-4 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-red-900/40 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-red-400" />
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-100 text-sm">Remove barcode?</p>
+                  <p className="text-xs text-slate-500">This will clear the barcode from Shopify.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {selectedVariant.imageUrl ? (
+                  <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+                    <Image src={selectedVariant.imageUrl} alt={selectedVariant.productTitle} fill className="object-cover" sizes="48px" />
+                  </div>
+                ) : (
+                  <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                    <span className="text-xl">📦</span>
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-200 truncate">
+                    {selectedVariant.variantTitle !== "Default Title" ? selectedVariant.variantTitle : selectedVariant.productTitle}
+                  </p>
+                  {selectedVariant.variantTitle !== "Default Title" && (
+                    <p className="text-xs text-slate-500 truncate">{selectedVariant.productTitle}</p>
+                  )}
+                  <p className="text-xs font-mono text-red-400 mt-0.5">{selectedVariant.barcode}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleConfirmRemove}
+              disabled={step === "removing"}
+              className="w-full py-4 bg-red-700 hover:bg-red-600 active:scale-[0.98] disabled:opacity-50 rounded-xl font-bold text-base transition-all min-h-[56px] flex items-center justify-center gap-2"
+            >
+              <Trash2 className="w-5 h-5" />
+              {step === "removing" ? "Removing…" : "Remove barcode"}
+            </button>
+            <button
+              onClick={handleReset}
+              disabled={step === "removing"}
+              className="w-full py-3 text-slate-400 hover:text-slate-200 text-sm transition-colors min-h-[48px]"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
         {/* ── Done ──────────────────────────────────────────────────────── */}
         {step === "done" && selectedVariant && scannedBarcode && (
           <div className="flex flex-col items-center justify-center flex-1 gap-5 animate-in fade-in duration-300 py-8">
@@ -686,40 +793,53 @@ function ProductRow({
   product,
   variant,
   onClick,
+  onRemove,
 }: {
   product: AssignProduct;
   variant: AssignVariant;
   onClick: () => void;
+  onRemove: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-3 p-3 bg-slate-900 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800 rounded-xl transition-all duration-150 active:scale-[0.98] text-left"
-    >
-      {product.imageUrl ? (
-        <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
-          <Image src={product.imageUrl} alt={product.productTitle} fill className="object-cover" sizes="48px" />
+    <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 hover:border-purple-500/50 rounded-xl transition-all duration-150">
+      <button
+        onClick={onClick}
+        className="flex-1 flex items-center gap-3 p-3 text-left active:scale-[0.98] min-w-0"
+      >
+        {product.imageUrl ? (
+          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+            <Image src={product.imageUrl} alt={product.productTitle} fill className="object-cover" sizes="48px" />
+          </div>
+        ) : (
+          <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+            <span className="text-xl">📦</span>
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-slate-100 text-sm leading-tight truncate">{product.productTitle}</p>
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
+            {product.vendor && <span className="text-xs text-slate-500">{product.vendor}</span>}
+            <StatusBadge status={product.status} />
+            {variant.sku && <span className="text-xs font-mono text-slate-500">{variant.sku}</span>}
+            {variant.barcode ? (
+              <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+            ) : (
+              <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+            )}
+          </div>
         </div>
-      ) : (
-        <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
-          <span className="text-xl">📦</span>
-        </div>
+        <Tag className="w-4 h-4 text-slate-600 shrink-0" />
+      </button>
+      {variant.barcode && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          className="p-3 text-slate-600 hover:text-red-400 transition-colors shrink-0"
+          title="Remove barcode"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
       )}
-      <div className="flex-1 min-w-0">
-        <p className="font-medium text-slate-100 text-sm leading-tight truncate">{product.productTitle}</p>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
-          {product.vendor && <span className="text-xs text-slate-500">{product.vendor}</span>}
-          <StatusBadge status={product.status} />
-          {variant.sku && <span className="text-xs font-mono text-slate-500">{variant.sku}</span>}
-          {variant.barcode ? (
-            <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
-          ) : (
-            <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
-          )}
-        </div>
-      </div>
-      <Tag className="w-4 h-4 text-slate-600 shrink-0" />
-    </button>
+    </div>
   );
 }
 
