@@ -34,17 +34,24 @@ public class SyncShipOrdersFunction
         if (authError != null)
             return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
 
-        try
+        // Return 202 immediately — sync can take minutes on large stores and will
+        // exceed the SWA gateway timeout if we await the full result synchronously.
+        var accepted = await ResponseHelper.WriteSuccess(req, new { ok = true, synced = -1 }, _allowedOrigins);
+
+        _ = Task.Run(async () =>
         {
-            var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
-            await _tableStorage.SyncFulfillmentShipmentsAsync(entities);
-            _logger.LogInformation("Ship order sync complete. Processed {Count} fulfillments", entities.Count);
-            return await ResponseHelper.WriteSuccess(req, new { ok = true, synced = entities.Count }, _allowedOrigins);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Ship order sync failed");
-            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
-        }
+            try
+            {
+                var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
+                await _tableStorage.SyncFulfillmentShipmentsAsync(entities);
+                _logger.LogInformation("Ship order sync complete. Processed {Count} fulfillments", entities.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Ship order sync failed");
+            }
+        });
+
+        return accepted;
     }
 }
