@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { ShoppingCart, Truck, Tag } from "lucide-react";
+import { ShoppingCart, Truck, Tag, Scale } from "lucide-react";
 import { useEffect, useState } from "react";
 
-type Mode = "pos" | "ship" | "assign";
+type Mode = "pos" | "ship" | "assign" | "scale";
 
 interface ModeConfig {
   id: Mode;
@@ -47,6 +47,16 @@ const MODES: ModeConfig[] = [
     badgeColor: "bg-purple-600",
     iconBg: "bg-purple-600/20",
     iconColor: "text-purple-400",
+  },
+  {
+    id: "scale",
+    label: "Scale & Print",
+    description: "Weigh items & print labels",
+    icon: <Scale className="w-8 h-8 text-amber-400" />,
+    activeColor: "border-amber-500 bg-amber-950/50",
+    badgeColor: "bg-amber-600",
+    iconBg: "bg-amber-600/20",
+    iconColor: "text-amber-400",
   },
 ];
 
