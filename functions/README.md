@@ -28,7 +28,8 @@ functions/
 │   ├── HealthFunction.cs      # GET /api/health (exempt from auth middleware)
 │   ├── SyncShipOrdersFunction.cs  # POST /api/sync/ship-orders (pull fulfilled orders from Shopify)
 │   ├── ShipOrdersFunction.cs      # GET /api/ship-orders (list pending shipments)
-│   └── ShipmentFunction.cs        # POST /api/shipment/scan, POST /api/shipment/complete, GET /api/shipment/history, GET /api/shipment/scans
+│   ├── ShipmentFunction.cs        # POST /api/shipment/scan, POST /api/shipment/complete, GET /api/shipment/history, GET /api/shipment/scans
+│   └── ScaleFunction.cs           # GET /api/scale/lookup, GET/POST/PATCH/DELETE /api/scale/products, GET/POST /api/scale/print-log
 ├── Helpers/
 │   ├── AuthHelper.cs          # Reads access_token cookie, validates JWT + JTI revocation
 │   ├── CorsHelper.cs          # CORS preflight and response header injection
@@ -100,7 +101,7 @@ All secrets are stored in Azure Key Vault and surfaced as app settings using the
 
 ### Storage access
 
-`TableServiceClient` is constructed with `DefaultAzureCredential` and the storage account URI. No connection strings or storage account keys are used. The Functions app identity must be granted `Storage Table Data Contributor` on the storage account. All tables are created automatically on startup: `auditlog`, `revokedtokens`, `productvariants`, `syncsettings`, `unfulfilledorders`, `scanhistory`, `fulfillmentshipments`, `shipmentscans`.
+`TableServiceClient` is constructed with `DefaultAzureCredential` and the storage account URI. No connection strings or storage account keys are used. The Functions app identity must be granted `Storage Table Data Contributor` on the storage account. All tables are created automatically on startup: `auditlog`, `revokedtokens`, `productvariants`, `syncsettings`, `unfulfilledorders`, `scanhistory`, `fulfillmentshipments`, `shipmentscans`, `productlookup`, `printedlabels`.
 
 ## API Reference
 
@@ -262,6 +263,71 @@ Returns shipped fulfillments. Supports optional query params: `from` (ISO date),
 
 Returns all `ShipmentScanEntity` records for a given fulfillment, ordered by `ScannedAt`. Required query param: `fulfillmentId`.
 
+### `GET /api/scale/lookup?itemNumber=<value>`
+
+Looks up a `productlookup` row by scale item number (the `N` in the scale's `ITEM N` output).
+
+**Response (found)**
+```json
+{ "success": true, "data": { "found": true, "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "pricePerLb": 0.59 } }
+```
+
+**Response (not found)**
+```json
+{ "success": true, "data": { "found": false, "itemNumber": "12345" } }
+```
+
+### `GET /api/scale/products`
+
+Returns every row in `productlookup`.
+
+**Response**
+```json
+{ "success": true, "data": { "products": [ { "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "pricePerLb": 0.59 } ], "total": 1 } }
+```
+
+### `POST /api/scale/products`
+
+Creates a new `productlookup` row. `itemNumber`, `plu`, and `productTitle` are required.
+
+**Request body**
+```json
+{ "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "pricePerLb": 0.59 }
+```
+
+Returns `409 Conflict` if `itemNumber` is already mapped.
+
+### `PATCH /api/scale/products`
+
+Updates an existing `productlookup` row, matched by `itemNumber`. Same body shape as `POST`. Returns `404` if the item number doesn't exist.
+
+### `DELETE /api/scale/products?itemNumber=<value>`
+
+Deletes the `productlookup` row for the given item number. Returns `404` if it doesn't exist.
+
+### `GET /api/scale/print-log`
+
+Returns `printedlabels` audit entries, most recent first. Optional query params: `from`, `to` (EST date strings, `yyyy-MM-dd` or `yyyy-MM-dd HH:mm:ss`, compared lexicographically against `printedAtEst`), `plu`.
+
+**Response**
+```json
+{ "success": true, "data": { "labels": [ { "id": "...", "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "itemWeight": "1.23 lb", "printedAtEst": "2026-06-11 14:30:05", "qrPayload": "4011 | Bananas | 1.23 lb | 2026-06-11 14:30:05", "printedBy": "staff" } ], "total": 1 } }
+```
+
+### `POST /api/scale/print-log`
+
+Logs a printed (or reprinted) label. `productTitle`, `qrPayload`, and `printedAtEst` are required; `printedAtEst` must be `yyyy-MM-dd HH:mm:ss`. `partitionKey`/`rowKey` are derived entirely from `printedAtEst` (EST) — no UTC timestamp is stored on this entity.
+
+**Request body**
+```json
+{ "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "itemWeight": "1.23 lb", "printedAtEst": "2026-06-11 14:30:05", "qrPayload": "4011 | Bananas | 1.23 lb | 2026-06-11 14:30:05" }
+```
+
+**Response**
+```json
+{ "success": true, "data": { "ok": true, "id": "20260611143005-<guid>" } }
+```
+
 ### `GET /api/health`
 
 Returns `{ "success": true, "data": { "status": "ok", "timestamp": "..." } }`. Exempt from `InternalSecretMiddleware`. Used by load balancer health checks.
@@ -300,7 +366,9 @@ The test project at `functions.tests/` uses xUnit and Moq.
 dotnet test functions.tests/ShipScan.Functions.Tests.csproj --verbosity normal
 ```
 
-**Test coverage**: 31 tests, 0 failures, 0 warnings. Ship Mode functions use the same `TableStorageService` and `ShopifyService` patterns tested by existing test classes; two new tables (`fulfillmentshipments`, `shipmentscans`) are created automatically on startup.
+**Test coverage**: 33 tests, 0 failures, 0 warnings. Ship Mode functions use the same `TableStorageService` and `ShopifyService` patterns tested by existing test classes; tables created automatically on startup include `fulfillmentshipments`, `shipmentscans`, `productlookup`, and `printedlabels`.
+
+`ScaleFunction` (Scale & Print mode) is not yet covered by dedicated unit tests — its `TableStorageService` methods follow the same get/list/upsert/delete patterns as `ProductVariantEntity` and `FulfillmentShipmentEntity`, which are tested.
 
 | Test class | Tests | Coverage area |
 |---|---|---|

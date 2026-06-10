@@ -21,7 +21,8 @@ Next.js 15 (App Router) progressive web app for warehouse staff. Runs on mobile 
 | POS | `/pos` | Scan barcode → product lookup → add to cart → complete draft order | Yes |
 | Ship | `/ship` | Browse fulfilled Shopify orders with tracking; scan each product to record shipment; mark as shipped (complete or incomplete with reason); view shipment history with per-scan audit trail | Yes |
 | Assign Barcode | `/assign` | Search product variant → scan physical barcode → write to Shopify | Yes |
-| Scale & Print | `/scale` | Read weight from a Torrey scale over USB-serial, parse the result, and auto-print a QR label on a Godex DT2x thermal printer. Reprint any of the last 10 labels from in-session history. | No — runs entirely client-side, no Shopify/Functions calls |
+| Scale & Print | `/scale` | Read weight from a Torrey scale over USB-serial, look up the item's PLU/title in the product lookup table, and auto-print a label (product title + QR code) on a Godex DT2x thermal printer. Every print is logged to a server-side audit table; the last 10 prints can be reprinted from history. | Yes |
+| Manage Products | `/scale/products` | Add, edit, and delete the scale item-number → PLU / product title / price-per-lb mappings used by Scale & Print | Yes |
 
 ## Project Structure
 
@@ -32,7 +33,8 @@ client/
 │   ├── pos/page.tsx           # POS mode
 │   ├── ship/page.tsx          # Ship mode
 │   ├── assign/page.tsx        # Assign Barcode mode
-│   ├── scale/page.tsx         # Scale & Print mode (Web Serial, no auth)
+│   ├── scale/page.tsx         # Scale & Print mode (Web Serial)
+│   ├── scale/products/page.tsx # Manage Products — CRUD UI for the product lookup table
 │   └── api/
 │       ├── auth/route.ts      # Proxy → GET/POST/DELETE /api/auth
 │       ├── auth/refresh/route.ts # Proxy → POST /api/auth/refresh
@@ -46,7 +48,10 @@ client/
 │       ├── shipment/scan/route.ts     # Proxy → POST /api/shipment/scan
 │       ├── shipment/complete/route.ts # Proxy → POST /api/shipment/complete
 │       ├── shipment/history/route.ts  # Proxy → GET /api/shipment/history
-│       └── shipment/scans/route.ts    # Proxy → GET /api/shipment/scans
+│       ├── shipment/scans/route.ts    # Proxy → GET /api/shipment/scans
+│       ├── scale/lookup/route.ts      # Proxy → GET /api/scale/lookup
+│       ├── scale/products/route.ts    # Proxy → GET/POST/PATCH/DELETE /api/scale/products
+│       └── scale/print-log/route.ts   # Proxy → GET/POST /api/scale/print-log
 ├── components/
 │   ├── BarcodeScanner.tsx     # Camera scanner (html5-qrcode, client-only)
 │   ├── CartDrawer.tsx         # POS cart slide-over
@@ -63,7 +68,8 @@ client/
 │   ├── proxy.ts               # Server-side proxy helper (adds internal secret, forwards cookies)
 │   ├── types.ts               # Shared TypeScript interfaces
 │   ├── ezpl.ts                # Builds the EZPL byte payload for the Godex DT2x
-│   └── scaleParser.ts         # Parses raw Torrey scale output into item/weight
+│   ├── scaleParser.ts         # Parses raw Torrey scale output into item number/weight
+│   └── dateFormat.ts          # Formats a Date as "yyyy-MM-dd HH:mm:ss" in America/New_York, 24hr
 └── public/
     └── manifest.json          # PWA manifest
 ```
@@ -80,7 +86,7 @@ Auth tokens are stored in httpOnly cookies. JavaScript on the page cannot read t
 
 No tokens are ever stored in `localStorage` or `sessionStorage`. No `Authorization` header is used. No Shopify credentials or internal secrets ever reach the browser.
 
-**Exception — `/scale`**: this route performs no authentication check and makes no requests to Functions. It is reachable without logging in, since it only talks to local USB-serial hardware via the Web Serial API. `localStorage` is used here only to remember Web Serial port permissions (`shipscale_scale_granted`, `shipscale_printer_granted`) — never auth tokens.
+**`/scale` and `/scale/products`** require the same login as every other mode — both call `/api/scale/*` proxy routes, which forward the `access_token` cookie to Functions for validation. `localStorage` is used separately on `/scale` to remember Web Serial port permissions (`shipscale_scale_granted`, `shipscale_printer_granted`) — never auth tokens.
 
 ## Proxy Route Pattern
 
@@ -146,7 +152,7 @@ Ship mode reads and writes the staff name to `localStorage` under the key `ships
 
 ## Scale & Print Mode — Hardware Integration
 
-`/scale` connects directly to two USB-serial devices from the browser using the **Web Serial API** (`navigator.serial`). It makes no calls to `/api/*` or the Functions backend — all parsing and printing happens client-side. Only available in Chromium-based browsers (Chrome, Edge); Safari and Firefox do not implement Web Serial.
+`/scale` connects directly to two USB-serial devices from the browser using the **Web Serial API** (`navigator.serial`). Reading the scale, parsing its output, and writing EZPL to the printer all happen client-side. The product lookup (PLU/title/price by item number) and the print audit log are server-side, via the `/api/scale/*` proxy routes described below. Web Serial is only available in Chromium-based browsers (Chrome, Edge); Safari and Firefox do not implement it.
 
 ### Devices
 
@@ -167,17 +173,25 @@ Ship mode reads and writes the staff name to `localStorage` under the key `ships
 1. Staff weighs an item and triggers the scale's transmit sequence (`RCL → 01 → M+`).
 2. The scale streams data in several chunks over ~500–1500ms. The hook accumulates every chunk into a buffer.
 3. A 50ms poll checks for **2000ms of silence** since the last chunk — once hit, the read is considered complete and the buffer is parsed.
-4. `lib/scaleParser.ts` extracts the first line containing `ITEM`, then pulls the item name (`ITEM \d+`) and weight (`\d+\.\d+\s*lb`) via regex. `OVERLOAD` in the buffer is reported as a distinct error.
-5. On a successful parse, if the printer is connected the label is printed automatically and added to print history.
+4. `lib/scaleParser.ts` extracts the first line containing `ITEM`, then pulls the item name (`ITEM \d+`), the bare item number (`\d+`), and weight (`\d+\.\d+\s*lb`) via regex. `OVERLOAD` in the buffer is reported as a distinct error.
+5. The page looks up the item number against the product lookup table (`GET /api/scale/lookup`). If found, the PLU and product title from the table are used; if not found, a warning is shown and the label prints with a placeholder PLU (`N/A`) and the raw `ITEM N` text as the title.
+6. On a successful parse, if the printer is connected the label is printed automatically and logged to the print audit table.
+
+### Product lookup, QR payload & print audit log
+
+- **Product lookup table** (`functions` table `productlookup`): maps a scale item number → PLU, product title, and price-per-lb. Managed entirely from `/scale/products` (add/edit/delete), via `GET/POST/PATCH/DELETE /api/scale/products`.
+- **QR payload**: `<PLU> | <Product Title> | <Item Weight> | <Printed At>`, where `<Printed At>` is `lib/dateFormat.ts`'s `formatEst()` output (`yyyy-MM-dd HH:mm:ss`, America/New_York, 24hr) computed at the moment of printing.
+- **Print audit log** (`functions` table `printedlabels`): every print (including reprints) is logged via `POST /api/scale/print-log` with the item number, PLU, product title, weight, printed-at timestamp, and the exact QR payload printed. The Print History panel on `/scale` lists the most recent 10 entries from `GET /api/scale/print-log` and can reprint any of them — reprinting re-sends the **original** stored QR payload (so the embedded timestamp reflects the first print) and logs a new audit entry for the reprint event.
 
 ### Label printing (`lib/ezpl.ts`)
 
-Builds a raw EZPL command sequence (label height/width, text fields for item name and weight, and a QR code encoding `"<itemName> | <itemWeight>"`), joined with `\r`-only line endings (no `\n`) and sent as ASCII bytes via `port.writable`. Reprinting from history re-runs the same `print()` call with the stored item/weight.
+Builds a raw EZPL command sequence (label height/width, a single text field for the product title, and a QR code encoding the payload above), joined with `\r`-only line endings (no `\n`) and sent as ASCII bytes via `port.writable`.
 
 ### Notes / future tuning
 
 - Label dimensions (`^Q`/`^W` in `lib/ezpl.ts`) are currently `38,3` / `57` (57mm × 38mm). If labels print at the wrong size, adjust these two values to match the physical label stock and printer driver configuration.
 - The scale parser assumes the Torrey's default `ITEM N $ price weight lb` output format. If the scale firmware/format changes, update the regexes in `lib/scaleParser.ts`.
+- The QR payload is longer than the old `<itemName> | <itemWeight>` format — if scanners downstream struggle to read it at the current size/density, increase the QR module size (`W220,10,2,2,...` in `lib/ezpl.ts`) or reduce the error-correction level.
 
 ## Notable Implementation Details
 
