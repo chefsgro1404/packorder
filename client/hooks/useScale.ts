@@ -5,6 +5,7 @@ import { parseScaleBuffer } from '@/lib/scaleParser';
 
 export interface ParsedReading {
   itemName: string;
+  itemNumber: string;
   itemWeight: string;
   qrPayload: string;
   rawBuffer: string;
@@ -76,6 +77,7 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
         if (result.success && result.itemName && result.itemWeight && result.qrPayload) {
           const reading: ParsedReading = {
             itemName: result.itemName,
+            itemNumber: result.itemNumber ?? '',
             itemWeight: result.itemWeight,
             qrPayload: result.qrPayload,
             rawBuffer: buffer,

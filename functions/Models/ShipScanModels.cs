@@ -593,3 +593,50 @@ public class CompleteShipmentRequest
     [JsonProperty("scannedBy")]     public string ScannedBy { get; set; } = "";
     [JsonProperty("reason")]        public string? Reason { get; set; }
 }
+
+// ─── Scale & Print Mode ──────────────────────────────────────────────────────
+
+public class ProductLookupEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "product";
+    public string RowKey { get; set; } = "";       // scale item number / serial
+    public string Plu { get; set; } = "";
+    public string ProductTitle { get; set; } = "";
+    public double PricePerLb { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class UpsertProductLookupRequest
+{
+    [JsonProperty("itemNumber")]   public string ItemNumber { get; set; } = "";
+    [JsonProperty("plu")]          public string Plu { get; set; } = "";
+    [JsonProperty("productTitle")] public string ProductTitle { get; set; } = "";
+    [JsonProperty("pricePerLb")]   public double PricePerLb { get; set; }
+}
+
+public class PrintedLabelEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";  // date yyyyMMdd (EST)
+    public string RowKey { get; set; } = "";        // GUID
+    public string ItemNumber { get; set; } = "";
+    public string Plu { get; set; } = "";
+    public string ProductTitle { get; set; } = "";
+    public string ItemWeight { get; set; } = "";
+    public string PrintedAtEst { get; set; } = "";
+    public string QrPayload { get; set; } = "";
+    public string? PrintedBy { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class LogPrintedLabelRequest
+{
+    [JsonProperty("itemNumber")]   public string ItemNumber { get; set; } = "";
+    [JsonProperty("plu")]          public string Plu { get; set; } = "";
+    [JsonProperty("productTitle")] public string ProductTitle { get; set; } = "";
+    [JsonProperty("itemWeight")]   public string ItemWeight { get; set; } = "";
+    [JsonProperty("printedAtEst")] public string PrintedAtEst { get; set; } = "";
+    [JsonProperty("qrPayload")]    public string QrPayload { get; set; } = "";
+    [JsonProperty("printedBy")]    public string? PrintedBy { get; set; }
+}

@@ -57,13 +57,13 @@ export function usePrinter() {
     setPortLabel(null);
   }, []);
 
-  const print = useCallback(async (itemName: string, itemWeight: string) => {
+  const print = useCallback(async (productTitle: string, qrPayload: string) => {
     if (!portRef.current) { setError('Printer not connected.'); return; }
     setState('printing');
     setError(null);
     const writer = portRef.current.writable!.getWriter();
     try {
-      await writer.write(buildEZPL(itemName, itemWeight));
+      await writer.write(buildEZPL(productTitle, qrPayload));
       setLastPrintedAt(new Date());
       setState('connected');
     } catch (err) {

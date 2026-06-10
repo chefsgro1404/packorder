@@ -253,3 +253,31 @@ export interface ShipmentScanRecord {
   isManualOverride: boolean;
   overrideReason: string | null;
 }
+
+// ─── Scale & Print Mode ───────────────────────────────────────────────────────
+
+export interface ProductLookup {
+  itemNumber: string;
+  plu: string;
+  productTitle: string;
+  pricePerLb: number;
+}
+
+export interface ProductLookupResult {
+  found: boolean;
+  itemNumber: string;
+  plu?: string;
+  productTitle?: string;
+  pricePerLb?: number;
+}
+
+export interface PrintedLabel {
+  id: string;
+  itemNumber: string;
+  plu: string;
+  productTitle: string;
+  itemWeight: string;
+  printedAtEst: string;
+  qrPayload: string;
+  printedBy: string | null;
+}

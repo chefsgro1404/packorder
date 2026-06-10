@@ -16,6 +16,8 @@ public class TableStorageService
     private readonly TableClient _scanHistory;
     private readonly TableClient _fulfillmentShipments;
     private readonly TableClient _shipmentScans;
+    private readonly TableClient _productLookup;
+    private readonly TableClient _printedLabels;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -29,6 +31,8 @@ public class TableStorageService
         _scanHistory       = tableServiceClient.GetTableClient("scanhistory");
         _fulfillmentShipments = tableServiceClient.GetTableClient("fulfillmentshipments");
         _shipmentScans        = tableServiceClient.GetTableClient("shipmentscans");
+        _productLookup        = tableServiceClient.GetTableClient("productlookup");
+        _printedLabels        = tableServiceClient.GetTableClient("printedlabels");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -41,6 +45,8 @@ public class TableStorageService
         await _scanHistory.CreateIfNotExistsAsync();
         await _fulfillmentShipments.CreateIfNotExistsAsync();
         await _shipmentScans.CreateIfNotExistsAsync();
+        await _productLookup.CreateIfNotExistsAsync();
+        await _printedLabels.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -520,5 +526,68 @@ public class TableStorageService
             filter: $"PartitionKey eq '{numericFulfillmentId}'"))
             results.Add(e);
         return results.OrderBy(e => e.ScannedAt).ToList();
+    }
+
+    // ─── Scale & Print: product lookup ───────────────────────────────────────
+
+    public async Task<ProductLookupEntity?> GetProductLookupAsync(string itemNumber)
+    {
+        try
+        {
+            var response = await _productLookup.GetEntityAsync<ProductLookupEntity>("product", itemNumber);
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<ProductLookupEntity>> ListProductLookupsAsync()
+    {
+        var results = new List<ProductLookupEntity>();
+        await foreach (var e in _productLookup.QueryAsync<ProductLookupEntity>(filter: "PartitionKey eq 'product'"))
+            results.Add(e);
+        return results.OrderBy(e => e.RowKey).ToList();
+    }
+
+    public async Task UpsertProductLookupAsync(ProductLookupEntity entity)
+    {
+        await _productLookup.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    public async Task<bool> DeleteProductLookupAsync(string itemNumber)
+    {
+        try
+        {
+            await _productLookup.DeleteEntityAsync("product", itemNumber);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return false;
+        }
+    }
+
+    // ─── Scale & Print: printed label audit log ──────────────────────────────
+
+    public async Task LogPrintedLabelAsync(PrintedLabelEntity entity)
+    {
+        await _printedLabels.AddEntityAsync(entity);
+    }
+
+    // from/to are EST date strings (yyyy-MM-dd[ HH:mm:ss]); compared lexicographically against PrintedAtEst,
+    // which sorts correctly because the format is fixed-width and zero-padded.
+    public async Task<List<PrintedLabelEntity>> ListPrintedLabelsAsync(string? from, string? to, string? plu)
+    {
+        var results = new List<PrintedLabelEntity>();
+        await foreach (var e in _printedLabels.QueryAsync<PrintedLabelEntity>())
+        {
+            if (!string.IsNullOrEmpty(from) && string.Compare(e.PrintedAtEst, from, StringComparison.Ordinal) < 0) continue;
+            if (!string.IsNullOrEmpty(to) && string.Compare(e.PrintedAtEst, to, StringComparison.Ordinal) > 0) continue;
+            if (!string.IsNullOrEmpty(plu) && !e.Plu.Equals(plu, StringComparison.OrdinalIgnoreCase)) continue;
+            results.Add(e);
+        }
+        return results.OrderByDescending(e => e.PrintedAtEst, StringComparer.Ordinal).ToList();
     }
 }

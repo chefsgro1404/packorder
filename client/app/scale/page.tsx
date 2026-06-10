@@ -12,6 +12,7 @@ import {
   ScanLine,
   CheckCircle2,
   AlertCircle,
+  AlertTriangle,
   Plug,
   PlugZap,
   Scale,
@@ -21,17 +22,26 @@ import {
   Copy,
   Check,
   History,
+  Settings,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrinter } from '@/hooks/usePrinter';
+import { formatEst } from '@/lib/dateFormat';
+import { PrintedLabel } from '@/lib/types';
 
-interface PrintRecord {
-  id: string;
+interface CurrentItem {
+  itemNumber: string;
   itemName: string;
   itemWeight: string;
-  qrPayload: string;
-  printedAt: Date;
+  plu: string;
+  productTitle: string;
+  found: boolean;
+}
+
+function buildQrPayload(item: CurrentItem, printedAtEst: string): string {
+  const plu = item.found ? item.plu : 'N/A';
+  return `${plu} | ${item.productTitle} | ${item.itemWeight} | ${printedAtEst}`;
 }
 
 // ─── Status indicator dot ────────────────────────────────────────────────────
@@ -170,22 +180,26 @@ function ScaleMonitor({
 // ─── Label preview panel ─────────────────────────────────────────────────────
 
 function LabelPreview({
-  reading,
+  item,
+  lookupLoading,
   isPrinting,
 }: {
-  reading: ParsedReading | null;
+  item: CurrentItem | null;
+  lookupLoading: boolean;
   isPrinting: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
+  const previewQrPayload = item ? buildQrPayload(item, formatEst(new Date())) : '';
+
   const handleCopy = async () => {
-    if (!reading) return;
-    await navigator.clipboard.writeText(reading.qrPayload);
+    if (!item) return;
+    await navigator.clipboard.writeText(previewQrPayload);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
-  if (!reading) {
+  if (!item) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
         <div className="w-20 h-14 rounded-xl border-2 border-dashed border-slate-700 flex items-center justify-center bg-slate-900/50">
@@ -198,6 +212,16 @@ function LabelPreview({
 
   return (
     <div className="flex flex-col gap-4">
+      {!item.found && (
+        <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-900 rounded-xl px-3 py-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <p className="text-xs text-amber-300">
+            Item {item.itemNumber} isn&apos;t in the product lookup table. Printing with a placeholder PLU —
+            add it under Manage Products.
+          </p>
+        </div>
+      )}
+
       {/* 57×38mm label preview */}
       <div className="mx-auto w-full max-w-[260px]">
         <div
@@ -209,18 +233,14 @@ function LabelPreview({
           <div className="absolute inset-0 flex items-center justify-between px-3 py-2.5">
             <div className="flex flex-col justify-between h-full py-0.5 flex-1 pr-2">
               <div>
-                <p className="text-[7px] font-semibold text-slate-400 uppercase tracking-widest">Item</p>
-                <p className="text-sm font-bold text-slate-900 leading-tight">{reading.itemName}</p>
-              </div>
-              <div>
-                <p className="text-[7px] font-semibold text-slate-400 uppercase tracking-widest">Weight</p>
-                <p className="text-xs font-semibold text-slate-800">{reading.itemWeight}</p>
+                <p className="text-[7px] font-semibold text-slate-400 uppercase tracking-widest">Product</p>
+                <p className="text-sm font-bold text-slate-900 leading-tight">{item.productTitle}</p>
               </div>
               <p className="text-[6px] text-slate-400 font-mono">ChefsRHere</p>
             </div>
             <div className="flex-shrink-0 bg-white p-0.5 rounded border border-slate-200">
               <QRCodeSVG
-                value={reading.qrPayload}
+                value={previewQrPayload}
                 size={60}
                 level="M"
                 bgColor="#ffffff"
@@ -239,11 +259,25 @@ function LabelPreview({
         <p className="text-center text-[10px] text-slate-600 mt-1.5">57 mm × 38 mm · Godex DT2x</p>
       </div>
 
+      {/* Item details */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">PLU</p>
+          <p className="text-sm font-mono text-slate-200 mt-0.5">
+            {lookupLoading ? '…' : item.found ? item.plu : 'N/A'}
+          </p>
+        </div>
+        <div className="bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Weight</p>
+          <p className="text-sm font-mono text-slate-200 mt-0.5">{item.itemWeight}</p>
+        </div>
+      </div>
+
       {/* QR payload row */}
       <div className="flex items-center justify-between gap-2 bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">QR Payload</p>
-          <p className="text-xs font-mono text-slate-300 truncate mt-0.5">{reading.qrPayload}</p>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">QR Payload (preview)</p>
+          <p className="text-xs font-mono text-slate-300 truncate mt-0.5">{previewQrPayload}</p>
         </div>
         <button
           onClick={handleCopy}
@@ -257,10 +291,6 @@ function LabelPreview({
           )}
         </button>
       </div>
-
-      <p className="text-center text-xs text-slate-600">
-        Scanned at {reading.timestamp.toLocaleTimeString()}
-      </p>
     </div>
   );
 }
@@ -425,12 +455,14 @@ function DeviceSetup({
 
 function PrintHistory({
   records,
+  loading,
   canPrint,
   onReprint,
 }: {
-  records: PrintRecord[];
+  records: PrintedLabel[];
+  loading: boolean;
   canPrint: boolean;
-  onReprint: (r: PrintRecord) => void;
+  onReprint: (r: PrintedLabel) => void;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -444,7 +476,7 @@ function PrintHistory({
           <History className="w-4 h-4 text-slate-500" />
           <span className="text-sm font-semibold text-slate-200">Print History</span>
           {records.length > 0 && (
-            <span className="text-xs text-slate-500">— {records.length} this session</span>
+            <span className="text-xs text-slate-500">— recent {records.length}</span>
           )}
         </div>
         {open ? (
@@ -456,16 +488,21 @@ function PrintHistory({
 
       {open && (
         <div className="border-t border-slate-800">
-          {records.length === 0 ? (
+          {loading ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <RefreshCw className="w-5 h-5 text-slate-700 animate-spin" />
+              <p className="text-sm text-slate-600">Loading history…</p>
+            </div>
+          ) : records.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <History className="w-5 h-5 text-slate-700" />
-              <p className="text-sm text-slate-600">No prints yet this session</p>
+              <p className="text-sm text-slate-600">No prints yet</p>
             </div>
           ) : (
             <div className="flex flex-col divide-y divide-slate-800/60 max-h-64 overflow-y-auto">
-              {records.map((r) => (
+              {records.map((r, idx) => (
                 <div
-                  key={r.id}
+                  key={`${r.id}-${idx}`}
                   className="flex items-center gap-3 px-4 py-3 hover:bg-slate-900/40 group transition-colors"
                 >
                   <div className="flex-shrink-0 bg-white rounded-md p-0.5">
@@ -478,15 +515,15 @@ function PrintHistory({
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate">{r.itemName}</p>
+                    <p className="text-sm font-medium text-slate-200 truncate">{r.productTitle}</p>
                     <p className="text-xs text-slate-500">
-                      {r.itemWeight} · {r.printedAt.toLocaleTimeString()}
+                      PLU {r.plu} · {r.itemWeight} · {r.printedAtEst} EST
                     </p>
                   </div>
                   <button
                     disabled={!canPrint}
                     onClick={() => onReprint(r)}
-                    aria-label={`Reprint ${r.itemName}`}
+                    aria-label={`Reprint ${r.productTitle}`}
                     className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 disabled:opacity-30"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
@@ -505,34 +542,98 @@ function PrintHistory({
 
 export default function ScalePage() {
   const router = useRouter();
-  const [printHistory, setPrintHistory] = useState<PrintRecord[]>([]);
-  const [currentReading, setCurrentReading] = useState<ParsedReading | null>(null);
+  const [printHistory, setPrintHistory] = useState<PrintedLabel[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [currentItem, setCurrentItem] = useState<CurrentItem | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
   const [printedAt, setPrintedAt] = useState<Date | null>(null);
 
   const printer = usePrinter();
 
+  const fetchHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch('/api/scale/print-log');
+      if (res.ok) {
+        const data = await res.json();
+        setPrintHistory((data.labels ?? []).slice(0, 10));
+      }
+    } catch {
+      // ignore — history is non-critical
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  const lookupProduct = useCallback(async (reading: ParsedReading): Promise<CurrentItem> => {
+    const fallback: CurrentItem = {
+      itemNumber: reading.itemNumber ?? '',
+      itemName: reading.itemName,
+      itemWeight: reading.itemWeight,
+      plu: '',
+      productTitle: reading.itemName,
+      found: false,
+    };
+
+    if (!reading.itemNumber) return fallback;
+
+    try {
+      const res = await fetch(`/api/scale/lookup?itemNumber=${encodeURIComponent(reading.itemNumber)}`);
+      if (!res.ok) return fallback;
+      const data = await res.json();
+      if (!data.found) return fallback;
+      return {
+        ...fallback,
+        plu: data.plu,
+        productTitle: data.productTitle,
+        found: true,
+      };
+    } catch {
+      return fallback;
+    }
+  }, []);
+
+  const logPrintedLabel = useCallback(async (item: CurrentItem, qrPayload: string, printedAtEst: string) => {
+    try {
+      const res = await fetch('/api/scale/print-log', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemNumber: item.itemNumber,
+          plu: item.found ? item.plu : 'N/A',
+          productTitle: item.productTitle,
+          itemWeight: item.itemWeight,
+          printedAtEst,
+          qrPayload,
+        }),
+      });
+      if (res.ok) fetchHistory();
+    } catch {
+      // ignore — printing already happened, audit log failure shouldn't block the user
+    }
+  }, [fetchHistory]);
+
+  const printItem = useCallback(async (item: CurrentItem) => {
+    const printedAtEst = formatEst(new Date());
+    const qrPayload = buildQrPayload(item, printedAtEst);
+    await printer.print(item.productTitle, qrPayload);
+    setPrintedAt(new Date());
+    await logPrintedLabel(item, qrPayload, printedAtEst);
+  }, [printer, logPrintedLabel]);
+
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
-      setCurrentReading(reading);
       setPrintedAt(null);
+      setLookupLoading(true);
+      const item = await lookupProduct(reading);
+      setCurrentItem(item);
+      setLookupLoading(false);
 
       if (printer.state === 'connected') {
-        await printer.print(reading.itemName, reading.itemWeight);
-        const now = new Date();
-        setPrintedAt(now);
-        setPrintHistory((prev) => [
-          {
-            id: crypto.randomUUID(),
-            itemName: reading.itemName,
-            itemWeight: reading.itemWeight,
-            qrPayload: reading.qrPayload,
-            printedAt: now,
-          },
-          ...prev.slice(0, 9),
-        ]);
+        await printItem(item);
       }
     },
-    [printer]
+    [lookupProduct, printItem, printer.state]
   );
 
   const scale = useScale(handleReading);
@@ -540,32 +641,31 @@ export default function ScalePage() {
   useEffect(() => {
     scale.autoConnect();
     printer.autoConnect();
+    fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleManualPrint = async () => {
-    if (!currentReading) return;
-    await printer.print(currentReading.itemName, currentReading.itemWeight);
-    const now = new Date();
-    setPrintedAt(now);
-    setPrintHistory((prev) => [
-      {
-        id: crypto.randomUUID(),
-        itemName: currentReading.itemName,
-        itemWeight: currentReading.itemWeight,
-        qrPayload: currentReading.qrPayload,
-        printedAt: now,
-      },
-      ...prev.slice(0, 9),
-    ]);
+    if (!currentItem) return;
+    await printItem(currentItem);
   };
 
-  const handleReprint = async (record: PrintRecord) => {
-    await printer.print(record.itemName, record.itemWeight);
-    setPrintHistory((prev) => [
-      { ...record, id: crypto.randomUUID(), printedAt: new Date() },
-      ...prev.slice(0, 9),
-    ]);
+  const handleReprint = async (record: PrintedLabel) => {
+    if (printer.state !== 'connected') return;
+    await printer.print(record.productTitle, record.qrPayload);
+    const printedAtEst = formatEst(new Date());
+    await logPrintedLabel(
+      {
+        itemNumber: record.itemNumber,
+        itemName: record.productTitle,
+        itemWeight: record.itemWeight,
+        plu: record.plu,
+        productTitle: record.productTitle,
+        found: true,
+      },
+      record.qrPayload,
+      printedAtEst
+    );
   };
 
   const scaleStatus =
@@ -577,7 +677,7 @@ export default function ScalePage() {
   const printerStatus =
     printer.state === 'printing' ? 'busy' : printer.state === 'connected' ? 'ok' : 'off';
   const isPrinting = printer.state === 'printing';
-  const canPrint = !!currentReading && printer.state === 'connected';
+  const canPrint = !!currentItem && printer.state === 'connected';
 
   return (
     <main className="min-h-screen bg-slate-950 pb-safe">
@@ -604,6 +704,13 @@ export default function ScalePage() {
             <StatusDot status={printerStatus} />
             <span className="text-xs text-slate-400 font-medium">Print</span>
           </div>
+          <button
+            onClick={() => router.push('/scale/products')}
+            aria-label="Manage products"
+            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
+          >
+            <Settings className="w-3.5 h-3.5 text-slate-400" />
+          </button>
         </div>
       </div>
 
@@ -628,16 +735,16 @@ export default function ScalePage() {
               <span className="w-1 h-4 bg-emerald-500 rounded-full" />
               <h2 className="text-sm font-semibold text-slate-200">Label Preview</h2>
             </div>
-            {currentReading && (
+            {currentItem && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
                 {isPrinting ? 'Printing…' : printedAt ? 'Printed' : 'Ready'}
               </span>
             )}
           </div>
           <div className="px-4 pb-4">
-            <LabelPreview reading={currentReading} isPrinting={isPrinting} />
+            <LabelPreview item={currentItem} lookupLoading={lookupLoading} isPrinting={isPrinting} />
 
-            {currentReading && (
+            {currentItem && (
               <>
                 <div className="border-t border-slate-800 my-4" />
 
@@ -646,7 +753,7 @@ export default function ScalePage() {
                   <div className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-900 rounded-xl px-3 py-2.5 mb-3">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                     <p className="text-sm text-emerald-300 font-medium">
-                      Printed at {printedAt.toLocaleTimeString()}
+                      Printed at {formatEst(printedAt)} EST
                     </p>
                   </div>
                 )}
@@ -669,7 +776,7 @@ export default function ScalePage() {
                   </button>
                   <button
                     onClick={() => {
-                      setCurrentReading(null);
+                      setCurrentItem(null);
                       setPrintedAt(null);
                     }}
                     className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"
@@ -697,6 +804,7 @@ export default function ScalePage() {
         {/* Print history */}
         <PrintHistory
           records={printHistory}
+          loading={historyLoading}
           canPrint={printer.state === 'connected'}
           onReprint={handleReprint}
         />
