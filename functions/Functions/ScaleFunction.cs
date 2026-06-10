@@ -40,11 +40,20 @@ public class ScaleFunction
             var qs = ParseQueryString(req.Url.Query);
             var itemNumber = qs.TryGetValue("itemNumber", out var i) ? i : "";
             if (string.IsNullOrWhiteSpace(itemNumber))
+            {
+                _logger.LogWarning("Scale lookup rejected: missing itemNumber");
                 return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
 
             var entity = await _tableStorage.GetProductLookupAsync(itemNumber);
             if (entity == null)
+            {
+                _logger.LogWarning("Scale lookup miss: item number {ItemNumber} not in productlookup", itemNumber);
                 return await ResponseHelper.WriteSuccess(req, new { found = false, itemNumber }, _allowedOrigins);
+            }
+
+            _logger.LogInformation("Scale lookup hit: item {ItemNumber} -> PLU {Plu} ({ProductTitle})",
+                itemNumber, entity.Plu, entity.ProductTitle);
 
             return await ResponseHelper.WriteSuccess(req, new
             {
@@ -94,12 +103,19 @@ public class ScaleFunction
                 var qs = ParseQueryString(req.Url.Query);
                 var itemNumber = qs.TryGetValue("itemNumber", out var i) ? i : "";
                 if (string.IsNullOrWhiteSpace(itemNumber))
+                {
+                    _logger.LogWarning("Scale product delete rejected: missing itemNumber");
                     return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
+                }
 
                 var deleted = await _tableStorage.DeleteProductLookupAsync(itemNumber);
                 if (!deleted)
+                {
+                    _logger.LogWarning("Scale product delete failed: item {ItemNumber} not found", itemNumber);
                     return await ResponseHelper.WriteError(req, "Product not found", HttpStatusCode.NotFound, _allowedOrigins);
+                }
 
+                _logger.LogInformation("Scale product deleted: item {ItemNumber}", itemNumber);
                 return await ResponseHelper.WriteSuccess(req, new { ok = true }, _allowedOrigins);
             }
 
@@ -108,20 +124,33 @@ public class ScaleFunction
             var request = JsonConvert.DeserializeObject<UpsertProductLookupRequest>(body);
 
             if (string.IsNullOrWhiteSpace(request?.ItemNumber))
+            {
+                _logger.LogWarning("Scale product upsert rejected: missing itemNumber");
                 return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
             if (string.IsNullOrWhiteSpace(request.Plu))
+            {
+                _logger.LogWarning("Scale product upsert rejected: missing plu for item {ItemNumber}", request.ItemNumber);
                 return await ResponseHelper.WriteError(req, "plu is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
             if (string.IsNullOrWhiteSpace(request.ProductTitle))
+            {
+                _logger.LogWarning("Scale product upsert rejected: missing productTitle for item {ItemNumber}", request.ItemNumber);
                 return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
 
             var existing = await _tableStorage.GetProductLookupAsync(request.ItemNumber);
             if (req.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase))
             {
                 if (existing == null)
+                {
+                    _logger.LogWarning("Scale product update failed: item {ItemNumber} not found", request.ItemNumber);
                     return await ResponseHelper.WriteError(req, "Product not found", HttpStatusCode.NotFound, _allowedOrigins);
+                }
             }
             else if (existing != null)
             {
+                _logger.LogWarning("Scale product create rejected: item {ItemNumber} already mapped", request.ItemNumber);
                 return await ResponseHelper.WriteError(req, "Item number already mapped", HttpStatusCode.Conflict, _allowedOrigins);
             }
 
@@ -133,6 +162,9 @@ public class ScaleFunction
                 PricePerLb = request.PricePerLb,
             };
             await _tableStorage.UpsertProductLookupAsync(entityToSave);
+
+            _logger.LogInformation("Scale product {Action}: item {ItemNumber} -> PLU {Plu} ({ProductTitle})",
+                existing == null ? "created" : "updated", entityToSave.RowKey, entityToSave.Plu, entityToSave.ProductTitle);
 
             return await ResponseHelper.WriteSuccess(req, new
             {
@@ -183,6 +215,8 @@ public class ScaleFunction
                     qrPayload = e.QrPayload,
                     printedBy = e.PrintedBy,
                 }).ToList();
+                _logger.LogInformation("Scale print-log query returned {Count} labels (from={From}, to={To}, plu={Plu})",
+                    labels.Count, from, to, plu);
                 return await ResponseHelper.WriteSuccess(req, new { labels, total = labels.Count }, _allowedOrigins);
             }
 
@@ -190,13 +224,24 @@ public class ScaleFunction
             var request = JsonConvert.DeserializeObject<LogPrintedLabelRequest>(body);
 
             if (string.IsNullOrWhiteSpace(request?.ProductTitle))
+            {
+                _logger.LogWarning("Print log rejected: missing productTitle (item {ItemNumber})", request?.ItemNumber);
                 return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
             if (string.IsNullOrWhiteSpace(request.QrPayload))
+            {
+                _logger.LogWarning("Print log rejected: missing qrPayload (item {ItemNumber}, product {ProductTitle})",
+                    request.ItemNumber, request.ProductTitle);
                 return await ResponseHelper.WriteError(req, "qrPayload is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
             // "yyyy-MM-dd HH:mm:ss" -> "yyyyMMddHHmmss", an EST-based sort/partition key with no UTC involved
             var estSortKey = new string(request.PrintedAtEst.Where(char.IsDigit).ToArray());
             if (estSortKey.Length != 14)
+            {
+                _logger.LogWarning("Print log rejected: malformed printedAtEst {PrintedAtEst} (item {ItemNumber}, product {ProductTitle})",
+                    request.PrintedAtEst, request.ItemNumber, request.ProductTitle);
                 return await ResponseHelper.WriteError(req, "printedAtEst must be 'yyyy-MM-dd HH:mm:ss'", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
 
             var entityToSave = new PrintedLabelEntity
             {
@@ -211,6 +256,17 @@ public class ScaleFunction
                 PrintedBy = request.PrintedBy ?? userId,
             };
             await _tableStorage.LogPrintedLabelAsync(entityToSave);
+
+            if (string.IsNullOrEmpty(request.Plu) || request.Plu == "N/A")
+            {
+                _logger.LogWarning("Label printed without a PLU mapping: item {ItemNumber}, product {ProductTitle}, weight {ItemWeight}, by {PrintedBy}",
+                    request.ItemNumber, request.ProductTitle, request.ItemWeight, entityToSave.PrintedBy);
+            }
+            else
+            {
+                _logger.LogInformation("Label printed: item {ItemNumber}, PLU {Plu}, product {ProductTitle}, weight {ItemWeight}, by {PrintedBy}",
+                    request.ItemNumber, request.Plu, request.ProductTitle, request.ItemWeight, entityToSave.PrintedBy);
+            }
 
             return await ResponseHelper.WriteSuccess(req, new { ok = true, id = entityToSave.RowKey }, _allowedOrigins);
         }

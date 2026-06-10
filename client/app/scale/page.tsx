@@ -557,9 +557,11 @@ export default function ScalePage() {
       if (res.ok) {
         const data = await res.json();
         setPrintHistory((data.labels ?? []).slice(0, 10));
+      } else {
+        console.error('[scale] failed to fetch print history:', res.status, await res.text().catch(() => ''));
       }
-    } catch {
-      // ignore — history is non-critical
+    } catch (err) {
+      console.error('[scale] failed to fetch print history:', err);
     } finally {
       setHistoryLoading(false);
     }
@@ -575,20 +577,31 @@ export default function ScalePage() {
       found: false,
     };
 
-    if (!reading.itemNumber) return fallback;
+    if (!reading.itemNumber) {
+      console.warn('[scale] reading has no item number, skipping product lookup:', reading.itemName);
+      return fallback;
+    }
 
     try {
       const res = await fetch(`/api/scale/lookup?itemNumber=${encodeURIComponent(reading.itemNumber)}`);
-      if (!res.ok) return fallback;
+      if (!res.ok) {
+        console.error('[scale] product lookup request failed:', res.status, await res.text().catch(() => ''));
+        return fallback;
+      }
       const data = await res.json();
-      if (!data.found) return fallback;
+      if (!data.found) {
+        console.warn('[scale] no product mapping for item number', reading.itemNumber, '— printing with placeholder PLU');
+        return fallback;
+      }
+      console.log('[scale] product lookup hit:', reading.itemNumber, '->', data.plu, data.productTitle);
       return {
         ...fallback,
         plu: data.plu,
         productTitle: data.productTitle,
         found: true,
       };
-    } catch {
+    } catch (err) {
+      console.error('[scale] product lookup errored:', err);
       return fallback;
     }
   }, []);
@@ -607,9 +620,14 @@ export default function ScalePage() {
           qrPayload,
         }),
       });
-      if (res.ok) fetchHistory();
-    } catch {
-      // ignore — printing already happened, audit log failure shouldn't block the user
+      if (res.ok) {
+        fetchHistory();
+      } else {
+        console.error('[scale] failed to log printed label:', res.status, await res.text().catch(() => ''));
+      }
+    } catch (err) {
+      // printing already happened, audit log failure shouldn't block the user — but make sure it's visible
+      console.error('[scale] failed to log printed label:', err, '| item:', item.itemNumber, '| qr:', qrPayload);
     }
   }, [fetchHistory]);
 
@@ -631,6 +649,8 @@ export default function ScalePage() {
 
       if (printer.state === 'connected') {
         await printItem(item);
+      } else {
+        console.warn('[scale] printer not connected — label not auto-printed for', item.productTitle);
       }
     },
     [lookupProduct, printItem, printer.state]
@@ -646,12 +666,19 @@ export default function ScalePage() {
   }, []);
 
   const handleManualPrint = async () => {
-    if (!currentItem) return;
+    if (!currentItem) {
+      console.warn('[scale] manual print requested with no current item');
+      return;
+    }
     await printItem(currentItem);
   };
 
   const handleReprint = async (record: PrintedLabel) => {
-    if (printer.state !== 'connected') return;
+    if (printer.state !== 'connected') {
+      console.warn('[scale] reprint requested but printer not connected:', record.productTitle);
+      return;
+    }
+    console.log('[scale] reprinting:', record.productTitle, record.printedAtEst);
     await printer.print(record.productTitle, record.qrPayload);
     const printedAtEst = formatEst(new Date());
     await logPrintedLabel(

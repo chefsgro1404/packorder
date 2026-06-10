@@ -27,8 +27,10 @@ export function usePrinter() {
       setPortLabel('Godex DT2x');
       setState('connected');
       localStorage.setItem(STORAGE_KEY, '1');
+      console.log('[printer] connected');
     } catch (err) {
       if (err instanceof Error && err.name === 'NotFoundError') return;
+      console.error('[printer] connect failed:', err);
       setError(err instanceof Error ? err.message : 'Printer connection failed.');
       setState('error');
     }
@@ -45,12 +47,15 @@ export function usePrinter() {
       portRef.current = port;
       setPortLabel('Godex DT2x');
       setState('connected');
-    } catch {
+      console.log('[printer] auto-reconnected');
+    } catch (err) {
+      console.warn('[printer] auto-reconnect failed, clearing stored permission:', err);
       localStorage.removeItem(STORAGE_KEY);
     }
   }, []);
 
   const disconnect = useCallback(async () => {
+    console.log('[printer] disconnect requested');
     await portRef.current?.close().catch(() => {});
     portRef.current = null;
     setState('disconnected');
@@ -58,15 +63,21 @@ export function usePrinter() {
   }, []);
 
   const print = useCallback(async (productTitle: string, qrPayload: string) => {
-    if (!portRef.current) { setError('Printer not connected.'); return; }
+    if (!portRef.current) {
+      console.error('[printer] print requested but no port connected:', productTitle, qrPayload);
+      setError('Printer not connected.');
+      return;
+    }
     setState('printing');
     setError(null);
     const writer = portRef.current.writable!.getWriter();
     try {
       await writer.write(buildEZPL(productTitle, qrPayload));
+      console.log('[printer] printed:', productTitle, '| QR:', qrPayload);
       setLastPrintedAt(new Date());
       setState('connected');
     } catch (err) {
+      console.error('[printer] print failed:', err, '| product:', productTitle, '| QR:', qrPayload);
       setError(err instanceof Error ? err.message : 'Print failed.');
       setState('error');
     } finally {

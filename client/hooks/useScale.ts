@@ -73,6 +73,7 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
       if (streamDone && buffer.length > 0) {
         setState('processing');
         const result = parseScaleBuffer(buffer);
+        console.log(`[scale] received ${chunks} chunk(s), ${buffer.length} bytes:`, JSON.stringify(buffer));
 
         if (result.success && result.itemName && result.itemWeight && result.qrPayload) {
           const reading: ParsedReading = {
@@ -83,14 +84,18 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
             rawBuffer: buffer,
             timestamp: new Date(),
           };
+          console.log('[scale] parsed reading:', reading.itemName, reading.itemNumber, reading.itemWeight);
           setLastReading(reading);
           setError(null);
           onReading?.(reading);
         } else if (result.error === 'OVERLOAD') {
+          console.warn('[scale] OVERLOAD reported by scale');
           setError('Scale overload — remove excess weight and try again.');
         } else if (result.error === 'NO_ITEM') {
+          console.warn('[scale] no ITEM line found in buffer:', JSON.stringify(buffer));
           setError('No item data received. Trigger the scale again.');
         } else {
+          console.error('[scale] failed to parse buffer:', JSON.stringify(buffer), 'error:', result.error);
           setError('Could not parse scale data. Try again.');
         }
       }
@@ -118,9 +123,11 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
       setPortLabel('Scale (COM port)');
       setState('connected');
       localStorage.setItem(STORAGE_KEY, '1');
+      console.log('[scale] connected');
       startListening(port);
     } catch (err) {
       if (err instanceof Error && err.name === 'NotFoundError') return;
+      console.error('[scale] connect failed:', err);
       setError(err instanceof Error ? err.message : 'Connection failed.');
     }
   }, [startListening]);
@@ -135,13 +142,16 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
       portRef.current = ports[0];
       setPortLabel('Scale (COM port)');
       setState('connected');
+      console.log('[scale] auto-reconnected');
       startListening(ports[0]);
-    } catch {
+    } catch (err) {
+      console.warn('[scale] auto-reconnect failed, clearing stored permission:', err);
       localStorage.removeItem(STORAGE_KEY);
     }
   }, [startListening]);
 
   const disconnect = useCallback(async () => {
+    console.log('[scale] disconnect requested');
     activeRef.current = false;
     readerRef.current?.cancel().catch(() => {});
     await portRef.current?.close().catch(() => {});
