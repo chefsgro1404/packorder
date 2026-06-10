@@ -9,16 +9,19 @@ Next.js 15 (App Router) progressive web app for warehouse staff. Runs on mobile 
 | Framework | Next.js 15, App Router, React 19 |
 | Styling | Tailwind CSS 3 |
 | Barcode scanning | html5-qrcode (camera), dynamic import (SSR-safe) |
+| Hardware I/O | Web Serial API (scale + label printer), Chromium-based browsers only |
+| QR codes | qrcode.react |
 | Icons | lucide-react |
 | Deployment | Azure Static Web Apps (Standard tier, standalone output) |
 
 ## Application Modes
 
-| Mode | Route | Purpose |
-|---|---|---|
-| POS | `/pos` | Scan barcode → product lookup → add to cart → complete draft order |
-| Ship | `/ship` | Browse fulfilled Shopify orders with tracking; scan each product to record shipment; mark as shipped (complete or incomplete with reason); view shipment history with per-scan audit trail |
-| Assign Barcode | `/assign` | Search product variant → scan physical barcode → write to Shopify |
+| Mode | Route | Purpose | Auth required |
+|---|---|---|---|
+| POS | `/pos` | Scan barcode → product lookup → add to cart → complete draft order | Yes |
+| Ship | `/ship` | Browse fulfilled Shopify orders with tracking; scan each product to record shipment; mark as shipped (complete or incomplete with reason); view shipment history with per-scan audit trail | Yes |
+| Assign Barcode | `/assign` | Search product variant → scan physical barcode → write to Shopify | Yes |
+| Scale & Print | `/scale` | Read weight from a Torrey scale over USB-serial, parse the result, and auto-print a QR label on a Godex DT2x thermal printer. Reprint any of the last 10 labels from in-session history. | No — runs entirely client-side, no Shopify/Functions calls |
 
 ## Project Structure
 
@@ -29,6 +32,7 @@ client/
 │   ├── pos/page.tsx           # POS mode
 │   ├── ship/page.tsx          # Ship mode
 │   ├── assign/page.tsx        # Assign Barcode mode
+│   ├── scale/page.tsx         # Scale & Print mode (Web Serial, no auth)
 │   └── api/
 │       ├── auth/route.ts      # Proxy → GET/POST/DELETE /api/auth
 │       ├── auth/refresh/route.ts # Proxy → POST /api/auth/refresh
@@ -52,10 +56,14 @@ client/
 │   └── StatusBanner.tsx       # Inline success/error/warning banners
 ├── hooks/
 │   ├── useCart.ts             # Cart state (items, draftOrderId, total)
-│   └── useScanner.ts          # Scan debounce and beep feedback
+│   ├── useScanner.ts          # Scan debounce and beep feedback
+│   ├── useScale.ts            # Web Serial: scale connection, read loop, silence-based parsing
+│   └── usePrinter.ts          # Web Serial: printer connection, EZPL write
 ├── lib/
 │   ├── proxy.ts               # Server-side proxy helper (adds internal secret, forwards cookies)
-│   └── types.ts               # Shared TypeScript interfaces
+│   ├── types.ts               # Shared TypeScript interfaces
+│   ├── ezpl.ts                # Builds the EZPL byte payload for the Godex DT2x
+│   └── scaleParser.ts         # Parses raw Torrey scale output into item/weight
 └── public/
     └── manifest.json          # PWA manifest
 ```
@@ -71,6 +79,8 @@ Auth tokens are stored in httpOnly cookies. JavaScript on the page cannot read t
 5. **Logout**: `DELETE /api/auth` revokes both token JTIs in Azure Table Storage and responds with `Max-Age=0` on both cookies, instructing the browser to delete them immediately.
 
 No tokens are ever stored in `localStorage` or `sessionStorage`. No `Authorization` header is used. No Shopify credentials or internal secrets ever reach the browser.
+
+**Exception — `/scale`**: this route performs no authentication check and makes no requests to Functions. It is reachable without logging in, since it only talks to local USB-serial hardware via the Web Serial API. `localStorage` is used here only to remember Web Serial port permissions (`shipscale_scale_granted`, `shipscale_printer_granted`) — never auth tokens.
 
 ## Proxy Route Pattern
 
@@ -133,6 +143,41 @@ The app is configured as an installable PWA via `public/manifest.json` and meta 
 ## Ship Mode — Staff Name
 
 Ship mode reads and writes the staff name to `localStorage` under the key `shipscan_staff_name`. On first visit, a bottom-sheet prompt asks for the staff name before shipping can begin. The name is pre-filled in the completion modal and recorded on every `ShipmentScanEntity` and `FulfillmentShipmentEntity` written to Table Storage. To change the name, tap the name chip in the top-left of the Ship list screen.
+
+## Scale & Print Mode — Hardware Integration
+
+`/scale` connects directly to two USB-serial devices from the browser using the **Web Serial API** (`navigator.serial`). It makes no calls to `/api/*` or the Functions backend — all parsing and printing happens client-side. Only available in Chromium-based browsers (Chrome, Edge); Safari and Firefox do not implement Web Serial.
+
+### Devices
+
+| Device | Connection | Settings |
+|---|---|---|
+| Torrey scale | USB-to-serial (e.g. COM3) | `baudRate: 9600, dataBits: 8, parity: none, stopBits: 1, flowControl: none` |
+| Godex DT2x label printer | USB-serial | `baudRate: 9600`, raw EZPL bytes |
+
+### Connection lifecycle
+
+1. **First use**: the user must click "Connect" for each device in the Device Setup panel. `navigator.serial.requestPort()` opens the browser's port picker — this call only works inside a click handler (browser security requirement).
+2. On success, a flag (`shipscale_scale_granted` / `shipscale_printer_granted`) is written to `localStorage` and the port is opened.
+3. **Every subsequent visit**: `useScale`/`usePrinter` call `navigator.serial.getPorts()` on mount, which returns ports the browser has already granted — no click required, no port picker shown. The page reconnects silently.
+4. Permission persists per browser profile/origin until the user revokes it via the browser's site settings or clears site data, at which point the `localStorage` flag is cleared and the connect buttons reappear.
+
+### Scale read flow (`hooks/useScale.ts`)
+
+1. Staff weighs an item and triggers the scale's transmit sequence (`RCL → 01 → M+`).
+2. The scale streams data in several chunks over ~500–1500ms. The hook accumulates every chunk into a buffer.
+3. A 50ms poll checks for **2000ms of silence** since the last chunk — once hit, the read is considered complete and the buffer is parsed.
+4. `lib/scaleParser.ts` extracts the first line containing `ITEM`, then pulls the item name (`ITEM \d+`) and weight (`\d+\.\d+\s*lb`) via regex. `OVERLOAD` in the buffer is reported as a distinct error.
+5. On a successful parse, if the printer is connected the label is printed automatically and added to print history.
+
+### Label printing (`lib/ezpl.ts`)
+
+Builds a raw EZPL command sequence (label height/width, text fields for item name and weight, and a QR code encoding `"<itemName> | <itemWeight>"`), joined with `\r`-only line endings (no `\n`) and sent as ASCII bytes via `port.writable`. Reprinting from history re-runs the same `print()` call with the stored item/weight.
+
+### Notes / future tuning
+
+- Label dimensions (`^Q`/`^W` in `lib/ezpl.ts`) are currently `38,3` / `57` (57mm × 38mm). If labels print at the wrong size, adjust these two values to match the physical label stock and printer driver configuration.
+- The scale parser assumes the Torrey's default `ITEM N $ price weight lb` output format. If the scale firmware/format changes, update the regexes in `lib/scaleParser.ts`.
 
 ## Notable Implementation Details
 
