@@ -475,27 +475,45 @@ public class TableStorageService
         var lineItems = JsonConvert.DeserializeObject<List<ShipmentLineItemCache>>(entity.LineItemsJson)
             ?? new List<ShipmentLineItemCache>();
 
-        var item = new ShipmentLineItemCache
+        // If this barcode was already added as an extra item, just bump its quantity
+        // instead of creating a duplicate line item.
+        var existingExtra = lineItems.FirstOrDefault(li =>
+            li.IsExtra && !string.IsNullOrEmpty(li.Barcode) &&
+            li.Barcode.Equals(barcode, StringComparison.OrdinalIgnoreCase));
+
+        ShipmentLineItemCache item;
+        if (existingExtra != null)
         {
-            FulfillmentLineItemId = $"extra-{Guid.NewGuid():N}",
-            LineItemId            = "",
-            Name                  = shopifyVariant != null ? $"{shopifyVariant.Product.Title} - {shopifyVariant.Title}" : barcode,
-            QuantityExpected      = 1,
-            QuantityShipped       = 1,
-            VariantId             = shopifyVariant?.Id,
-            Sku                   = shopifyVariant?.Sku,
-            Barcode               = shopifyVariant?.Barcode ?? barcode,
-            ProductTitle          = shopifyVariant?.Product.Title ?? $"Unknown item ({barcode})",
-            VariantTitle          = shopifyVariant?.Title,
-            ImageUrl              = shopifyVariant?.Product.FeaturedImage?.Url,
-            Price                 = shopifyVariant?.Price ?? "0.00",
-            Weight                = shopifyVariant?.Weight,
-            WeightUnit            = shopifyVariant?.WeightUnit,
-            IsExtra               = true,
-            AddedReason           = reason,
-            AddedBy               = scannedBy,
-        };
-        lineItems.Add(item);
+            existingExtra.QuantityExpected++;
+            existingExtra.QuantityShipped++;
+            existingExtra.AddedReason = reason;
+            existingExtra.AddedBy = scannedBy;
+            item = existingExtra;
+        }
+        else
+        {
+            item = new ShipmentLineItemCache
+            {
+                FulfillmentLineItemId = $"extra-{Guid.NewGuid():N}",
+                LineItemId            = "",
+                Name                  = shopifyVariant != null ? $"{shopifyVariant.Product.Title} - {shopifyVariant.Title}" : barcode,
+                QuantityExpected      = 1,
+                QuantityShipped       = 1,
+                VariantId             = shopifyVariant?.Id,
+                Sku                   = shopifyVariant?.Sku,
+                Barcode               = shopifyVariant?.Barcode ?? barcode,
+                ProductTitle          = shopifyVariant?.Product.Title ?? $"Unknown item ({barcode})",
+                VariantTitle          = shopifyVariant?.Title,
+                ImageUrl              = shopifyVariant?.Product.FeaturedImage?.Url,
+                Price                 = shopifyVariant?.Price ?? "0.00",
+                Weight                = shopifyVariant?.Weight,
+                WeightUnit            = shopifyVariant?.WeightUnit,
+                IsExtra               = true,
+                AddedReason           = reason,
+                AddedBy               = scannedBy,
+            };
+            lineItems.Add(item);
+        }
 
         var totalShipped = lineItems.Sum(li => li.QuantityShipped);
         entity.Status = totalShipped == 0 ? "pending" : "partial";

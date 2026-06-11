@@ -27,11 +27,11 @@ import {
   ExternalLink,
   ArrowUp,
   ArrowDown,
-  ArrowUpDown,
 } from "lucide-react";
 
 type ActiveStep = "list" | "detail" | "scanning";
-type ScanStep = "idle" | "confirm" | "not-in-order";
+type ScanStep = "idle" | "confirm" | "extra-prompt";
+type ExtraContext = "not-in-order" | "exceeded";
 type ScanMode = "regular" | "fast";
 type HistoryType = "all" | "complete" | "incomplete";
 
@@ -63,7 +63,7 @@ export default function ShipPage() {
   const [syncRange, setSyncRange] = useState({ from: "", to: "" });
   const [pendingSyncRange, setPendingSyncRange] = useState({ from: "", to: "" });
   const [filterText, setFilterText] = useState("");
-  const [orderSort, setOrderSort] = useState<"none" | "asc" | "desc">("none");
+  const [orderSort, setOrderSort] = useState<"asc" | "desc">("desc");
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedFulfillment, setSelectedFulfillment] = useState<ShipmentFulfillment | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
@@ -73,6 +73,7 @@ export default function ShipPage() {
   const [scanStep, setScanStep] = useState<ScanStep>("idle");
   const [pendingBarcode, setPendingBarcode] = useState("");
   const [pendingItem, setPendingItem] = useState<ShipmentLineItem | null>(null);
+  const [extraContext, setExtraContext] = useState<ExtraContext>("not-in-order");
   const [extraReason, setExtraReason] = useState("");
   const [extraLoading, setExtraLoading] = useState(false);
 
@@ -230,7 +231,11 @@ export default function ShipPage() {
           ? { ...li, quantityShipped }
           : li
       );
-      if (extraItem) lineItems = [...lineItems, extraItem];
+      if (extraItem) {
+        const existingIdx = lineItems.findIndex((li) => li.fulfillmentLineItemId === extraItem.fulfillmentLineItemId);
+        if (existingIdx >= 0) lineItems[existingIdx] = extraItem;
+        else lineItems = [...lineItems, extraItem];
+      }
       const updated = { ...prev, status, lineItems };
       setFulfillments((all) =>
         all.map((f) => (f.fulfillmentId === fulfillmentId ? updated : f))
@@ -296,13 +301,19 @@ export default function ShipPage() {
 
     if (!item) {
       setPendingBarcode(barcode);
+      setPendingItem(null);
       setExtraReason("");
-      setScanStep("not-in-order");
+      setExtraContext("not-in-order");
+      setScanStep("extra-prompt");
       return;
     }
 
     if (item.quantityShipped >= item.quantityExpected) {
-      setBanner({ type: "warning", message: `${item.productTitle} already fully scanned` });
+      setPendingBarcode(barcode);
+      setPendingItem(item);
+      setExtraReason("");
+      setExtraContext("exceeded");
+      setScanStep("extra-prompt");
       return;
     }
 
@@ -377,6 +388,7 @@ export default function ShipPage() {
 
       setScanStep("idle");
       setPendingBarcode("");
+      setPendingItem(null);
       setExtraReason("");
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to add item" });
@@ -389,6 +401,7 @@ export default function ShipPage() {
     setBanner({ type: "info", message: "Scan discarded — item not added" });
     setScanStep("idle");
     setPendingBarcode("");
+    setPendingItem(null);
     setExtraReason("");
   }, []);
 
@@ -669,6 +682,8 @@ export default function ShipPage() {
               ? "Point camera at barcode to scan"
               : scanStep === "confirm"
               ? "Confirm before recording"
+              : extraContext === "exceeded"
+              ? "This item has already reached its expected quantity"
               : "This item is not in this order"}
           </p>
 
@@ -725,20 +740,24 @@ export default function ShipPage() {
               <div className="bg-amber-900/30 border border-amber-700 rounded-xl p-4 space-y-2">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-amber-200">This item is not in this order</p>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-amber-200">
+                      {extraContext === "exceeded"
+                        ? `${pendingItem?.productTitle ?? "This item"} is already fully packed (${pendingItem?.quantityShipped}/${pendingItem?.quantityExpected})`
+                        : "This item is not in this order"}
+                    </p>
                     <p className="text-xs text-amber-300/80 mt-0.5">
                       Scanned barcode: <span className="font-mono">{pendingBarcode}</span>
                     </p>
                     <p className="text-xs text-amber-300/80 mt-1">
-                      Add it anyway? A reason is required.
+                      Pack one more anyway? A reason is required — it will be recorded as an extra item.
                     </p>
                   </div>
                 </div>
                 <textarea
                   value={extraReason}
                   onChange={(e) => setExtraReason(e.target.value)}
-                  placeholder="Why is this item being added? (e.g. substitution, customer request)"
+                  placeholder="Why is this item being added? (e.g. substitution, customer request, extra unit)"
                   rows={2}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
                 />
@@ -1171,11 +1190,13 @@ export default function ShipPage() {
                               </span>
                             </>
                           )}
-                          {scan.isManualOverride && (
-                            <span className="text-orange-400">(manual)</span>
+                          {scan.isRemoval && (
+                            <span className="text-red-400">(removed)</span>
                           )}
-                          {scan.isManualLineItem && (
-                            <span className="text-blue-400">(tapped)</span>
+                          {scan.isExtra && (
+                            <span className="text-amber-400">
+                              (extra{scan.extraReason ? `: ${scan.extraReason}` : ""})
+                            </span>
                           )}
                         </div>
                       ))}
@@ -1222,12 +1243,10 @@ export default function ShipPage() {
 
   const getOrderNumber = (orderName: string) => parseInt(orderName.replace(/\D/g, ""), 10) || 0;
 
-  if (orderSort !== "none") {
-    filteredFulfillments.sort((a, b) => {
-      const diff = getOrderNumber(a.orderName) - getOrderNumber(b.orderName);
-      return orderSort === "asc" ? diff : -diff;
-    });
-  }
+  filteredFulfillments.sort((a, b) => {
+    const diff = getOrderNumber(a.orderName) - getOrderNumber(b.orderName);
+    return orderSort === "asc" ? diff : -diff;
+  });
 
   return (
     <main className="min-h-screen flex flex-col bg-slate-950">
@@ -1399,18 +1418,14 @@ export default function ShipPage() {
               <div className="flex items-center gap-2">
                 {syncLoading && <span className="text-green-400">Syncing…</span>}
                 <button
-                  onClick={() =>
-                    setOrderSort((s) => (s === "none" ? "asc" : s === "asc" ? "desc" : "none"))
-                  }
+                  onClick={() => setOrderSort((s) => (s === "asc" ? "desc" : "asc"))}
                   className="inline-flex items-center gap-1 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
-                  title="Sort by order number"
+                  title={`Sort by order number (${orderSort === "asc" ? "ascending" : "descending"})`}
                 >
                   {orderSort === "asc" ? (
                     <ArrowUp className="w-3 h-3" />
-                  ) : orderSort === "desc" ? (
-                    <ArrowDown className="w-3 h-3" />
                   ) : (
-                    <ArrowUpDown className="w-3 h-3" />
+                    <ArrowDown className="w-3 h-3" />
                   )}
                   Order #
                 </button>
