@@ -25,6 +25,9 @@ import {
   Filter,
   AlertTriangle,
   ExternalLink,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
 } from "lucide-react";
 
 type ActiveStep = "list" | "detail" | "scanning";
@@ -60,6 +63,7 @@ export default function ShipPage() {
   const [syncRange, setSyncRange] = useState({ from: "", to: "" });
   const [pendingSyncRange, setPendingSyncRange] = useState({ from: "", to: "" });
   const [filterText, setFilterText] = useState("");
+  const [orderSort, setOrderSort] = useState<"none" | "asc" | "desc">("none");
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedFulfillment, setSelectedFulfillment] = useState<ShipmentFulfillment | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
@@ -1123,6 +1127,15 @@ export default function ShipPage() {
     );
   });
 
+  const getOrderNumber = (orderName: string) => parseInt(orderName.replace(/\D/g, ""), 10) || 0;
+
+  if (orderSort !== "none") {
+    filteredFulfillments.sort((a, b) => {
+      const diff = getOrderNumber(a.orderName) - getOrderNumber(b.orderName);
+      return orderSort === "asc" ? diff : -diff;
+    });
+  }
+
   return (
     <main className="min-h-screen flex flex-col bg-slate-950">
       {/* Top bar */}
@@ -1290,7 +1303,25 @@ export default function ShipPage() {
               <span>
                 {filteredFulfillments.length} pending shipment{filteredFulfillments.length !== 1 ? "s" : ""}
               </span>
-              {syncLoading && <span className="text-green-400">Syncing…</span>}
+              <div className="flex items-center gap-2">
+                {syncLoading && <span className="text-green-400">Syncing…</span>}
+                <button
+                  onClick={() =>
+                    setOrderSort((s) => (s === "none" ? "asc" : s === "asc" ? "desc" : "none"))
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+                  title="Sort by order number"
+                >
+                  {orderSort === "asc" ? (
+                    <ArrowUp className="w-3 h-3" />
+                  ) : orderSort === "desc" ? (
+                    <ArrowDown className="w-3 h-3" />
+                  ) : (
+                    <ArrowUpDown className="w-3 h-3" />
+                  )}
+                  Order #
+                </button>
+              </div>
             </div>
             {banner && activeStep === "list" && (
               <StatusBanner type={banner.type} message={banner.message} />
