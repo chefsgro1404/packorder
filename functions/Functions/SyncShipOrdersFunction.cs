@@ -39,7 +39,7 @@ public class SyncShipOrdersFunction
 
         try
         {
-            var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
+            var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync(from, to);
 
             foreach (var e in entities)
                 _logger.LogInformation("Ship order sync: candidate {OrderName} fulfillment {FulfillmentId} createdAt={CreatedAt:yyyy-MM-dd} (status={Status})",

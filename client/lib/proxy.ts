@@ -32,8 +32,15 @@ export async function proxyToFunctions(
 
   let azureRes: Response;
   try {
-    azureRes = await fetch(url.toString(), { method, headers, body });
-  } catch {
+    // Sync can legitimately run close to the backend's functionTimeout (9.5 min, host.json) — give it
+    // a little more than that so we only time out here if the backend would have anyway. Everything
+    // else should be fast and fails quickly to surface real connectivity problems.
+    const timeoutMs = path.startsWith("sync/") ? 10 * 60_000 : 30_000;
+    azureRes = await fetch(url.toString(), { method, headers, body, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") {
+      return NextResponse.json({ error: "Backend request timed out" }, { status: 504 });
+    }
     return NextResponse.json({ error: "Backend unreachable" }, { status: 502 });
   }
 

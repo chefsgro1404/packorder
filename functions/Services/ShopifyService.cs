@@ -573,11 +573,11 @@ public class ShopifyService
         }";
 
     private const string SyncFulfilledOrdersQuery = @"
-        query SyncFulfilledOrders($cursor: String) {
+        query SyncFulfilledOrders($cursor: String, $query: String!) {
           orders(
             first: 100
             after: $cursor
-            query: ""(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos""
+            query: $query
             sortKey: CREATED_AT
             reverse: true
           ) {
@@ -593,7 +593,14 @@ public class ShopifyService
           }
         }";
 
-    public async Task<List<FulfillmentShipmentEntity>> FetchFulfilledOrdersWithTrackingAsync()
+    /// <summary>
+    /// Fetches fulfilled/partial, non-POS orders whose `updatedAt` falls within [from-1day, to+1day]
+    /// (a 1-day buffer covers timezone differences between our UTC date range and Shopify's stored
+    /// timestamps), then narrows to fulfillments whose own `createdAt` falls within [from, to] and
+    /// have tracking info. Scoping the Shopify-side query by `updated_at` avoids paginating through
+    /// the store's entire fulfillment history on every sync.
+    /// </summary>
+    public async Task<List<FulfillmentShipmentEntity>> FetchFulfilledOrdersWithTrackingAsync(DateTime from, DateTime to)
     {
         var results = new List<FulfillmentShipmentEntity>();
         string? cursor = null;
@@ -601,12 +608,16 @@ public class ShopifyService
         var page = 0;
         var totalOrders = 0;
 
-        _logger.LogInformation("FetchFulfilledOrdersWithTracking: starting Shopify query \"(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos\"");
+        var updatedFrom = from.AddDays(-1).ToString("yyyy-MM-dd");
+        var updatedTo = to.AddDays(1).ToString("yyyy-MM-dd");
+        var searchQuery = $"(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos AND updated_at:>='{updatedFrom}' AND updated_at:<='{updatedTo}'";
+
+        _logger.LogInformation("FetchFulfilledOrdersWithTracking: starting Shopify query \"{Query}\"", searchQuery);
 
         while (hasMore)
         {
             page++;
-            var data = await GraphQlAsync(SyncFulfilledOrdersQuery, new { cursor });
+            var data = await GraphQlAsync(SyncFulfilledOrdersQuery, new { cursor, query = searchQuery });
             var orders = data["orders"];
             var pageInfo = orders?["pageInfo"];
             hasMore = pageInfo?["hasNextPage"]?.Value<bool>() ?? false;
