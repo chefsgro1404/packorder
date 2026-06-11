@@ -598,17 +598,30 @@ public class ShopifyService
         var results = new List<FulfillmentShipmentEntity>();
         string? cursor = null;
         bool hasMore = true;
+        var page = 0;
+        var totalOrders = 0;
+
+        _logger.LogInformation("FetchFulfilledOrdersWithTracking: starting Shopify query \"(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos\"");
 
         while (hasMore)
         {
+            page++;
             var data = await GraphQlAsync(SyncFulfilledOrdersQuery, new { cursor });
             var orders = data["orders"];
             var pageInfo = orders?["pageInfo"];
             hasMore = pageInfo?["hasNextPage"]?.Value<bool>() ?? false;
             cursor = pageInfo?["endCursor"]?.ToString();
 
-            results.AddRange(ParseFulfillmentEntities((orders?["edges"] as JArray) ?? new JArray()));
+            var edges = (orders?["edges"] as JArray) ?? new JArray();
+            totalOrders += edges.Count;
+            _logger.LogInformation("FetchFulfilledOrdersWithTracking: page {Page} returned {OrderCount} orders (hasNextPage={HasMore})",
+                page, edges.Count, hasMore);
+
+            results.AddRange(ParseFulfillmentEntities(edges));
         }
+
+        _logger.LogInformation("FetchFulfilledOrdersWithTracking: {OrderCount} order(s) matched fulfillment_status filter, {FulfillmentCount} fulfillment(s) had tracking info and were returned",
+            totalOrders, results.Count);
 
         return results;
     }
@@ -631,7 +644,7 @@ public class ShopifyService
         return (true, orderName, displayStatus, ParseFulfillmentEntities(edges));
     }
 
-    private static List<FulfillmentShipmentEntity> ParseFulfillmentEntities(JArray edges)
+    private List<FulfillmentShipmentEntity> ParseFulfillmentEntities(JArray edges)
     {
         var results = new List<FulfillmentShipmentEntity>();
         foreach (var edge in edges)
@@ -650,11 +663,23 @@ public class ShopifyService
                     ? shippingAddrToken.ToString(Formatting.None) : null;
 
                 var fulfillments = order["fulfillments"] as JArray ?? new JArray();
+                if (fulfillments.Count == 0)
+                {
+                    _logger.LogInformation("ParseFulfillmentEntities: order {OrderName} (status={Status}) has no fulfillments, skipping",
+                        orderName, order["displayFulfillmentStatus"]?.ToString());
+                    continue;
+                }
+
                 foreach (var fulfillment in fulfillments)
                 {
                     var trackingArray = fulfillment["trackingInfo"] as JArray ?? new JArray();
                     var firstTracking = trackingArray.FirstOrDefault(t => !string.IsNullOrEmpty(t["number"]?.ToString()));
-                    if (firstTracking == null) continue;
+                    if (firstTracking == null)
+                    {
+                        _logger.LogInformation("ParseFulfillmentEntities: order {OrderName} fulfillment {FulfillmentId} (status={Status}) has no tracking number, skipping",
+                            orderName, fulfillment["id"]?.ToString(), fulfillment["status"]?.ToString());
+                        continue;
+                    }
 
                     var trackingNumber       = firstTracking["number"]!.ToString();
                     var trackingCarrier      = firstTracking["company"]?.ToString();
@@ -702,7 +727,12 @@ public class ShopifyService
                         });
                     }
 
-                    if (lineItems.Count == 0) continue;
+                    if (lineItems.Count == 0)
+                    {
+                        _logger.LogInformation("ParseFulfillmentEntities: order {OrderName} fulfillment {FulfillmentId} has tracking but no usable line items, skipping",
+                            orderName, fulfillment["id"]?.ToString());
+                        continue;
+                    }
 
                     results.Add(new FulfillmentShipmentEntity
                     {

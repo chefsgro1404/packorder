@@ -35,6 +35,7 @@ public class SyncShipOrdersFunction
             return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
 
         var (from, to) = ParseDateRange(req);
+        _logger.LogInformation("Ship order sync requested. Date range {From:yyyy-MM-dd}..{To:yyyy-MM-dd}", from, to);
 
         // Return 202 immediately — sync can take minutes on large stores and will
         // exceed the SWA gateway timeout if we await the full result synchronously.
@@ -42,16 +43,24 @@ public class SyncShipOrdersFunction
 
         _ = Task.Run(async () =>
         {
+            _logger.LogInformation("Ship order sync background task started for {From:yyyy-MM-dd}..{To:yyyy-MM-dd}", from, to);
             try
             {
                 var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
+
+                foreach (var e in entities)
+                    _logger.LogInformation("Ship order sync: candidate {OrderName} fulfillment {FulfillmentId} createdAt={CreatedAt:yyyy-MM-dd} (status={Status})",
+                        e.OrderName, e.FulfillmentId, e.FulfillmentCreatedAt.UtcDateTime, e.ShopifyFulfillmentStatus);
+
                 var inRange = entities
                     .Where(e => e.FulfillmentCreatedAt.UtcDateTime.Date >= from && e.FulfillmentCreatedAt.UtcDateTime.Date <= to)
                     .ToList();
 
-                await _tableStorage.SyncFulfillmentShipmentsAsync(inRange);
-                _logger.LogInformation("Ship order sync complete. {Synced} of {Total} fulfillments matched {From:yyyy-MM-dd}..{To:yyyy-MM-dd}",
+                _logger.LogInformation("Ship order sync: {InRange} of {Total} candidates fall within {From:yyyy-MM-dd}..{To:yyyy-MM-dd}",
                     inRange.Count, entities.Count, from, to);
+
+                await _tableStorage.SyncFulfillmentShipmentsAsync(inRange);
+                _logger.LogInformation("Ship order sync complete. Upserted {Synced} fulfillment(s)", inRange.Count);
             }
             catch (Exception ex)
             {
