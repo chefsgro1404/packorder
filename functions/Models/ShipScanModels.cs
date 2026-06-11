@@ -611,6 +611,18 @@ public class ShipmentScanEntity : ITableEntity
     public string? Price { get; set; }
     public double? Weight { get; set; }
     public string? WeightUnit { get; set; }
+    public string? QrSn { get; set; }
+    public string? PackagedAt { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class ScannedLabelEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "sn";
+    public string RowKey { get; set; } = "";   // the label's serial number
+    public string FulfillmentId { get; set; } = "";
+    public DateTimeOffset ScannedAt { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -626,6 +638,9 @@ public class RecordShipScanRequest
     [JsonProperty("isManualLineItem")]      public bool IsManualLineItem { get; set; }
     [JsonProperty("fulfillmentLineItemId")] public string? FulfillmentLineItemId { get; set; }
     [JsonProperty("scannedBy")]             public string ScannedBy { get; set; } = "";
+    [JsonProperty("plu")]                   public string? Plu { get; set; }
+    [JsonProperty("qrSn")]                  public string? QrSn { get; set; }
+    [JsonProperty("packagedAt")]            public string? PackagedAt { get; set; }
 }
 
 public class AddExtraItemRequest
@@ -634,6 +649,10 @@ public class AddExtraItemRequest
     [JsonProperty("barcode")]       public string Barcode { get; set; } = "";
     [JsonProperty("reason")]        public string Reason { get; set; } = "";
     [JsonProperty("scannedBy")]     public string ScannedBy { get; set; } = "";
+    [JsonProperty("plu")]           public string? Plu { get; set; }
+    [JsonProperty("qrSn")]          public string? QrSn { get; set; }
+    [JsonProperty("weightGrams")]   public double? WeightGrams { get; set; }
+    [JsonProperty("packagedAt")]    public string? PackagedAt { get; set; }
 }
 
 public class RemoveScanRequest
@@ -682,6 +701,7 @@ public class PrintedLabelEntity : ITableEntity
     public string PrintedAtEst { get; set; } = "";
     public string QrPayload { get; set; } = "";
     public string? PrintedBy { get; set; }
+    public string? Sn { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -695,4 +715,5 @@ public class LogPrintedLabelRequest
     [JsonProperty("printedAtEst")] public string PrintedAtEst { get; set; } = "";
     [JsonProperty("qrPayload")]    public string QrPayload { get; set; } = "";
     [JsonProperty("printedBy")]    public string? PrintedBy { get; set; }
+    [JsonProperty("sn")]           public string? Sn { get; set; }
 }

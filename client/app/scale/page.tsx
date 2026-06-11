@@ -39,9 +39,13 @@ interface CurrentItem {
   found: boolean;
 }
 
-function buildQrPayload(item: CurrentItem, printedAtEst: string): string {
+function generateSn(): string {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+}
+
+function buildQrPayload(item: CurrentItem, printedAtEst: string, sn: string): string {
   const plu = item.found ? item.plu : 'N/A';
-  return `${plu} | ${item.productTitle} | ${item.itemWeight} | ${printedAtEst}`;
+  return `${plu} | ${item.productTitle} | ${item.itemWeight} | ${printedAtEst} | SN:${sn}`;
 }
 
 // ─── Status indicator dot ────────────────────────────────────────────────────
@@ -190,7 +194,7 @@ function LabelPreview({
 }) {
   const [copied, setCopied] = useState(false);
 
-  const previewQrPayload = item ? buildQrPayload(item, formatEst(new Date())) : '';
+  const previewQrPayload = item ? buildQrPayload(item, formatEst(new Date()), 'preview') : '';
 
   const handleCopy = async () => {
     if (!item) return;
@@ -606,7 +610,7 @@ export default function ScalePage() {
     }
   }, []);
 
-  const logPrintedLabel = useCallback(async (item: CurrentItem, qrPayload: string, printedAtEst: string) => {
+  const logPrintedLabel = useCallback(async (item: CurrentItem, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
       const res = await fetch('/api/scale/print-log', {
         method: 'POST',
@@ -618,6 +622,7 @@ export default function ScalePage() {
           itemWeight: item.itemWeight,
           printedAtEst,
           qrPayload,
+          sn,
         }),
       });
       if (res.ok) {
@@ -633,10 +638,11 @@ export default function ScalePage() {
 
   const printItem = useCallback(async (item: CurrentItem) => {
     const printedAtEst = formatEst(new Date());
-    const qrPayload = buildQrPayload(item, printedAtEst);
+    const sn = generateSn();
+    const qrPayload = buildQrPayload(item, printedAtEst, sn);
     await printer.print(item.productTitle, qrPayload);
     setPrintedAt(new Date());
-    await logPrintedLabel(item, qrPayload, printedAtEst);
+    await logPrintedLabel(item, qrPayload, printedAtEst, sn);
   }, [printer, logPrintedLabel]);
 
   const handleReading = useCallback(
@@ -691,7 +697,8 @@ export default function ScalePage() {
         found: true,
       },
       record.qrPayload,
-      printedAtEst
+      printedAtEst,
+      record.sn ?? generateSn()
     );
   };
 

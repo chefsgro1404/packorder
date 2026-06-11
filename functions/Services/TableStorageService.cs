@@ -18,6 +18,7 @@ public class TableStorageService
     private readonly TableClient _shipmentScans;
     private readonly TableClient _productLookup;
     private readonly TableClient _printedLabels;
+    private readonly TableClient _scannedLabels;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -33,6 +34,7 @@ public class TableStorageService
         _shipmentScans        = tableServiceClient.GetTableClient("shipmentscans");
         _productLookup        = tableServiceClient.GetTableClient("productlookup");
         _printedLabels        = tableServiceClient.GetTableClient("printedlabels");
+        _scannedLabels        = tableServiceClient.GetTableClient("scannedlabels");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -47,6 +49,7 @@ public class TableStorageService
         await _shipmentScans.CreateIfNotExistsAsync();
         await _productLookup.CreateIfNotExistsAsync();
         await _printedLabels.CreateIfNotExistsAsync();
+        await _scannedLabels.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -439,7 +442,7 @@ public class TableStorageService
                 VariantId             = matched.VariantId,
                 Sku                   = matched.Sku,
                 Barcode               = request.Barcode,
-                Plu                   = request.IsVariableWeight ? request.Barcode : null,
+                Plu                   = request.Plu ?? (request.IsVariableWeight ? request.Barcode : null),
                 ProductTitle          = matched.ProductTitle,
                 VariantTitle          = matched.VariantTitle,
                 QuantityShipped       = 1,
@@ -453,6 +456,8 @@ public class TableStorageService
                 Price                 = matched.Price,
                 Weight                = matched.Weight,
                 WeightUnit            = matched.WeightUnit,
+                QrSn                  = request.QrSn,
+                PackagedAt            = request.PackagedAt,
             };
             await _shipmentScans.AddEntityAsync(scanEntity);
         }
@@ -461,12 +466,25 @@ public class TableStorageService
             _logger.LogWarning("Failed to log shipment scan: {Message}", ex.Message);
         }
 
+        if (!string.IsNullOrEmpty(request.QrSn))
+        {
+            try
+            {
+                await MarkLabelScannedAsync(request.QrSn, request.FulfillmentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Failed to mark label {Sn} as scanned: {Message}", request.QrSn, ex.Message);
+            }
+        }
+
         return (true, false, entity, matched);
     }
 
     public async Task<(FulfillmentShipmentEntity? Entity, ShipmentLineItemCache? Item)> AddExtraItemAsync(
         string fulfillmentId, string barcode, string reason, string scannedBy,
-        string orderName, string orderId, string trackingNumber, ProductVariant? shopifyVariant)
+        string orderName, string orderId, string trackingNumber, ProductVariant? shopifyVariant,
+        string? plu = null, string? qrSn = null, double? weightGrams = null, string? packagedAt = null)
     {
         var numericId = StripGid(fulfillmentId);
         var entity = await GetFulfillmentShipmentAsync(numericId);
@@ -546,12 +564,29 @@ public class TableStorageService
                 Price                 = item.Price,
                 Weight                = item.Weight,
                 WeightUnit            = item.WeightUnit,
+                Plu                   = plu,
+                QrSn                  = qrSn,
+                WeightGrams           = weightGrams,
+                PackagedAt            = packagedAt,
+                IsVariableWeight      = qrSn != null,
             };
             await _shipmentScans.AddEntityAsync(scanEntity);
         }
         catch (Exception ex)
         {
             _logger.LogWarning("Failed to log extra item scan: {Message}", ex.Message);
+        }
+
+        if (!string.IsNullOrEmpty(qrSn))
+        {
+            try
+            {
+                await MarkLabelScannedAsync(qrSn, fulfillmentId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Failed to mark label {Sn} as scanned: {Message}", qrSn, ex.Message);
+            }
         }
 
         return (entity, item);
@@ -741,5 +776,39 @@ public class TableStorageService
             results.Add(e);
         }
         return results.OrderByDescending(e => e.PrintedAtEst, StringComparer.Ordinal).ToList();
+    }
+
+    public async Task<PrintedLabelEntity?> GetPrintedLabelBySnAsync(string sn)
+    {
+        await foreach (var e in _printedLabels.QueryAsync<PrintedLabelEntity>(l => l.Sn == sn))
+            return e;
+        return null;
+    }
+
+    // ─── QR label scan-duplicate detection ───────────────────────────────────
+
+    public async Task<ScannedLabelEntity?> GetScannedLabelAsync(string sn)
+    {
+        try
+        {
+            var response = await _scannedLabels.GetEntityAsync<ScannedLabelEntity>("sn", sn);
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task MarkLabelScannedAsync(string sn, string fulfillmentId)
+    {
+        var entity = new ScannedLabelEntity
+        {
+            PartitionKey = "sn",
+            RowKey = sn,
+            FulfillmentId = fulfillmentId,
+            ScannedAt = DateTimeOffset.UtcNow,
+        };
+        await _scannedLabels.UpsertEntityAsync(entity, TableUpdateMode.Replace);
     }
 }

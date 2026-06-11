@@ -51,6 +51,19 @@ public class ShipmentFunction
             if (entity == null)
                 return await ResponseHelper.WriteError(req, "Fulfillment not found", HttpStatusCode.NotFound, _allowedOrigins);
 
+            if (!string.IsNullOrEmpty(request.QrSn))
+            {
+                var existingScan = await _tableStorage.GetScannedLabelAsync(request.QrSn);
+                if (existingScan != null)
+                    return await ResponseHelper.WriteSuccess(req, new
+                    {
+                        matched = true,
+                        duplicate = true,
+                        scannedAt = existingScan.ScannedAt.ToString("o"),
+                        fulfillmentId = existingScan.FulfillmentId,
+                    }, _allowedOrigins);
+            }
+
             var (matched, alreadyFull, updatedEntity, matchedItem) = await _tableStorage.RecordShipmentScanAsync(
                 request, entity.OrderName, entity.OrderId, entity.TrackingNumber);
 
@@ -114,11 +127,25 @@ public class ShipmentFunction
             if (entity == null)
                 return await ResponseHelper.WriteError(req, "Fulfillment not found", HttpStatusCode.NotFound, _allowedOrigins);
 
+            if (!string.IsNullOrEmpty(request.QrSn))
+            {
+                var existingScan = await _tableStorage.GetScannedLabelAsync(request.QrSn);
+                if (existingScan != null)
+                    return await ResponseHelper.WriteSuccess(req, new
+                    {
+                        ok = true,
+                        duplicate = true,
+                        scannedAt = existingScan.ScannedAt.ToString("o"),
+                        fulfillmentId = existingScan.FulfillmentId,
+                    }, _allowedOrigins);
+            }
+
             var shopifyVariant = await _shopify.GetVariantByBarcodeAsync(request.Barcode);
 
             var (updatedEntity, item) = await _tableStorage.AddExtraItemAsync(
                 request.FulfillmentId, request.Barcode, request.Reason, request.ScannedBy,
-                entity.OrderName, entity.OrderId, entity.TrackingNumber, shopifyVariant);
+                entity.OrderName, entity.OrderId, entity.TrackingNumber, shopifyVariant,
+                request.Plu, request.QrSn, request.WeightGrams, request.PackagedAt);
 
             return await ResponseHelper.WriteSuccess(req, new
             {
@@ -343,6 +370,7 @@ public class ShipmentFunction
                 isManualOverride = s.IsManualOverride, overrideReason = s.OverrideReason,
                 isExtra = s.IsExtra, isRemoval = s.IsRemoval, extraReason = s.ExtraReason,
                 price = s.Price, weight = s.Weight, weightUnit = s.WeightUnit,
+                qrSn = s.QrSn, packagedAt = s.PackagedAt,
             }).ToList();
 
             return await ResponseHelper.WriteSuccess(req, new { scans = result, total = result.Count }, _allowedOrigins);

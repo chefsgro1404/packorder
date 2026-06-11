@@ -214,6 +214,7 @@ public class ScaleFunction
                     printedAtEst = e.PrintedAtEst,
                     qrPayload = e.QrPayload,
                     printedBy = e.PrintedBy,
+                    sn = e.Sn,
                 }).ToList();
                 _logger.LogInformation("Scale print-log query returned {Count} labels (from={From}, to={To}, plu={Plu})",
                     labels.Count, from, to, plu);
@@ -254,6 +255,7 @@ public class ScaleFunction
                 PrintedAtEst = request.PrintedAtEst,
                 QrPayload = request.QrPayload,
                 PrintedBy = request.PrintedBy ?? userId,
+                Sn = request.Sn,
             };
             await _tableStorage.LogPrintedLabelAsync(entityToSave);
 

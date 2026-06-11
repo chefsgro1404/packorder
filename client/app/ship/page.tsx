@@ -47,6 +47,39 @@ interface HistoryFilters {
   type: HistoryType;
 }
 
+interface QrLabel {
+  plu: string;
+  productTitle: string;
+  itemWeight: string;
+  printedAt: string;
+  sn: string;
+  weightGrams: number | null;
+}
+
+// ─── Scale & Print QR payload: "<PLU> | <Product Title> | <Item Weight> | <Printed At> | SN:<sn>" ──
+function parseQrLabel(value: string): QrLabel | null {
+  const parts = value.split("|").map((p) => p.trim());
+  if (parts.length !== 5) return null;
+  const [plu, productTitle, itemWeight, printedAt, snPart] = parts;
+  const snMatch = snPart.match(/^SN:(.+)$/i);
+  if (!snMatch || !plu || !productTitle) return null;
+
+  let weightGrams: number | null = null;
+  const weightMatch = itemWeight.match(/(\d+\.?\d*)\s*(kg|g|lb)\b/i);
+  if (weightMatch) {
+    const value = parseFloat(weightMatch[1]);
+    const unit = weightMatch[2].toLowerCase();
+    weightGrams = unit === "kg" ? value * 1000 : unit === "lb" ? value * 453.592 : value;
+  }
+
+  return { plu, productTitle, itemWeight, printedAt, sn: snMatch[1], weightGrams };
+}
+
+function formatWeightGrams(grams: number | null): string {
+  if (grams == null) return "";
+  return `${(grams / 453.592).toFixed(2)} lb`;
+}
+
 export default function ShipPage() {
   const router = useRouter();
   const { handleScan: debounceScan, playBeep } = useScanner();
@@ -73,6 +106,7 @@ export default function ShipPage() {
   const [scanStep, setScanStep] = useState<ScanStep>("idle");
   const [pendingBarcode, setPendingBarcode] = useState("");
   const [pendingItem, setPendingItem] = useState<ShipmentLineItem | null>(null);
+  const [pendingQr, setPendingQr] = useState<QrLabel | null>(null);
   const [extraContext, setExtraContext] = useState<ExtraContext>("not-in-order");
   const [extraReason, setExtraReason] = useState("");
   const [extraLoading, setExtraLoading] = useState(false);
@@ -245,7 +279,7 @@ export default function ShipPage() {
   }, []);
 
   // ─── Record a scan against a matched line item ────────────────────────────────
-  const performScan = useCallback(async (barcode: string) => {
+  const performScan = useCallback(async (item: ShipmentLineItem, qr: QrLabel | null) => {
     if (!selectedFulfillment) return;
 
     try {
@@ -254,13 +288,25 @@ export default function ShipPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fulfillmentId: selectedFulfillment.fulfillmentId,
-          barcode,
+          fulfillmentLineItemId: item.fulfillmentLineItemId,
+          barcode: qr ? qr.plu : item.barcode,
           scannedBy: staffName,
+          ...(qr ? {
+            plu: qr.plu,
+            qrSn: qr.sn,
+            packagedAt: qr.printedAt,
+            weightGrams: qr.weightGrams,
+            isVariableWeight: true,
+          } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Scan failed");
 
+      if (data.duplicate) {
+        setBanner({ type: "warning", message: "This label was already scanned" });
+        return;
+      }
       if (!data.matched) {
         setBanner({ type: "warning", message: "Barcode not found in this shipment" });
         return;
@@ -272,9 +318,10 @@ export default function ShipPage() {
 
       playBeep();
       navigator.vibrate?.(80);
+      const weightSuffix = qr?.weightGrams != null ? ` (${formatWeightGrams(qr.weightGrams)})` : "";
       setBanner({
         type: "success",
-        message: `${data.lineItemName} scanned (${data.quantityShipped}/${data.quantityExpected})`,
+        message: `${data.lineItemName} scanned${weightSuffix} (${data.quantityShipped}/${data.quantityExpected})`,
       });
 
       applyLineItemUpdate(
@@ -288,19 +335,33 @@ export default function ShipPage() {
     }
   }, [selectedFulfillment, staffName, playBeep, applyLineItemUpdate]);
 
-  // ─── Barcode detected ──────────────────────────────────────────────────────────
-  const handleBarcodeDetected = useCallback((barcode: string) => {
+  // ─── Barcode (or printed QR label) detected ────────────────────────────────────
+  const handleBarcodeDetected = useCallback((value: string) => {
     if (!selectedFulfillment || scanStep !== "idle") return;
     setBanner(null);
 
-    const item = selectedFulfillment.lineItems.find(
-      (li) =>
-        (li.barcode && li.barcode.toLowerCase() === barcode.toLowerCase()) ||
-        (li.sku && li.sku.toLowerCase() === barcode.toLowerCase())
-    );
+    const qr = parseQrLabel(value);
+    const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+
+    const item = selectedFulfillment.lineItems.find((li) => {
+      if (qr) {
+        return (
+          (li.barcode && norm(li.barcode) === norm(qr.plu)) ||
+          norm(li.productTitle) === norm(qr.productTitle) ||
+          norm(li.variantTitle) === norm(qr.productTitle)
+        );
+      }
+      return (
+        (li.barcode && norm(li.barcode) === norm(value)) ||
+        (li.sku && norm(li.sku) === norm(value))
+      );
+    });
+
+    const barcode = qr ? qr.plu : value;
 
     if (!item) {
       setPendingBarcode(barcode);
+      setPendingQr(qr);
       setPendingItem(null);
       setExtraReason("");
       setExtraContext("not-in-order");
@@ -310,6 +371,7 @@ export default function ShipPage() {
 
     if (item.quantityShipped >= item.quantityExpected) {
       setPendingBarcode(barcode);
+      setPendingQr(qr);
       setPendingItem(item);
       setExtraReason("");
       setExtraContext("exceeded");
@@ -318,28 +380,32 @@ export default function ShipPage() {
     }
 
     if (scanMode === "fast") {
-      performScan(barcode);
+      performScan(item, qr);
       return;
     }
 
     setPendingBarcode(barcode);
+    setPendingQr(qr);
     setPendingItem(item);
     setScanStep("confirm");
   }, [selectedFulfillment, scanStep, scanMode, performScan]);
 
   // ─── Staff confirms a regular-mode scan ────────────────────────────────────────
   const handleConfirmScan = useCallback(async () => {
-    const barcode = pendingBarcode;
+    const item = pendingItem;
+    const qr = pendingQr;
     setScanStep("idle");
     setPendingBarcode("");
     setPendingItem(null);
-    await performScan(barcode);
-  }, [pendingBarcode, performScan]);
+    setPendingQr(null);
+    if (item) await performScan(item, qr);
+  }, [pendingItem, pendingQr, performScan]);
 
   const handleCancelScan = useCallback(() => {
     setScanStep("idle");
     setPendingBarcode("");
     setPendingItem(null);
+    setPendingQr(null);
     setExtraReason("");
   }, []);
 
@@ -356,14 +422,30 @@ export default function ShipPage() {
           barcode: pendingBarcode,
           reason: extraReason.trim(),
           scannedBy: staffName,
+          ...(pendingQr ? {
+            plu: pendingQr.plu,
+            qrSn: pendingQr.sn,
+            packagedAt: pendingQr.printedAt,
+            weightGrams: pendingQr.weightGrams,
+          } : {}),
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to add item");
 
+      if (data.duplicate) {
+        setBanner({ type: "warning", message: "This label was already scanned" });
+        setScanStep("idle");
+        setPendingBarcode("");
+        setPendingQr(null);
+        setExtraReason("");
+        return;
+      }
+
       playBeep();
       navigator.vibrate?.(80);
-      setBanner({ type: "success", message: `${data.productTitle} added as extra item` });
+      const weightSuffix = pendingQr?.weightGrams != null ? ` (${formatWeightGrams(pendingQr.weightGrams)})` : "";
+      setBanner({ type: "success", message: `${data.productTitle} added as extra item${weightSuffix}` });
 
       const extraItem: ShipmentLineItem = {
         fulfillmentLineItemId: data.fulfillmentLineItemId,
@@ -389,18 +471,20 @@ export default function ShipPage() {
       setScanStep("idle");
       setPendingBarcode("");
       setPendingItem(null);
+      setPendingQr(null);
       setExtraReason("");
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to add item" });
     } finally {
       setExtraLoading(false);
     }
-  }, [selectedFulfillment, pendingBarcode, extraReason, staffName, playBeep, applyLineItemUpdate]);
+  }, [selectedFulfillment, pendingBarcode, pendingQr, extraReason, staffName, playBeep, applyLineItemUpdate]);
 
   const handleDeclineExtra = useCallback(() => {
     setBanner({ type: "info", message: "Scan discarded — item not added" });
     setScanStep("idle");
     setPendingBarcode("");
+    setPendingQr(null);
     setPendingItem(null);
     setExtraReason("");
   }, []);
@@ -712,6 +796,7 @@ export default function ShipPage() {
                       )}
                       <p className="text-xs text-slate-500 mt-0.5">
                         {pendingItem.quantityShipped}/{pendingItem.quantityExpected} → {pendingItem.quantityShipped + 1}/{pendingItem.quantityExpected}
+                        {pendingQr?.weightGrams != null && ` · ${formatWeightGrams(pendingQr.weightGrams)}`}
                       </p>
                     </div>
                     <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
@@ -744,10 +829,16 @@ export default function ShipPage() {
                     <p className="text-sm font-medium text-amber-200">
                       {extraContext === "exceeded"
                         ? `${pendingItem?.productTitle ?? "This item"} is already fully packed (${pendingItem?.quantityShipped}/${pendingItem?.quantityExpected})`
+                        : pendingQr
+                        ? `"${pendingQr.productTitle}" is not in this order`
                         : "This item is not in this order"}
                     </p>
                     <p className="text-xs text-amber-300/80 mt-0.5">
-                      Scanned barcode: <span className="font-mono">{pendingBarcode}</span>
+                      {pendingQr ? (
+                        <>PLU <span className="font-mono">{pendingQr.plu}</span> · {pendingQr.itemWeight}</>
+                      ) : (
+                        <>Scanned barcode: <span className="font-mono">{pendingBarcode}</span></>
+                      )}
                     </p>
                     <p className="text-xs text-amber-300/80 mt-1">
                       Pack one more anyway? A reason is required — it will be recorded as an extra item.
@@ -1177,26 +1268,33 @@ export default function ShipPage() {
                   {liScans.length > 0 && (
                     <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-2 space-y-1">
                       {liScans.map((scan, i) => (
-                        <div key={i} className="flex items-center gap-2 text-xs text-slate-500">
-                          <Clock className="w-3 h-3 shrink-0" />
-                          <span>{formatDate(scan.scannedAt)}</span>
-                          <span className="text-slate-600">·</span>
-                          <span>{scan.scannedBy}</span>
-                          {scan.isVariableWeight && scan.weightGrams != null && (
-                            <>
-                              <span className="text-slate-600">·</span>
-                              <span className="text-purple-400">
-                                {(scan.weightGrams / 1000).toFixed(3)} kg
+                        <div key={i} className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>{formatDate(scan.scannedAt)}</span>
+                            <span className="text-slate-600">·</span>
+                            <span>{scan.scannedBy}</span>
+                            {scan.isVariableWeight && scan.weightGrams != null && (
+                              <>
+                                <span className="text-slate-600">·</span>
+                                <span className="text-purple-400">{formatWeightGrams(scan.weightGrams)}</span>
+                              </>
+                            )}
+                            {scan.isRemoval && (
+                              <span className="text-red-400">(removed)</span>
+                            )}
+                            {scan.isExtra && (
+                              <span className="text-amber-400">
+                                (extra{scan.extraReason ? `: ${scan.extraReason}` : ""})
                               </span>
-                            </>
-                          )}
-                          {scan.isRemoval && (
-                            <span className="text-red-400">(removed)</span>
-                          )}
-                          {scan.isExtra && (
-                            <span className="text-amber-400">
-                              (extra{scan.extraReason ? `: ${scan.extraReason}` : ""})
-                            </span>
+                            )}
+                          </div>
+                          {scan.isVariableWeight && (scan.plu || scan.packagedAt) && (
+                            <div className="flex items-center gap-2 text-[11px] text-slate-600 pl-5">
+                              {scan.plu && <span>PLU {scan.plu}</span>}
+                              {scan.plu && scan.packagedAt && <span>·</span>}
+                              {scan.packagedAt && <span>Packaged {scan.packagedAt}</span>}
+                            </div>
                           )}
                         </div>
                       ))}

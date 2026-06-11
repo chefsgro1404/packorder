@@ -263,6 +263,8 @@ export interface ShipmentScanRecord {
   price: string | null;
   weight: number | null;
   weightUnit: string | null;
+  qrSn: string | null;
+  packagedAt: string | null;
 }
 
 // ─── Scale & Print Mode ───────────────────────────────────────────────────────
@@ -291,4 +293,5 @@ export interface PrintedLabel {
   printedAtEst: string;
   qrPayload: string;
   printedBy: string | null;
+  sn: string | null;
 }
