@@ -44,6 +44,7 @@ client/
 │       ├── fulfill/route.ts   # Proxy → POST /api/fulfill
 │       ├── variant/route.ts   # Proxy → GET/PATCH /api/variant
 │       ├── ship-orders/route.ts       # Proxy → GET /api/ship-orders
+│       ├── ship-orders/lookup/route.ts # Proxy → GET /api/ship-orders/lookup
 │       ├── sync/ship-orders/route.ts  # Proxy → POST /api/sync/ship-orders
 │       ├── shipment/scan/route.ts     # Proxy → POST /api/shipment/scan
 │       ├── shipment/complete/route.ts # Proxy → POST /api/shipment/complete
@@ -149,6 +150,15 @@ The app is configured as an installable PWA via `public/manifest.json` and meta 
 ## Ship Mode — Staff Name
 
 Ship mode reads and writes the staff name to `localStorage` under the key `shipscan_staff_name`. On first visit, a bottom-sheet prompt asks for the staff name before shipping can begin. The name is pre-filled in the completion modal and recorded on every `ShipmentScanEntity` and `FulfillmentShipmentEntity` written to Table Storage. To change the name, tap the name chip in the top-left of the Ship list screen.
+
+## Ship Mode — Sync Date Range & Order Search
+
+**Sync**: The filter icon next to the sync (refresh) button on the Active tab opens a date-range panel ("Fulfilled from" / "Fulfilled to"). Tapping **Sync** with both fields empty syncs only orders fulfilled **today**; setting a date or range syncs/persists fulfillments whose Shopify fulfillment date falls within that range instead. Only fulfilled/partial, non-POS orders with tracking info are ever synced — see `POST /api/sync/ship-orders` in the backend README.
+
+**Search**: The search bar filters the locally-loaded list as you type. If no local results match and you press Enter (or tap "Search Shopify for…"), the app calls `GET /api/ship-orders/lookup?ref=<query>` to look the order up directly in Shopify by name or tag:
+- Not found → a warning banner ("Order not found")
+- Found but unfulfilled, or fulfilled/partial without tracking → a warning banner explaining why it isn't shippable yet
+- Found and eligible (fulfilled/partial, non-POS, has tracking) → the order is added to the Active list and persisted to the `fulfillmentshipments` table for future loads
 
 ## Scale & Print Mode — Hardware Integration
 

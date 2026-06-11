@@ -27,7 +27,7 @@ functions/
 │   ├── VariantFunction.cs     # GET /api/variant?q=, PATCH /api/variant
 │   ├── HealthFunction.cs      # GET /api/health (exempt from auth middleware)
 │   ├── SyncShipOrdersFunction.cs  # POST /api/sync/ship-orders (pull fulfilled orders from Shopify)
-│   ├── ShipOrdersFunction.cs      # GET /api/ship-orders (list pending shipments)
+│   ├── ShipOrdersFunction.cs      # GET /api/ship-orders (list pending shipments), GET /api/ship-orders/lookup (single-order Shopify lookup)
 │   ├── ShipmentFunction.cs        # POST /api/shipment/scan, POST /api/shipment/complete, GET /api/shipment/history, GET /api/shipment/scans
 │   └── ScaleFunction.cs           # GET /api/scale/lookup, GET/POST/PATCH/DELETE /api/scale/products, GET/POST /api/scale/print-log
 ├── Helpers/
@@ -216,7 +216,17 @@ Assigns a barcode to a variant using `productVariantsBulkUpdate`.
 
 ### `POST /api/sync/ship-orders`
 
-Fetches fulfilled and partially-fulfilled orders that have tracking numbers from Shopify (GraphQL, paginated) and upserts them into the `fulfillmentshipments` table. Preserves existing scan progress for any fulfillment that has not yet been marked shipped. Returns `{ ok: true, synced: N }` where N is the number of fulfillments processed.
+Fetches fulfilled and partially-fulfilled, non-POS orders that have tracking numbers from Shopify (GraphQL, paginated using `(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos`), then upserts into the `fulfillmentshipments` table only the fulfillments whose `fulfillment.createdAt` (UTC date) falls within the requested date range. Preserves existing scan progress for any fulfillment that has not yet been marked shipped.
+
+Runs as a fire-and-forget background task and responds immediately with `{ ok: true, synced: -1 }`; the actual count is logged ("Ship order sync complete...") once the background task finishes.
+
+**Optional query params**
+| Param | Format | Description |
+|---|---|---|
+| `from` | `yyyy-MM-dd` | Start of the fulfillment-date range (inclusive, UTC). Defaults to today. |
+| `to` | `yyyy-MM-dd` | End of the fulfillment-date range (inclusive, UTC). Defaults to today. |
+
+If neither is supplied, only fulfillments created **today** (UTC) are synced. Pass `from`/`to` to backfill a specific date or range — e.g. `?from=2026-06-02&to=2026-06-11`.
 
 ### `GET /api/ship-orders`
 
@@ -226,6 +236,27 @@ Returns all fulfillments in the `fulfillmentshipments` table that have `status !
 ```json
 { "fulfillments": [...], "total": 5 }
 ```
+
+### `GET /api/ship-orders/lookup?ref=<value>`
+
+Looks up a single order directly from Shopify by name or tag (matching `(name:<ref> OR tag:<ref>) -source_name:pos`) — used by the Ship Mode search bar when an order isn't already in the local table. If the order is fulfilled/partial and has tracking info, its fulfillment(s) are upserted into `fulfillmentshipments` (so it persists for future loads/syncs) and returned.
+
+**Response (order not found)**
+```json
+{ "success": true, "data": { "found": false } }
+```
+
+**Response (found, but not eligible)**
+```json
+{ "success": true, "data": { "found": true, "eligible": false, "orderName": "#1001", "status": "unfulfilled" } }
+```
+`status` is `"unfulfilled"` if the order has no fulfillments yet, or `"no_tracking"` if it's fulfilled/partial but no fulfillment has tracking info.
+
+**Response (found and eligible)**
+```json
+{ "success": true, "data": { "found": true, "eligible": true, "orderName": "#1001", "fulfillments": [ { ... } ] } }
+```
+Each entry in `fulfillments` has the same shape as an entry in `GET /api/ship-orders`'s `fulfillments` array.
 
 ### `POST /api/shipment/scan`
 

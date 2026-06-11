@@ -34,6 +34,8 @@ public class SyncShipOrdersFunction
         if (authError != null)
             return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
 
+        var (from, to) = ParseDateRange(req);
+
         // Return 202 immediately — sync can take minutes on large stores and will
         // exceed the SWA gateway timeout if we await the full result synchronously.
         var accepted = await ResponseHelper.WriteSuccess(req, new { ok = true, synced = -1 }, _allowedOrigins);
@@ -43,8 +45,13 @@ public class SyncShipOrdersFunction
             try
             {
                 var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
-                await _tableStorage.SyncFulfillmentShipmentsAsync(entities);
-                _logger.LogInformation("Ship order sync complete. Processed {Count} fulfillments", entities.Count);
+                var inRange = entities
+                    .Where(e => e.FulfillmentCreatedAt.UtcDateTime.Date >= from && e.FulfillmentCreatedAt.UtcDateTime.Date <= to)
+                    .ToList();
+
+                await _tableStorage.SyncFulfillmentShipmentsAsync(inRange);
+                _logger.LogInformation("Ship order sync complete. {Synced} of {Total} fulfillments matched {From:yyyy-MM-dd}..{To:yyyy-MM-dd}",
+                    inRange.Count, entities.Count, from, to);
             }
             catch (Exception ex)
             {
@@ -53,5 +60,20 @@ public class SyncShipOrdersFunction
         });
 
         return accepted;
+    }
+
+    /// <summary>
+    /// Reads optional "from"/"to" (yyyy-MM-dd) query params. Defaults both to today (UTC) when absent,
+    /// so a plain sync only pulls in fulfillments created today.
+    /// </summary>
+    private static (DateTime From, DateTime To) ParseDateRange(HttpRequestData req)
+    {
+        var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var today = DateTime.UtcNow.Date;
+
+        var from = DateTime.TryParse(query["from"], out var f) ? f.Date : today;
+        var to = DateTime.TryParse(query["to"], out var t) ? t.Date : today;
+
+        return (from, to);
     }
 }

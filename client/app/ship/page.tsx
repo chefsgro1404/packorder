@@ -56,7 +56,11 @@ export default function ShipPage() {
   const [fulfillments, setFulfillments] = useState<ShipmentFulfillment[]>([]);
   const [loadingFulfillments, setLoadingFulfillments] = useState(true);
   const [syncLoading, setSyncLoading] = useState(false);
+  const [syncFiltersOpen, setSyncFiltersOpen] = useState(false);
+  const [syncRange, setSyncRange] = useState({ from: "", to: "" });
+  const [pendingSyncRange, setPendingSyncRange] = useState({ from: "", to: "" });
   const [filterText, setFilterText] = useState("");
+  const [searchLoading, setSearchLoading] = useState(false);
   const [selectedFulfillment, setSelectedFulfillment] = useState<ShipmentFulfillment | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
 
@@ -137,11 +141,16 @@ export default function ShipPage() {
   }, [fetchFulfillments]);
 
   // ─── Sync from Shopify ─────────────────────────────────────────────────────────
-  const handleSync = useCallback(async () => {
+  const handleSync = useCallback(async (range?: { from: string; to: string }) => {
     setSyncLoading(true);
     setBanner(null);
     try {
-      const res = await fetch("/api/sync/ship-orders", { method: "POST" });
+      const params = new URLSearchParams();
+      if (range?.from) params.set("from", range.from);
+      if (range?.to) params.set("to", range.to);
+      const qs = params.toString();
+
+      const res = await fetch(`/api/sync/ship-orders${qs ? `?${qs}` : ""}`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sync failed");
 
@@ -162,6 +171,51 @@ export default function ShipPage() {
       setSyncLoading(false);
     }
   }, [fetchFulfillments]);
+
+  // ─── Search Shopify directly for an order not yet in the local list ─────────────
+  const handleSearchShopify = useCallback(async () => {
+    const ref = filterText.trim();
+    if (!ref) return;
+    setSearchLoading(true);
+    setBanner(null);
+    try {
+      const res = await fetch(`/api/ship-orders/lookup?ref=${encodeURIComponent(ref)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Lookup failed");
+
+      if (!data.found) {
+        setBanner({ type: "warning", message: `Order "${ref}" not found` });
+        return;
+      }
+
+      if (!data.eligible) {
+        setBanner({
+          type: "warning",
+          message:
+            data.status === "unfulfilled"
+              ? `${data.orderName} is still unfulfilled`
+              : `${data.orderName} has no tracking info yet`,
+        });
+        return;
+      }
+
+      const incoming = (data.fulfillments ?? []) as ShipmentFulfillment[];
+      setFulfillments((prev) => {
+        const merged = [...prev];
+        for (const f of incoming) {
+          const idx = merged.findIndex((m) => m.fulfillmentId === f.fulfillmentId);
+          if (idx >= 0) merged[idx] = f;
+          else merged.push(f);
+        }
+        return merged;
+      });
+      setBanner({ type: "success", message: `Found ${data.orderName}` });
+    } catch (e) {
+      setBanner({ type: "error", message: e instanceof Error ? e.message : "Lookup failed" });
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [filterText]);
 
   // ─── Barcode detected — capture frame and run OCR ────────────────────────────
   const onScanWithFrame = useCallback(async (barcode: string, frame: string) => {
@@ -1108,13 +1162,28 @@ export default function ShipPage() {
         </div>
         <div className="flex items-center gap-1">
           {tab === "active" && (
-            <button
-              onClick={handleSync}
-              disabled={syncLoading}
-              className="p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${syncLoading ? "animate-spin" : ""}`} />
-            </button>
+            <>
+              <button
+                onClick={() => {
+                  setPendingSyncRange(syncRange);
+                  setSyncFiltersOpen((o) => !o);
+                }}
+                className="relative p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
+              >
+                <Filter className="w-4 h-4" />
+                {(syncRange.from || syncRange.to) && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" />
+                )}
+              </button>
+              <button
+                onClick={() => handleSync(syncRange.from || syncRange.to ? syncRange : undefined)}
+                disabled={syncLoading}
+                title={syncRange.from || syncRange.to ? `Sync ${syncRange.from || syncRange.to}–${syncRange.to || syncRange.from}` : "Sync today"}
+                className="p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncLoading ? "animate-spin" : ""}`} />
+              </button>
+            </>
           )}
           {tab === "history" && (
             <button
@@ -1152,6 +1221,57 @@ export default function ShipPage() {
       {/* ── ACTIVE TAB ── */}
       {tab === "active" && (
         <>
+          {/* Sync date range panel */}
+          {syncFiltersOpen && (
+            <div className="px-4 pt-3 pb-2 shrink-0 bg-slate-900 border-b border-slate-800 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400">Fulfilled from</label>
+                  <input
+                    type="date"
+                    value={pendingSyncRange.from}
+                    onChange={(e) => setPendingSyncRange((p) => ({ ...p, from: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs text-slate-400">Fulfilled to</label>
+                  <input
+                    type="date"
+                    value={pendingSyncRange.to}
+                    onChange={(e) => setPendingSyncRange((p) => ({ ...p, to: e.target.value }))}
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500">Leave both empty to sync today&apos;s fulfillments.</p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setSyncRange(pendingSyncRange);
+                    setSyncFiltersOpen(false);
+                    handleSync(pendingSyncRange.from || pendingSyncRange.to ? pendingSyncRange : undefined);
+                  }}
+                  disabled={syncLoading}
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm transition-colors disabled:opacity-50"
+                >
+                  Sync
+                </button>
+                <button
+                  onClick={() => {
+                    const cleared = { from: "", to: "" };
+                    setPendingSyncRange(cleared);
+                    setSyncRange(cleared);
+                    setSyncFiltersOpen(false);
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-sm transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Search + stats */}
           <div className="px-4 pt-2 pb-2 space-y-2 shrink-0">
             <div className="relative">
@@ -1161,6 +1281,9 @@ export default function ShipPage() {
                 placeholder="Search orders, tracking, products…"
                 value={filterText}
                 onChange={(e) => setFilterText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && filteredFulfillments.length === 0) handleSearchShopify();
+                }}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-600"
               />
               {filterText && (
@@ -1198,10 +1321,22 @@ export default function ShipPage() {
                 </div>
               </div>
             ) : filteredFulfillments.length === 0 ? (
-              <div className="text-center py-16 text-slate-500 text-sm">
-                {filterText
-                  ? "No matching shipments"
-                  : "No pending shipments — tap sync to refresh from Shopify"}
+              <div className="text-center py-16 text-slate-500 text-sm space-y-3">
+                <p>
+                  {filterText
+                    ? "No matching shipments"
+                    : "No pending shipments — tap sync to refresh from Shopify"}
+                </p>
+                {filterText && (
+                  <button
+                    onClick={handleSearchShopify}
+                    disabled={searchLoading}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    <Search className="w-4 h-4" />
+                    {searchLoading ? "Searching…" : `Search Shopify for "${filterText}"`}
+                  </button>
+                )}
               </div>
             ) : (
               filteredFulfillments.map((f) => {

@@ -548,42 +548,48 @@ public class ShopifyService
 
     // ─── Fulfilled orders with tracking (Ship Mode sync) ────────────────────────
 
+    private const string ShipOrderFields = @"
+        id name displayFulfillmentStatus tags createdAt
+        customer { displayName email }
+        shippingAddress { name address1 city provinceCode zip country }
+        fulfillments {
+          id status createdAt
+          trackingInfo(first: 5) { number url company }
+          fulfillmentLineItems(first: 30) {
+            edges {
+              node {
+                id quantity
+                lineItem {
+                  id name sku quantity
+                  originalTotalSet { shopMoney { amount } }
+                  variant {
+                    id barcode title
+                    product { title featuredImage { url } }
+                  }
+                }
+              }
+            }
+          }
+        }";
+
     private const string SyncFulfilledOrdersQuery = @"
         query SyncFulfilledOrders($cursor: String) {
           orders(
             first: 100
             after: $cursor
-            query: ""fulfillment_status:fulfilled OR fulfillment_status:partial""
+            query: ""(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos""
             sortKey: CREATED_AT
             reverse: true
           ) {
             pageInfo { hasNextPage endCursor }
-            edges {
-              node {
-                id name displayFulfillmentStatus tags createdAt
-                customer { displayName email }
-                shippingAddress { name address1 city provinceCode zip country }
-                fulfillments {
-                  id status createdAt
-                  trackingInfo(first: 5) { number url company }
-                  fulfillmentLineItems(first: 30) {
-                    edges {
-                      node {
-                        id quantity
-                        lineItem {
-                          id name sku quantity
-                          originalTotalSet { shopMoney { amount } }
-                          variant {
-                            id barcode title
-                            product { title featuredImage { url } }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            edges { node { " + ShipOrderFields + @" } }
+          }
+        }";
+
+    private const string GetShipOrderByRefQuery = @"
+        query GetShipOrderByRef($query: String!) {
+          orders(first: 1, query: $query) {
+            edges { node { " + ShipOrderFields + @" } }
           }
         }";
 
@@ -601,8 +607,35 @@ public class ShopifyService
             hasMore = pageInfo?["hasNextPage"]?.Value<bool>() ?? false;
             cursor = pageInfo?["endCursor"]?.ToString();
 
-            foreach (var edge in (orders?["edges"] as JArray) ?? new JArray())
-            {
+            results.AddRange(ParseFulfillmentEntities((orders?["edges"] as JArray) ?? new JArray()));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Looks up a single order by name or tag for the Ship Mode search bar. Returns whether the
+    /// order exists, its display fulfillment status, and any eligible (non-POS, tracked) fulfillment shipments.
+    /// </summary>
+    public async Task<(bool Found, string? OrderName, string? DisplayFulfillmentStatus, List<FulfillmentShipmentEntity> Entities)>
+        GetShipOrderByRefAsync(string orderRef)
+    {
+        var data = await GraphQlAsync(GetShipOrderByRefQuery, new { query = $"(name:{orderRef} OR tag:{orderRef}) -source_name:pos" });
+        var edges = data["orders"]?["edges"] as JArray;
+        if (edges == null || edges.Count == 0)
+            return (false, null, null, new List<FulfillmentShipmentEntity>());
+
+        var node = edges[0]["node"]!;
+        var orderName = node["name"]?.ToString();
+        var displayStatus = node["displayFulfillmentStatus"]?.ToString();
+        return (true, orderName, displayStatus, ParseFulfillmentEntities(edges));
+    }
+
+    private static List<FulfillmentShipmentEntity> ParseFulfillmentEntities(JArray edges)
+    {
+        var results = new List<FulfillmentShipmentEntity>();
+        foreach (var edge in edges)
+        {
                 var order = edge["node"]!;
                 var orderId   = order["id"]!.ToString();
                 var orderName = order["name"]!.ToString();
@@ -694,8 +727,8 @@ public class ShopifyService
                     });
                 }
             }
-        }
 
         return results;
     }
 }
+
