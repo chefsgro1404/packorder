@@ -13,13 +13,14 @@ public class ShipmentFunction
 {
     private readonly ILogger<ShipmentFunction> _logger;
     private readonly TableStorageService _tableStorage;
+    private readonly ShopifyService _shopify;
     private readonly AuthHelper _authHelper;
     private readonly string[] _allowedOrigins;
 
     public ShipmentFunction(ILogger<ShipmentFunction> logger, TableStorageService tableStorage,
-        AuthHelper authHelper, string[] allowedOrigins)
+        ShopifyService shopify, AuthHelper authHelper, string[] allowedOrigins)
     {
-        _logger = logger; _tableStorage = tableStorage;
+        _logger = logger; _tableStorage = tableStorage; _shopify = shopify;
         _authHelper = authHelper; _allowedOrigins = allowedOrigins;
     }
 
@@ -78,6 +79,119 @@ public class ShipmentFunction
         catch (Exception ex)
         {
             _logger.LogError(ex, "Shipment scan failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ShipmentScanExtra")]
+    public async Task<HttpResponseData> ScanExtra(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "shipment/scan-extra")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body    = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<AddExtraItemRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.FulfillmentId))
+                return await ResponseHelper.WriteError(req, "fulfillmentId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.Barcode))
+                return await ResponseHelper.WriteError(req, "barcode is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.Reason))
+                return await ResponseHelper.WriteError(req, "reason is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.ScannedBy))
+                return await ResponseHelper.WriteError(req, "scannedBy is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var numericId = TableStorageService.StripGid(request.FulfillmentId);
+            var entity    = await _tableStorage.GetFulfillmentShipmentAsync(numericId);
+            if (entity == null)
+                return await ResponseHelper.WriteError(req, "Fulfillment not found", HttpStatusCode.NotFound, _allowedOrigins);
+
+            var shopifyVariant = await _shopify.GetVariantByBarcodeAsync(request.Barcode);
+
+            var (updatedEntity, item) = await _tableStorage.AddExtraItemAsync(
+                request.FulfillmentId, request.Barcode, request.Reason, request.ScannedBy,
+                entity.OrderName, entity.OrderId, entity.TrackingNumber, shopifyVariant);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                ok = true,
+                fulfillmentLineItemId = item!.FulfillmentLineItemId,
+                productTitle = item.ProductTitle,
+                variantTitle = item.VariantTitle,
+                sku = item.Sku,
+                barcode = item.Barcode,
+                imageUrl = item.ImageUrl,
+                price = item.Price,
+                weight = item.Weight,
+                weightUnit = item.WeightUnit,
+                quantityShipped = item.QuantityShipped,
+                quantityExpected = item.QuantityExpected,
+                fulfillmentStatus = updatedEntity!.Status,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Add extra item failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ShipmentRemoveScan")]
+    public async Task<HttpResponseData> RemoveScan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "shipment/remove")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body    = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<RemoveScanRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.FulfillmentId))
+                return await ResponseHelper.WriteError(req, "fulfillmentId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.FulfillmentLineItemId))
+                return await ResponseHelper.WriteError(req, "fulfillmentLineItemId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.ScannedBy))
+                return await ResponseHelper.WriteError(req, "scannedBy is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var numericId = TableStorageService.StripGid(request.FulfillmentId);
+            var entity    = await _tableStorage.GetFulfillmentShipmentAsync(numericId);
+            if (entity == null)
+                return await ResponseHelper.WriteError(req, "Fulfillment not found", HttpStatusCode.NotFound, _allowedOrigins);
+
+            var (updatedEntity, item) = await _tableStorage.RemoveShipmentScanAsync(
+                request.FulfillmentId, request.FulfillmentLineItemId, request.ScannedBy,
+                entity.OrderName, entity.OrderId, entity.TrackingNumber);
+
+            if (item == null)
+                return await ResponseHelper.WriteError(req, "Line item not found", HttpStatusCode.NotFound, _allowedOrigins);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                ok = true,
+                fulfillmentLineItemId = item.FulfillmentLineItemId,
+                quantityShipped = item.QuantityShipped,
+                quantityExpected = item.QuantityExpected,
+                fulfillmentStatus = updatedEntity!.Status,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Remove shipment scan failed");
             return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
     }
@@ -160,6 +274,15 @@ public class ShipmentFunction
 
             var entities = await _tableStorage.GetShippedShipmentFulfillmentsAsync(from, to, completedBy, manualOnly);
 
+            if (qs.TryGetValue("extras", out var extrasVal) && extrasVal.Equals("true", StringComparison.OrdinalIgnoreCase))
+            {
+                entities = entities.Where(e =>
+                {
+                    var items = JsonConvert.DeserializeObject<List<ShipmentLineItemCache>>(e.LineItemsJson) ?? new List<ShipmentLineItemCache>();
+                    return items.Any(li => li.IsExtra);
+                }).ToList();
+            }
+
             if (qs.TryGetValue("tags", out var tagsParam) && !string.IsNullOrEmpty(tagsParam))
             {
                 var filterTags = tagsParam.Split(',').Select(t => t.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -218,6 +341,8 @@ public class ShipmentFunction
                 scannedBy = s.ScannedBy, scannedAt = s.ScannedAt.ToString("o"),
                 isManualLineItem = s.IsManualLineItem,
                 isManualOverride = s.IsManualOverride, overrideReason = s.OverrideReason,
+                isExtra = s.IsExtra, isRemoval = s.IsRemoval, extraReason = s.ExtraReason,
+                price = s.Price, weight = s.Weight, weightUnit = s.WeightUnit,
             }).ToList();
 
             return await ResponseHelper.WriteSuccess(req, new { scans = result, total = result.Count }, _allowedOrigins);

@@ -450,6 +450,9 @@ public class TableStorageService
                 ScannedBy             = request.ScannedBy,
                 ScannedAt             = DateTimeOffset.UtcNow,
                 IsManualLineItem      = request.IsManualLineItem,
+                Price                 = matched.Price,
+                Weight                = matched.Weight,
+                WeightUnit            = matched.WeightUnit,
             };
             await _shipmentScans.AddEntityAsync(scanEntity);
         }
@@ -459,6 +462,137 @@ public class TableStorageService
         }
 
         return (true, false, entity, matched);
+    }
+
+    public async Task<(FulfillmentShipmentEntity? Entity, ShipmentLineItemCache? Item)> AddExtraItemAsync(
+        string fulfillmentId, string barcode, string reason, string scannedBy,
+        string orderName, string orderId, string trackingNumber, ProductVariant? shopifyVariant)
+    {
+        var numericId = StripGid(fulfillmentId);
+        var entity = await GetFulfillmentShipmentAsync(numericId);
+        if (entity == null) return (null, null);
+
+        var lineItems = JsonConvert.DeserializeObject<List<ShipmentLineItemCache>>(entity.LineItemsJson)
+            ?? new List<ShipmentLineItemCache>();
+
+        var item = new ShipmentLineItemCache
+        {
+            FulfillmentLineItemId = $"extra-{Guid.NewGuid():N}",
+            LineItemId            = "",
+            Name                  = shopifyVariant != null ? $"{shopifyVariant.Product.Title} - {shopifyVariant.Title}" : barcode,
+            QuantityExpected      = 1,
+            QuantityShipped       = 1,
+            VariantId             = shopifyVariant?.Id,
+            Sku                   = shopifyVariant?.Sku,
+            Barcode               = shopifyVariant?.Barcode ?? barcode,
+            ProductTitle          = shopifyVariant?.Product.Title ?? $"Unknown item ({barcode})",
+            VariantTitle          = shopifyVariant?.Title,
+            ImageUrl              = shopifyVariant?.Product.FeaturedImage?.Url,
+            Price                 = shopifyVariant?.Price ?? "0.00",
+            Weight                = shopifyVariant?.Weight,
+            WeightUnit            = shopifyVariant?.WeightUnit,
+            IsExtra               = true,
+            AddedReason           = reason,
+            AddedBy               = scannedBy,
+        };
+        lineItems.Add(item);
+
+        var totalShipped = lineItems.Sum(li => li.QuantityShipped);
+        entity.Status = totalShipped == 0 ? "pending" : "partial";
+        entity.LineItemsJson = JsonConvert.SerializeObject(lineItems);
+        await _fulfillmentShipments.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+
+        try
+        {
+            var scanEntity = new ShipmentScanEntity
+            {
+                PartitionKey          = numericId,
+                RowKey                = $"{DateTimeOffset.UtcNow.Ticks:D20}-{Guid.NewGuid():N}",
+                OrderId               = orderId,
+                OrderName             = orderName,
+                FulfillmentId         = fulfillmentId,
+                TrackingNumber        = trackingNumber,
+                FulfillmentLineItemId = item.FulfillmentLineItemId,
+                LineItemId            = item.LineItemId,
+                VariantId             = item.VariantId,
+                Sku                   = item.Sku,
+                Barcode               = barcode,
+                ProductTitle          = item.ProductTitle,
+                VariantTitle          = item.VariantTitle,
+                QuantityShipped       = 1,
+                ScannedBy             = scannedBy,
+                ScannedAt             = DateTimeOffset.UtcNow,
+                IsManualLineItem      = true,
+                IsExtra               = true,
+                ExtraReason           = reason,
+                Price                 = item.Price,
+                Weight                = item.Weight,
+                WeightUnit            = item.WeightUnit,
+            };
+            await _shipmentScans.AddEntityAsync(scanEntity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to log extra item scan: {Message}", ex.Message);
+        }
+
+        return (entity, item);
+    }
+
+    public async Task<(FulfillmentShipmentEntity? Entity, ShipmentLineItemCache? Item)> RemoveShipmentScanAsync(
+        string fulfillmentId, string fulfillmentLineItemId, string scannedBy,
+        string orderName, string orderId, string trackingNumber)
+    {
+        var numericId = StripGid(fulfillmentId);
+        var entity = await GetFulfillmentShipmentAsync(numericId);
+        if (entity == null) return (null, null);
+
+        var lineItems = JsonConvert.DeserializeObject<List<ShipmentLineItemCache>>(entity.LineItemsJson)
+            ?? new List<ShipmentLineItemCache>();
+
+        var matched = lineItems.FirstOrDefault(li =>
+            li.FulfillmentLineItemId.Equals(fulfillmentLineItemId, StringComparison.OrdinalIgnoreCase));
+        if (matched == null || matched.QuantityShipped <= 0) return (entity, matched);
+
+        matched.QuantityShipped--;
+        var totalShipped = lineItems.Sum(li => li.QuantityShipped);
+        entity.Status = totalShipped == 0 ? "pending" : "partial";
+        entity.LineItemsJson = JsonConvert.SerializeObject(lineItems);
+        await _fulfillmentShipments.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+
+        try
+        {
+            var scanEntity = new ShipmentScanEntity
+            {
+                PartitionKey          = numericId,
+                RowKey                = $"{DateTimeOffset.UtcNow.Ticks:D20}-{Guid.NewGuid():N}",
+                OrderId               = orderId,
+                OrderName             = orderName,
+                FulfillmentId         = fulfillmentId,
+                TrackingNumber        = trackingNumber,
+                FulfillmentLineItemId = matched.FulfillmentLineItemId,
+                LineItemId            = matched.LineItemId,
+                VariantId             = matched.VariantId,
+                Sku                   = matched.Sku,
+                Barcode               = matched.Barcode,
+                ProductTitle          = matched.ProductTitle,
+                VariantTitle          = matched.VariantTitle,
+                QuantityShipped       = -1,
+                ScannedBy             = scannedBy,
+                ScannedAt             = DateTimeOffset.UtcNow,
+                IsRemoval             = true,
+                Price                 = matched.Price,
+                Weight                = matched.Weight,
+                WeightUnit            = matched.WeightUnit,
+            };
+            await _shipmentScans.AddEntityAsync(scanEntity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to log removal scan: {Message}", ex.Message);
+        }
+
+        return (entity, matched);
     }
 
     public async Task<FulfillmentShipmentEntity?> CompleteShipmentAsync(

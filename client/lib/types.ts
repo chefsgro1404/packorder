@@ -205,6 +205,11 @@ export interface ShipmentLineItem {
   variantTitle: string | null;
   imageUrl: string | null;
   price: string;
+  weight: number | null;
+  weightUnit: string | null;
+  isExtra: boolean;
+  addedReason: string | null;
+  addedBy: string | null;
 }
 
 export interface ShipmentFulfillment {
@@ -252,6 +257,12 @@ export interface ShipmentScanRecord {
   isManualLineItem: boolean;
   isManualOverride: boolean;
   overrideReason: string | null;
+  isExtra: boolean;
+  isRemoval: boolean;
+  extraReason: string | null;
+  price: string | null;
+  weight: number | null;
+  weightUnit: string | null;
 }
 
 // ─── Scale & Print Mode ───────────────────────────────────────────────────────

@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
 import { useScanner } from "@/hooks/useScanner";
-import { useOcr } from "@/hooks/useOcr";
 import { ShipmentFulfillment, ShipmentLineItem, ShipmentScanRecord } from "@/lib/types";
 import {
   ArrowLeft,
@@ -17,9 +16,10 @@ import {
   ChevronRight,
   Truck,
   MapPin,
-  Scale,
   Tag,
-  Plus,
+  Minus,
+  Zap,
+  ScanLine,
   Clock,
   User,
   Filter,
@@ -31,7 +31,8 @@ import {
 } from "lucide-react";
 
 type ActiveStep = "list" | "detail" | "scanning";
-type ScanStep = "idle" | "reading" | "confirm";
+type ScanStep = "idle" | "confirm" | "not-in-order";
+type ScanMode = "regular" | "fast";
 type HistoryType = "all" | "complete" | "incomplete";
 
 interface Banner {
@@ -48,8 +49,7 @@ interface HistoryFilters {
 
 export default function ShipPage() {
   const router = useRouter();
-  const { playBeep } = useScanner();
-  const { extractLabelData } = useOcr();
+  const { handleScan: debounceScan, playBeep } = useScanner();
 
   // ─── Tab ─────────────────────────────────────────────────────────────────────
   const [tab, setTab] = useState<"active" | "history">("active");
@@ -68,14 +68,13 @@ export default function ShipPage() {
   const [selectedFulfillment, setSelectedFulfillment] = useState<ShipmentFulfillment | null>(null);
   const [banner, setBanner] = useState<Banner | null>(null);
 
-  // ─── OCR scan confirmation flow ───────────────────────────────────────────────
+  // ─── Scan confirmation flow ────────────────────────────────────────────────────
+  const [scanMode, setScanMode] = useState<ScanMode>("regular");
   const [scanStep, setScanStep] = useState<ScanStep>("idle");
   const [pendingBarcode, setPendingBarcode] = useState("");
-  const [pendingFrame, setPendingFrame] = useState("");
   const [pendingItem, setPendingItem] = useState<ShipmentLineItem | null>(null);
-  const [ocrWeight, setOcrWeight] = useState("");
-  const [ocrPricePerLb, setOcrPricePerLb] = useState("");
-  const [ocrTotalPrice, setOcrTotalPrice] = useState("");
+  const [extraReason, setExtraReason] = useState("");
+  const [extraLoading, setExtraLoading] = useState(false);
 
   // ─── Complete modal ───────────────────────────────────────────────────────────
   const [showCompleteModal, setShowCompleteModal] = useState(false);
@@ -87,6 +86,7 @@ export default function ShipPage() {
   const [staffName, setStaffName] = useState("");
   const [nameInput, setNameInput] = useState("");
   const [showNamePrompt, setShowNamePrompt] = useState(false);
+  const [showSessionPrompt, setShowSessionPrompt] = useState(false);
 
   // ─── History tab state ────────────────────────────────────────────────────────
   const [historyFulfillments, setHistoryFulfillments] = useState<ShipmentFulfillment[]>([]);
@@ -112,12 +112,15 @@ export default function ShipPage() {
 
   const didFetch = useRef(false);
 
-  // ─── Load staff name from localStorage ───────────────────────────────────────
+  // ─── Load staff name from localStorage; confirm once per session ──────────────
   useEffect(() => {
     const saved = localStorage.getItem("shipscan_staff_name");
     if (saved) {
       setStaffName(saved);
       setCompleteStaffName(saved);
+      if (!sessionStorage.getItem("shipscan_session_started")) {
+        setShowSessionPrompt(true);
+      }
     } else {
       setShowNamePrompt(true);
     }
@@ -212,57 +215,33 @@ export default function ShipPage() {
     }
   }, [filterText]);
 
-  // ─── Barcode detected — capture frame and run OCR ────────────────────────────
-  const onScanWithFrame = useCallback(async (barcode: string, frame: string) => {
-    if (!selectedFulfillment || scanStep !== "idle") return;
-    navigator.vibrate?.(50);
-    setBanner(null);
-    setScanStep("reading");
-    setPendingBarcode(barcode);
-    setPendingFrame(frame);
-    setOcrWeight("");
-    setOcrPricePerLb("");
-    setOcrTotalPrice("");
+  // ─── Apply a quantity/status update to the selected + list fulfillments ───────
+  const applyLineItemUpdate = useCallback((
+    fulfillmentId: string,
+    status: "pending" | "partial" | "shipped",
+    fulfillmentLineItemId: string,
+    quantityShipped: number,
+    extraItem?: ShipmentLineItem,
+  ) => {
+    setSelectedFulfillment((prev) => {
+      if (!prev) return prev;
+      let lineItems = prev.lineItems.map((li) =>
+        li.fulfillmentLineItemId === fulfillmentLineItemId
+          ? { ...li, quantityShipped }
+          : li
+      );
+      if (extraItem) lineItems = [...lineItems, extraItem];
+      const updated = { ...prev, status, lineItems };
+      setFulfillments((all) =>
+        all.map((f) => (f.fulfillmentId === fulfillmentId ? updated : f))
+      );
+      return updated;
+    });
+  }, []);
 
-    // Client-side product match for immediate display in confirmation sheet
-    const item =
-      selectedFulfillment.lineItems.find(
-        (li) =>
-          (li.barcode && li.barcode.toLowerCase() === barcode.toLowerCase()) ||
-          (li.sku && li.sku.toLowerCase() === barcode.toLowerCase())
-      ) ?? null;
-    setPendingItem(item);
-
-    if (frame) {
-      try {
-        const label = await extractLabelData(frame);
-        if (label.weightGrams != null) setOcrWeight(String(Math.round(label.weightGrams)));
-        if (label.pricePerLb != null) setOcrPricePerLb(String(label.pricePerLb));
-        if (label.totalPrice != null) setOcrTotalPrice(String(label.totalPrice));
-      } catch {
-        // OCR failed; staff can fill in manually
-      }
-    }
-
-    setScanStep("confirm");
-  }, [selectedFulfillment, scanStep, extractLabelData]);
-
-  // ─── Staff confirms the OCR-prefilled label data ──────────────────────────────
-  const handleConfirmScan = useCallback(async () => {
+  // ─── Record a scan against a matched line item ────────────────────────────────
+  const performScan = useCallback(async (barcode: string) => {
     if (!selectedFulfillment) return;
-    const barcode = pendingBarcode;
-    const wg = ocrWeight ? parseFloat(ocrWeight) : null;
-    const ppl = ocrPricePerLb ? parseFloat(ocrPricePerLb) : null;
-    const tp = ocrTotalPrice ? parseFloat(ocrTotalPrice) : null;
-    const hasLabel = !!(wg || ppl || tp);
-
-    setScanStep("idle");
-    setPendingBarcode("");
-    setPendingFrame("");
-    setPendingItem(null);
-    setOcrWeight("");
-    setOcrPricePerLb("");
-    setOcrTotalPrice("");
 
     try {
       const res = await fetch("/api/shipment/scan", {
@@ -272,10 +251,6 @@ export default function ShipPage() {
           fulfillmentId: selectedFulfillment.fulfillmentId,
           barcode,
           scannedBy: staffName,
-          weightGrams: wg,
-          pricePerLb: ppl,
-          totalPriceScanned: tp,
-          isVariableWeight: hasLabel,
         }),
       });
       const data = await res.json();
@@ -294,89 +269,160 @@ export default function ShipPage() {
       navigator.vibrate?.(80);
       setBanner({
         type: "success",
-        message: wg
-          ? `${data.lineItemName} — ${(wg / 1000).toFixed(3)} kg`
-          : `${data.lineItemName} scanned (${data.quantityShipped}/${data.quantityExpected})`,
+        message: `${data.lineItemName} scanned (${data.quantityShipped}/${data.quantityExpected})`,
       });
 
-      setSelectedFulfillment((prev) => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          status: data.fulfillmentStatus as "pending" | "partial" | "shipped",
-          lineItems: prev.lineItems.map((li) =>
-            li.fulfillmentLineItemId === data.fulfillmentLineItemId
-              ? { ...li, quantityShipped: data.quantityShipped }
-              : li
-          ),
-        };
-        setFulfillments((all) =>
-          all.map((f) => (f.fulfillmentId === prev.fulfillmentId ? updated : f))
-        );
-        return updated;
-      });
+      applyLineItemUpdate(
+        selectedFulfillment.fulfillmentId,
+        data.fulfillmentStatus,
+        data.fulfillmentLineItemId,
+        data.quantityShipped,
+      );
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Scan failed" });
     }
-  }, [selectedFulfillment, pendingBarcode, ocrWeight, ocrPricePerLb, ocrTotalPrice, staffName, playBeep]);
+  }, [selectedFulfillment, staffName, playBeep, applyLineItemUpdate]);
+
+  // ─── Barcode detected ──────────────────────────────────────────────────────────
+  const handleBarcodeDetected = useCallback((barcode: string) => {
+    if (!selectedFulfillment || scanStep !== "idle") return;
+    setBanner(null);
+
+    const item = selectedFulfillment.lineItems.find(
+      (li) =>
+        (li.barcode && li.barcode.toLowerCase() === barcode.toLowerCase()) ||
+        (li.sku && li.sku.toLowerCase() === barcode.toLowerCase())
+    );
+
+    if (!item) {
+      setPendingBarcode(barcode);
+      setExtraReason("");
+      setScanStep("not-in-order");
+      return;
+    }
+
+    if (item.quantityShipped >= item.quantityExpected) {
+      setBanner({ type: "warning", message: `${item.productTitle} already fully scanned` });
+      return;
+    }
+
+    if (scanMode === "fast") {
+      performScan(barcode);
+      return;
+    }
+
+    setPendingBarcode(barcode);
+    setPendingItem(item);
+    setScanStep("confirm");
+  }, [selectedFulfillment, scanStep, scanMode, performScan]);
+
+  // ─── Staff confirms a regular-mode scan ────────────────────────────────────────
+  const handleConfirmScan = useCallback(async () => {
+    const barcode = pendingBarcode;
+    setScanStep("idle");
+    setPendingBarcode("");
+    setPendingItem(null);
+    await performScan(barcode);
+  }, [pendingBarcode, performScan]);
 
   const handleCancelScan = useCallback(() => {
     setScanStep("idle");
     setPendingBarcode("");
-    setPendingFrame("");
     setPendingItem(null);
-    setOcrWeight("");
-    setOcrPricePerLb("");
-    setOcrTotalPrice("");
+    setExtraReason("");
   }, []);
 
-  // ─── Manual tap ───────────────────────────────────────────────────────────────
-  const handleManualTap = useCallback(async (fulfillmentLineItemId: string) => {
-    if (!selectedFulfillment) return;
-    setBanner(null);
-
+  // ─── Item not in this order — accept (with reason) or decline ─────────────────
+  const handleAcceptExtra = useCallback(async () => {
+    if (!selectedFulfillment || !extraReason.trim()) return;
+    setExtraLoading(true);
     try {
-      const res = await fetch("/api/shipment/scan", {
+      const res = await fetch("/api/shipment/scan-extra", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fulfillmentId: selectedFulfillment.fulfillmentId,
-          fulfillmentLineItemId,
-          isManualLineItem: true,
+          barcode: pendingBarcode,
+          reason: extraReason.trim(),
           scannedBy: staffName,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed");
-
-      if (data.alreadyFull) {
-        setBanner({ type: "warning", message: `${data.lineItemName} already fully scanned` });
-        return;
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to add item");
 
       playBeep();
-      setBanner({ type: "success", message: `${data.lineItemName} manually added (${data.quantityShipped}/${data.quantityExpected})` });
+      navigator.vibrate?.(80);
+      setBanner({ type: "success", message: `${data.productTitle} added as extra item` });
 
-      setSelectedFulfillment((prev) => {
-        if (!prev) return prev;
-        const updated = {
-          ...prev,
-          status: data.fulfillmentStatus as "pending" | "partial" | "shipped",
-          lineItems: prev.lineItems.map((li) =>
-            li.fulfillmentLineItemId === data.fulfillmentLineItemId
-              ? { ...li, quantityShipped: data.quantityShipped }
-              : li
-          ),
-        };
-        setFulfillments((all) =>
-          all.map((f) => (f.fulfillmentId === prev.fulfillmentId ? updated : f))
-        );
-        return updated;
-      });
+      const extraItem: ShipmentLineItem = {
+        fulfillmentLineItemId: data.fulfillmentLineItemId,
+        lineItemId: "",
+        name: data.productTitle,
+        quantityExpected: data.quantityExpected,
+        quantityShipped: data.quantityShipped,
+        variantId: null,
+        sku: data.sku ?? null,
+        barcode: data.barcode ?? pendingBarcode,
+        productTitle: data.productTitle,
+        variantTitle: data.variantTitle ?? null,
+        imageUrl: data.imageUrl ?? null,
+        price: data.price ?? "0.00",
+        weight: data.weight ?? null,
+        weightUnit: data.weightUnit ?? null,
+        isExtra: true,
+        addedReason: extraReason.trim(),
+        addedBy: staffName,
+      };
+      applyLineItemUpdate(selectedFulfillment.fulfillmentId, data.fulfillmentStatus, "__none__", 0, extraItem);
+
+      setScanStep("idle");
+      setPendingBarcode("");
+      setExtraReason("");
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to add item" });
+    } finally {
+      setExtraLoading(false);
     }
-  }, [selectedFulfillment, staffName, playBeep]);
+  }, [selectedFulfillment, pendingBarcode, extraReason, staffName, playBeep, applyLineItemUpdate]);
+
+  const handleDeclineExtra = useCallback(() => {
+    setBanner({ type: "info", message: "Scan discarded — item not added" });
+    setScanStep("idle");
+    setPendingBarcode("");
+    setExtraReason("");
+  }, []);
+
+  // ─── Decrement a packed item ───────────────────────────────────────────────────
+  const handleDecrement = useCallback(async (li: ShipmentLineItem) => {
+    if (!selectedFulfillment || li.quantityShipped <= 0) return;
+    setBanner(null);
+
+    try {
+      const res = await fetch("/api/shipment/remove", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fulfillmentId: selectedFulfillment.fulfillmentId,
+          fulfillmentLineItemId: li.fulfillmentLineItemId,
+          scannedBy: staffName,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to remove item");
+
+      navigator.vibrate?.(50);
+      setBanner({ type: "info", message: `${li.productTitle} decreased to ${data.quantityShipped}/${data.quantityExpected}` });
+
+      applyLineItemUpdate(
+        selectedFulfillment.fulfillmentId,
+        data.fulfillmentStatus,
+        data.fulfillmentLineItemId,
+        data.quantityShipped,
+      );
+    } catch (e) {
+      setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to remove item" });
+    }
+  }, [selectedFulfillment, staffName, applyLineItemUpdate]);
 
   // ─── Complete shipment ────────────────────────────────────────────────────────
   const handleComplete = useCallback(async () => {
@@ -519,6 +565,7 @@ export default function ShipPage() {
                   setStaffName(name);
                   setCompleteStaffName(name);
                   localStorage.setItem("shipscan_staff_name", name);
+                  sessionStorage.setItem("shipscan_session_started", "1");
                   setShowNamePrompt(false);
                 }
               }}
@@ -532,12 +579,53 @@ export default function ShipPage() {
                 setStaffName(name);
                 setCompleteStaffName(name);
                 localStorage.setItem("shipscan_staff_name", name);
+                sessionStorage.setItem("shipscan_session_started", "1");
                 setShowNamePrompt(false);
               }}
               disabled={!nameInput.trim()}
               className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors"
             >
               Start Shipping
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // ─── Once-per-session staff name confirmation ─────────────────────────────────
+  if (showSessionPrompt) {
+    return (
+      <main className="min-h-screen flex flex-col bg-slate-950">
+        {renderTopBar("Ship Mode")}
+        <div className="flex-1 flex items-end">
+          <div className="w-full bg-slate-900 border-t border-slate-700 rounded-t-2xl p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <User className="w-6 h-6 text-green-400 shrink-0" />
+              <div>
+                <h2 className="text-lg font-bold text-slate-100">Continue as {staffName}?</h2>
+                <p className="text-sm text-slate-400">This name will be recorded on shipments this session</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                sessionStorage.setItem("shipscan_session_started", "1");
+                setShowSessionPrompt(false);
+              }}
+              className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-xl transition-colors"
+            >
+              Continue as {staffName}
+            </button>
+            <button
+              onClick={() => {
+                sessionStorage.setItem("shipscan_session_started", "1");
+                setNameInput(staffName);
+                setShowSessionPrompt(false);
+                setShowNamePrompt(true);
+              }}
+              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+            >
+              Change Name
             </button>
           </div>
         </div>
@@ -554,127 +642,123 @@ export default function ShipPage() {
           () => { setBanner(null); handleCancelScan(); setActiveStep("detail"); }
         )}
         <div className="flex-1 flex flex-col gap-4 p-4 overflow-y-auto">
+          {/* Scan mode toggle */}
+          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 self-center">
+            <button
+              onClick={() => setScanMode("regular")}
+              disabled={scanStep !== "idle"}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
+                scanMode === "regular" ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <ScanLine className="w-3.5 h-3.5" /> Regular
+            </button>
+            <button
+              onClick={() => setScanMode("fast")}
+              disabled={scanStep !== "idle"}
+              className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
+                scanMode === "fast" ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              <Zap className="w-3.5 h-3.5" /> Fast Scan
+            </button>
+          </div>
+
           <p className="text-sm text-slate-400 text-center">
             {scanStep === "idle"
               ? "Point camera at barcode to scan"
-              : scanStep === "reading"
-              ? "Reading label…"
-              : "Confirm label data before recording"}
+              : scanStep === "confirm"
+              ? "Confirm before recording"
+              : "This item is not in this order"}
           </p>
 
           {banner && <StatusBanner type={banner.type} message={banner.message} />}
 
-          {/* Scanner or OCR confirmation */}
+          {/* Scanner — stays active in fast mode, paused while a prompt is shown */}
           {scanStep === "idle" ? (
-            <BarcodeScanner onScan={onScanWithFrame} active={true} />
-          ) : (
+            <BarcodeScanner onScan={(value) => debounceScan(value, handleBarcodeDetected)} active={true} />
+          ) : scanStep === "confirm" ? (
             <div className="flex flex-col gap-3">
-              {/* Frozen camera frame */}
-              <div className="relative w-full rounded-2xl overflow-hidden bg-slate-900" style={{ minHeight: "12rem" }}>
-                {pendingFrame ? (
-                  <img src={pendingFrame} alt="Captured label" className="w-full object-cover" />
-                ) : (
-                  <div className="w-full h-48 bg-slate-800" />
-                )}
-                {scanStep === "reading" && (
-                  <div className="absolute inset-0 bg-slate-900/75 flex flex-col items-center justify-center gap-3">
-                    <div className="w-7 h-7 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
-                    <p className="text-sm text-slate-300">Reading label…</p>
+              {/* Matched product */}
+              <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
+                {pendingItem && (
+                  <div className="flex items-center gap-3">
+                    {pendingItem.imageUrl && (
+                      <img
+                        src={pendingItem.imageUrl}
+                        alt={pendingItem.productTitle}
+                        className="w-10 h-10 rounded-lg object-cover shrink-0"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-100 truncate">{pendingItem.productTitle}</p>
+                      {pendingItem.variantTitle && (
+                        <p className="text-xs text-slate-400 truncate">{pendingItem.variantTitle}</p>
+                      )}
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {pendingItem.quantityShipped}/{pendingItem.quantityExpected} → {pendingItem.quantityShipped + 1}/{pendingItem.quantityExpected}
+                      </p>
+                    </div>
+                    <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
                   </div>
                 )}
               </div>
 
-              {scanStep === "confirm" && (
-                <>
-                  {/* Matched product */}
-                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
-                    {pendingItem ? (
-                      <div className="flex items-center gap-3">
-                        {pendingItem.imageUrl && (
-                          <img
-                            src={pendingItem.imageUrl}
-                            alt={pendingItem.productTitle}
-                            className="w-10 h-10 rounded-lg object-cover shrink-0"
-                          />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-100 truncate">{pendingItem.productTitle}</p>
-                          {pendingItem.variantTitle && (
-                            <p className="text-xs text-slate-400 truncate">{pendingItem.variantTitle}</p>
-                          )}
-                        </div>
-                        <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
-                      </div>
-                    ) : (
-                      <p className="text-sm text-amber-400 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 shrink-0" />
-                        Barcode not matched — scan will still be recorded
-                      </p>
-                    )}
-                  </div>
-
-                  {/* OCR label fields — editable */}
-                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                      <Scale className="w-3.5 h-3.5" /> Label Data
-                      <span className="text-slate-600 normal-case font-normal">(edit if incorrect)</span>
+              {/* Actions */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelScan}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmScan}
+                  className="flex-[2] py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
+                >
+                  Confirm Scan
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              <div className="bg-amber-900/30 border border-amber-700 rounded-xl p-4 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-200">This item is not in this order</p>
+                    <p className="text-xs text-amber-300/80 mt-0.5">
+                      Scanned barcode: <span className="font-mono">{pendingBarcode}</span>
                     </p>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="text-xs text-slate-500 block mb-1">Weight (g)</label>
-                        <input
-                          type="number"
-                          value={ocrWeight}
-                          onChange={(e) => setOcrWeight(e.target.value)}
-                          placeholder="—"
-                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:border-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-slate-500 block mb-1">$/lb</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={ocrPricePerLb}
-                          onChange={(e) => setOcrPricePerLb(e.target.value)}
-                          placeholder="—"
-                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:border-green-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-slate-500 block mb-1">Total ($)</label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={ocrTotalPrice}
-                          onChange={(e) => setOcrTotalPrice(e.target.value)}
-                          placeholder="—"
-                          className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-slate-100 text-sm focus:outline-none focus:border-green-500"
-                        />
-                      </div>
-                    </div>
-                    {!ocrWeight && !ocrPricePerLb && !ocrTotalPrice && (
-                      <p className="text-xs text-slate-500">No label data detected. Leave empty to record barcode scan only.</p>
-                    )}
+                    <p className="text-xs text-amber-300/80 mt-1">
+                      Add it anyway? A reason is required.
+                    </p>
                   </div>
+                </div>
+                <textarea
+                  value={extraReason}
+                  onChange={(e) => setExtraReason(e.target.value)}
+                  placeholder="Why is this item being added? (e.g. substitution, customer request)"
+                  rows={2}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
+                />
+              </div>
 
-                  {/* Actions */}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleCancelScan}
-                      className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleConfirmScan}
-                      className="flex-[2] py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
-                    >
-                      Confirm Scan
-                    </button>
-                  </div>
-                </>
-              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleDeclineExtra}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+                >
+                  Decline
+                </button>
+                <button
+                  onClick={handleAcceptExtra}
+                  disabled={extraLoading || !extraReason.trim()}
+                  className="flex-[2] py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors"
+                >
+                  {extraLoading ? "Adding…" : "Accept & Add Item"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -852,7 +936,7 @@ export default function ShipPage() {
                     {li.variantTitle && (
                       <p className="text-xs text-slate-400 truncate">{li.variantTitle}</p>
                     )}
-                    <div className="flex items-center gap-2 mt-1">
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
                       <span
                         className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
                           done
@@ -865,20 +949,29 @@ export default function ShipPage() {
                       {li.sku && (
                         <span className="text-xs text-slate-600 truncate">{li.sku}</span>
                       )}
+                      {li.isExtra && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-700 text-amber-300">
+                          Extra
+                        </span>
+                      )}
                     </div>
+                    {li.isExtra && li.addedReason && (
+                      <p className="text-xs text-amber-400/80 mt-1 truncate">
+                        {li.addedReason}{li.addedBy ? ` — ${li.addedBy}` : ""}
+                      </p>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {done ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-400" />
-                    ) : (
+                    {li.quantityShipped > 0 && (
                       <button
-                        onClick={() => handleManualTap(li.fulfillmentLineItemId)}
+                        onClick={() => handleDecrement(li)}
                         className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 transition-colors"
-                        title="Add manually"
+                        title="Remove one"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Minus className="w-4 h-4" />
                       </button>
                     )}
+                    {done && <CheckCircle2 className="w-5 h-5 text-green-400" />}
                   </div>
                 </div>
               );

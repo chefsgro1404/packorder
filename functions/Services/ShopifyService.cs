@@ -78,6 +78,11 @@ public class ShopifyService
                   id title
                   featuredImage { url altText }
                 }
+                inventoryItem {
+                  measurement {
+                    weight { value unit }
+                  }
+                }
               }
             }
           }

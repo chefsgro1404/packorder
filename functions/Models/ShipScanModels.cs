@@ -45,6 +45,36 @@ public class ProductVariant
 
     [JsonProperty("product")]
     public ProductInfo Product { get; set; } = new();
+
+    [JsonProperty("inventoryItem")]
+    public InventoryItemInfo? InventoryItem { get; set; }
+
+    [JsonIgnore]
+    public double? Weight => InventoryItem?.Measurement?.Weight?.Value;
+
+    [JsonIgnore]
+    public string? WeightUnit => InventoryItem?.Measurement?.Weight?.Unit;
+}
+
+public class InventoryItemInfo
+{
+    [JsonProperty("measurement")]
+    public InventoryMeasurement? Measurement { get; set; }
+}
+
+public class InventoryMeasurement
+{
+    [JsonProperty("weight")]
+    public InventoryWeight? Weight { get; set; }
+}
+
+public class InventoryWeight
+{
+    [JsonProperty("value")]
+    public double Value { get; set; }
+
+    [JsonProperty("unit")]
+    public string Unit { get; set; } = "";
 }
 
 public class ProductInfo
@@ -542,6 +572,11 @@ public class ShipmentLineItemCache
     [JsonProperty("variantTitle")]          public string? VariantTitle { get; set; }
     [JsonProperty("imageUrl")]              public string? ImageUrl { get; set; }
     [JsonProperty("price")]                 public string Price { get; set; } = "0.00";
+    [JsonProperty("weight")]                public double? Weight { get; set; }
+    [JsonProperty("weightUnit")]            public string? WeightUnit { get; set; }
+    [JsonProperty("isExtra")]                public bool IsExtra { get; set; }
+    [JsonProperty("addedReason")]           public string? AddedReason { get; set; }
+    [JsonProperty("addedBy")]               public string? AddedBy { get; set; }
 }
 
 public class ShipmentScanEntity : ITableEntity
@@ -570,6 +605,12 @@ public class ShipmentScanEntity : ITableEntity
     public bool IsManualLineItem { get; set; }
     public bool IsManualOverride { get; set; }
     public string? OverrideReason { get; set; }
+    public bool IsExtra { get; set; }
+    public bool IsRemoval { get; set; }
+    public string? ExtraReason { get; set; }
+    public string? Price { get; set; }
+    public double? Weight { get; set; }
+    public string? WeightUnit { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -584,6 +625,21 @@ public class RecordShipScanRequest
     [JsonProperty("isVariableWeight")]      public bool IsVariableWeight { get; set; }
     [JsonProperty("isManualLineItem")]      public bool IsManualLineItem { get; set; }
     [JsonProperty("fulfillmentLineItemId")] public string? FulfillmentLineItemId { get; set; }
+    [JsonProperty("scannedBy")]             public string ScannedBy { get; set; } = "";
+}
+
+public class AddExtraItemRequest
+{
+    [JsonProperty("fulfillmentId")] public string FulfillmentId { get; set; } = "";
+    [JsonProperty("barcode")]       public string Barcode { get; set; } = "";
+    [JsonProperty("reason")]        public string Reason { get; set; } = "";
+    [JsonProperty("scannedBy")]     public string ScannedBy { get; set; } = "";
+}
+
+public class RemoveScanRequest
+{
+    [JsonProperty("fulfillmentId")]         public string FulfillmentId { get; set; } = "";
+    [JsonProperty("fulfillmentLineItemId")] public string FulfillmentLineItemId { get; set; } = "";
     [JsonProperty("scannedBy")]             public string ScannedBy { get; set; } = "";
 }
 
