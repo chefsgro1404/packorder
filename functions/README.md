@@ -218,7 +218,7 @@ Assigns a barcode to a variant using `productVariantsBulkUpdate`.
 
 Fetches fulfilled and partially-fulfilled, non-POS orders that have tracking numbers from Shopify (GraphQL, paginated using `(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos`), then upserts into the `fulfillmentshipments` table only the fulfillments whose `fulfillment.createdAt` (UTC date) falls within the requested date range. Preserves existing scan progress for any fulfillment that has not yet been marked shipped.
 
-Runs as a fire-and-forget background task and responds immediately with `{ ok: true, synced: -1 }`; the actual count is logged ("Ship order sync complete...") once the background task finishes.
+Runs synchronously and returns `{ ok: true, synced: N }`, where `N` is the number of fulfillments upserted. (An earlier fire-and-forget `Task.Run` implementation was removed — detached background tasks are not guaranteed to run to completion in the isolated-worker hosting model and were silently never executing.)
 
 **Optional query params**
 | Param | Format | Description |

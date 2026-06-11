@@ -154,17 +154,8 @@ export default function ShipPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sync failed");
 
-      if (data.synced === -1) {
-        // Sync is running in the background — auto-refresh the list after 20 s
-        setBanner({ type: "info", message: "Sync started — refreshing in 20 seconds…" });
-        setTimeout(async () => {
-          await fetchFulfillments();
-          setBanner({ type: "success", message: "Sync complete — list refreshed" });
-        }, 20000);
-      } else {
-        await fetchFulfillments();
-        setBanner({ type: "success", message: `Synced ${data.synced ?? 0} fulfillments from Shopify` });
-      }
+      await fetchFulfillments();
+      setBanner({ type: "success", message: `Synced ${data.synced ?? 0} fulfillment(s) from Shopify` });
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Sync failed" });
     } finally {

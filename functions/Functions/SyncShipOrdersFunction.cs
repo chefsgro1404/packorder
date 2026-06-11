@@ -37,38 +37,31 @@ public class SyncShipOrdersFunction
         var (from, to) = ParseDateRange(req);
         _logger.LogInformation("Ship order sync requested. Date range {From:yyyy-MM-dd}..{To:yyyy-MM-dd}", from, to);
 
-        // Return 202 immediately — sync can take minutes on large stores and will
-        // exceed the SWA gateway timeout if we await the full result synchronously.
-        var accepted = await ResponseHelper.WriteSuccess(req, new { ok = true, synced = -1 }, _allowedOrigins);
-
-        _ = Task.Run(async () =>
+        try
         {
-            _logger.LogInformation("Ship order sync background task started for {From:yyyy-MM-dd}..{To:yyyy-MM-dd}", from, to);
-            try
-            {
-                var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
+            var entities = await _shopify.FetchFulfilledOrdersWithTrackingAsync();
 
-                foreach (var e in entities)
-                    _logger.LogInformation("Ship order sync: candidate {OrderName} fulfillment {FulfillmentId} createdAt={CreatedAt:yyyy-MM-dd} (status={Status})",
-                        e.OrderName, e.FulfillmentId, e.FulfillmentCreatedAt.UtcDateTime, e.ShopifyFulfillmentStatus);
+            foreach (var e in entities)
+                _logger.LogInformation("Ship order sync: candidate {OrderName} fulfillment {FulfillmentId} createdAt={CreatedAt:yyyy-MM-dd} (status={Status})",
+                    e.OrderName, e.FulfillmentId, e.FulfillmentCreatedAt.UtcDateTime, e.ShopifyFulfillmentStatus);
 
-                var inRange = entities
-                    .Where(e => e.FulfillmentCreatedAt.UtcDateTime.Date >= from && e.FulfillmentCreatedAt.UtcDateTime.Date <= to)
-                    .ToList();
+            var inRange = entities
+                .Where(e => e.FulfillmentCreatedAt.UtcDateTime.Date >= from && e.FulfillmentCreatedAt.UtcDateTime.Date <= to)
+                .ToList();
 
-                _logger.LogInformation("Ship order sync: {InRange} of {Total} candidates fall within {From:yyyy-MM-dd}..{To:yyyy-MM-dd}",
-                    inRange.Count, entities.Count, from, to);
+            _logger.LogInformation("Ship order sync: {InRange} of {Total} candidates fall within {From:yyyy-MM-dd}..{To:yyyy-MM-dd}",
+                inRange.Count, entities.Count, from, to);
 
-                await _tableStorage.SyncFulfillmentShipmentsAsync(inRange);
-                _logger.LogInformation("Ship order sync complete. Upserted {Synced} fulfillment(s)", inRange.Count);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Ship order sync failed");
-            }
-        });
+            await _tableStorage.SyncFulfillmentShipmentsAsync(inRange);
+            _logger.LogInformation("Ship order sync complete. Upserted {Synced} fulfillment(s)", inRange.Count);
 
-        return accepted;
+            return await ResponseHelper.WriteSuccess(req, new { ok = true, synced = inRange.Count }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ship order sync failed");
+            return await ResponseHelper.WriteError(req, "Sync failed", HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
     }
 
     /// <summary>
