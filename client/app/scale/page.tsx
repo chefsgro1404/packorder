@@ -11,7 +11,6 @@ import {
   RotateCcw,
   ScanLine,
   CheckCircle2,
-  AlertCircle,
   AlertTriangle,
   Plug,
   PlugZap,
@@ -26,7 +25,6 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
-import { usePrinter } from '@/hooks/usePrinter';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel } from '@/lib/types';
 
@@ -186,11 +184,9 @@ function ScaleMonitor({
 function LabelPreview({
   item,
   lookupLoading,
-  isPrinting,
 }: {
   item: CurrentItem | null;
   lookupLoading: boolean;
-  isPrinting: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -229,9 +225,7 @@ function LabelPreview({
       {/* 57×38mm label preview */}
       <div className="mx-auto w-full max-w-[260px]">
         <div
-          className={`relative bg-white rounded-xl overflow-hidden shadow-lg transition-all duration-300 ${
-            isPrinting ? 'ring-2 ring-blue-500 shadow-blue-900/40' : 'ring-1 ring-slate-700'
-          }`}
+          className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700"
           style={{ aspectRatio: '57/38' }}
         >
           <div className="absolute inset-0 flex items-center justify-between px-3 py-2.5">
@@ -252,13 +246,6 @@ function LabelPreview({
               />
             </div>
           </div>
-          {isPrinting && (
-            <div className="absolute inset-0 bg-blue-500/10 flex items-center justify-center">
-              <span className="bg-white/95 rounded-lg px-2.5 py-1 text-xs font-semibold text-blue-600 border border-blue-200">
-                Printing…
-              </span>
-            </div>
-          )}
         </div>
         <p className="text-center text-[10px] text-slate-600 mt-1.5">57 mm × 38 mm · Godex DT2x</p>
       </div>
@@ -303,26 +290,16 @@ function LabelPreview({
 
 function DeviceSetup({
   scaleState,
-  printerState,
   scaleError,
-  printerError,
   onConnectScale,
   onDisconnectScale,
-  onConnectPrinter,
-  onDisconnectPrinter,
 }: {
   scaleState: string;
-  printerState: string;
   scaleError: string | null;
-  printerError: string | null;
   onConnectScale: () => void;
   onDisconnectScale: () => void;
-  onConnectPrinter: () => void;
-  onDisconnectPrinter: () => void;
 }) {
-  const bothConnected =
-    scaleState !== 'disconnected' && printerState !== 'disconnected';
-  const [open, setOpen] = useState(!bothConnected);
+  const [open, setOpen] = useState(scaleState === 'disconnected');
   const isSerialSupported =
     typeof navigator !== 'undefined' && 'serial' in navigator;
 
@@ -336,7 +313,7 @@ function DeviceSetup({
           <Plug className="w-4 h-4 text-slate-500" />
           <span className="text-sm font-semibold text-slate-200">Device Setup</span>
           <span className="text-xs text-slate-500">
-            {bothConnected ? '— both connected' : '— action needed'}
+            {scaleState !== 'disconnected' ? '— scale connected' : '— action needed'}
           </span>
         </div>
         {open ? (
@@ -393,55 +370,6 @@ function DeviceSetup({
             ) : (
               <button
                 onClick={onConnectScale}
-                disabled={!isSerialSupported}
-                className="flex items-center gap-1 text-xs text-slate-900 bg-slate-100 hover:bg-white transition-colors px-2.5 py-1.5 rounded-lg font-semibold disabled:opacity-40"
-              >
-                <Plug className="w-3 h-3" /> Connect
-              </button>
-            )}
-          </div>
-
-          <div className="border-t border-slate-800" />
-
-          {/* Printer row */}
-          <div className="flex items-center gap-3">
-            <div
-              className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                printerState !== 'disconnected'
-                  ? 'bg-emerald-950/60 text-emerald-400'
-                  : 'bg-slate-900 text-slate-500'
-              }`}
-            >
-              <Printer className="w-4 h-4" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium text-slate-200">Godex DT2x</p>
-                <span
-                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                    printerState !== 'disconnected'
-                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
-                      : 'bg-slate-900 text-slate-500 border border-slate-800'
-                  }`}
-                >
-                  {printerState !== 'disconnected' ? 'Connected' : 'Disconnected'}
-                </span>
-              </div>
-              <p className="text-xs text-slate-600">57 mm × 38 mm · EZPL</p>
-              {printerError && (
-                <p className="text-xs text-rose-400 mt-0.5">{printerError}</p>
-              )}
-            </div>
-            {printerState !== 'disconnected' ? (
-              <button
-                onClick={onDisconnectPrinter}
-                className="flex items-center gap-1 text-xs text-slate-500 hover:text-rose-400 transition-colors px-2.5 py-1.5 rounded-lg hover:bg-rose-950/30"
-              >
-                <PlugZap className="w-3 h-3" /> Disconnect
-              </button>
-            ) : (
-              <button
-                onClick={onConnectPrinter}
                 disabled={!isSerialSupported}
                 className="flex items-center gap-1 text-xs text-slate-900 bg-slate-100 hover:bg-white transition-colors px-2.5 py-1.5 rounded-lg font-semibold disabled:opacity-40"
               >
@@ -551,8 +479,8 @@ export default function ScalePage() {
   const [currentItem, setCurrentItem] = useState<CurrentItem | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [printedAt, setPrintedAt] = useState<Date | null>(null);
-
-  const printer = usePrinter();
+  const [printPayload, setPrintPayload] = useState<{ productTitle: string; qrPayload: string } | null>(null);
+  const [printRequestId, setPrintRequestId] = useState(0);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -636,14 +564,23 @@ export default function ScalePage() {
     }
   }, [fetchHistory]);
 
+  // ─── Browser-native print: render the label off-screen, then trigger window.print() ──
   const printItem = useCallback(async (item: CurrentItem) => {
     const printedAtEst = formatEst(new Date());
     const sn = generateSn();
     const qrPayload = buildQrPayload(item, printedAtEst, sn);
-    await printer.print(item.productTitle, qrPayload);
+    setPrintPayload({ productTitle: item.productTitle, qrPayload });
+    setPrintRequestId((n) => n + 1);
     setPrintedAt(new Date());
     await logPrintedLabel(item, qrPayload, printedAtEst, sn);
-  }, [printer, logPrintedLabel]);
+  }, [logPrintedLabel]);
+
+  useEffect(() => {
+    if (printRequestId === 0) return;
+    // Wait a tick for the print-only label to render before opening the print dialog.
+    const id = requestAnimationFrame(() => window.print());
+    return () => cancelAnimationFrame(id);
+  }, [printRequestId]);
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
@@ -652,21 +589,15 @@ export default function ScalePage() {
       const item = await lookupProduct(reading);
       setCurrentItem(item);
       setLookupLoading(false);
-
-      if (printer.state === 'connected') {
-        await printItem(item);
-      } else {
-        console.warn('[scale] printer not connected — label not auto-printed for', item.productTitle);
-      }
+      await printItem(item);
     },
-    [lookupProduct, printItem, printer.state]
+    [lookupProduct, printItem]
   );
 
   const scale = useScale(handleReading);
 
   useEffect(() => {
     scale.autoConnect();
-    printer.autoConnect();
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -680,12 +611,9 @@ export default function ScalePage() {
   };
 
   const handleReprint = async (record: PrintedLabel) => {
-    if (printer.state !== 'connected') {
-      console.warn('[scale] reprint requested but printer not connected:', record.productTitle);
-      return;
-    }
     console.log('[scale] reprinting:', record.productTitle, record.printedAtEst);
-    await printer.print(record.productTitle, record.qrPayload);
+    setPrintPayload({ productTitle: record.productTitle, qrPayload: record.qrPayload });
+    setPrintRequestId((n) => n + 1);
     const printedAtEst = formatEst(new Date());
     await logPrintedLabel(
       {
@@ -708,10 +636,7 @@ export default function ScalePage() {
       : scale.state === 'connected'
       ? 'ok'
       : 'off';
-  const printerStatus =
-    printer.state === 'printing' ? 'busy' : printer.state === 'connected' ? 'ok' : 'off';
-  const isPrinting = printer.state === 'printing';
-  const canPrint = !!currentItem && printer.state === 'connected';
+  const canPrint = !!currentItem;
 
   return (
     <main className="min-h-screen bg-slate-950 pb-safe">
@@ -733,10 +658,6 @@ export default function ScalePage() {
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
             <StatusDot status={scaleStatus} />
             <span className="text-xs text-slate-400 font-medium">Scale</span>
-          </div>
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
-            <StatusDot status={printerStatus} />
-            <span className="text-xs text-slate-400 font-medium">Print</span>
           </div>
           <button
             onClick={() => router.push('/scale/products')}
@@ -771,30 +692,24 @@ export default function ScalePage() {
             </div>
             {currentItem && (
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                {isPrinting ? 'Printing…' : printedAt ? 'Printed' : 'Ready'}
+                {printedAt ? 'Printed' : 'Ready'}
               </span>
             )}
           </div>
           <div className="px-4 pb-4">
-            <LabelPreview item={currentItem} lookupLoading={lookupLoading} isPrinting={isPrinting} />
+            <LabelPreview item={currentItem} lookupLoading={lookupLoading} />
 
             {currentItem && (
               <>
                 <div className="border-t border-slate-800 my-4" />
 
                 {/* Feedback banners */}
-                {printedAt && !isPrinting && (
+                {printedAt && (
                   <div className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-900 rounded-xl px-3 py-2.5 mb-3">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
                     <p className="text-sm text-emerald-300 font-medium">
-                      Printed at {formatEst(printedAt)} EST
+                      Sent to print dialog at {formatEst(printedAt)} EST
                     </p>
-                  </div>
-                )}
-                {printer.error && (
-                  <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5 mb-3">
-                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                    <p className="text-sm text-rose-300">{printer.error}</p>
                   </div>
                 )}
 
@@ -806,7 +721,7 @@ export default function ScalePage() {
                     className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
                   >
                     <Printer className="w-4 h-4" />
-                    {isPrinting ? 'Printing…' : printedAt ? 'Print Again' : 'Print Label'}
+                    {printedAt ? 'Print Again' : 'Print Label'}
                   </button>
                   <button
                     onClick={() => {
@@ -826,23 +741,79 @@ export default function ScalePage() {
         {/* Device setup */}
         <DeviceSetup
           scaleState={scale.state}
-          printerState={printer.state}
           scaleError={scale.error}
-          printerError={printer.error}
           onConnectScale={scale.connect}
           onDisconnectScale={scale.disconnect}
-          onConnectPrinter={printer.connect}
-          onDisconnectPrinter={printer.disconnect}
         />
 
         {/* Print history */}
         <PrintHistory
           records={printHistory}
           loading={historyLoading}
-          canPrint={printer.state === 'connected'}
+          canPrint={true}
           onReprint={handleReprint}
         />
       </div>
+
+      {/* Print-only label — rendered off-screen, shown only inside the browser print dialog */}
+      {printPayload && (
+        <div id="print-label" aria-hidden="true">
+          <div className="print-label-inner">
+            <p className="print-label-title">{printPayload.productTitle}</p>
+            <div className="print-label-qr">
+              <QRCodeSVG value={printPayload.qrPayload} size={130} level="M" />
+            </div>
+          </div>
+        </div>
+      )}
+      <style jsx global>{`
+        #print-label {
+          display: none;
+        }
+        @media print {
+          @page {
+            size: 57mm 38mm;
+            margin: 0;
+          }
+          body * {
+            visibility: hidden;
+          }
+          #print-label,
+          #print-label * {
+            visibility: visible;
+          }
+          #print-label {
+            display: block;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 57mm;
+            height: 38mm;
+          }
+          .print-label-inner {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            padding: 2mm;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #fff;
+            color: #000;
+          }
+          .print-label-title {
+            flex: 1;
+            padding-right: 2mm;
+            font-size: 10pt;
+            font-weight: 700;
+            line-height: 1.2;
+            overflow: hidden;
+          }
+          .print-label-qr {
+            flex-shrink: 0;
+          }
+        }
+      `}</style>
     </main>
   );
 }
