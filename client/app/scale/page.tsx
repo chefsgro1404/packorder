@@ -222,32 +222,26 @@ function LabelPreview({
         </div>
       )}
 
-      {/* 57×38mm label preview */}
-      <div className="mx-auto w-full max-w-[260px]">
+      {/* 2"×3" label preview */}
+      <div className="mx-auto w-full max-w-[160px]">
         <div
           className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700"
-          style={{ aspectRatio: '57/38' }}
+          style={{ aspectRatio: '2/3' }}
         >
-          <div className="absolute inset-0 flex items-center justify-between px-3 py-2.5">
-            <div className="flex flex-col justify-between h-full py-0.5 flex-1 pr-2">
-              <div>
-                <p className="text-[7px] font-semibold text-slate-400 uppercase tracking-widest">Product</p>
-                <p className="text-sm font-bold text-slate-900 leading-tight">{item.productTitle}</p>
-              </div>
-              <p className="text-[6px] text-slate-400 font-mono">ChefsRHere</p>
-            </div>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 px-3 py-3 text-center">
             <div className="flex-shrink-0 bg-white p-0.5 rounded border border-slate-200">
               <QRCodeSVG
                 value={previewQrPayload}
-                size={60}
+                size={70}
                 level="M"
                 bgColor="#ffffff"
                 fgColor="#0f172a"
               />
             </div>
+            <p className="text-xs font-bold text-slate-900 leading-tight">{item.productTitle}</p>
           </div>
         </div>
-        <p className="text-center text-[10px] text-slate-600 mt-1.5">57 mm × 38 mm · Godex DT2x</p>
+        <p className="text-center text-[10px] text-slate-600 mt-1.5">2&quot; × 3&quot; · Godex DT2x</p>
       </div>
 
       {/* Item details */}
@@ -759,10 +753,10 @@ export default function ScalePage() {
       {printPayload && (
         <div id="print-label" aria-hidden="true">
           <div className="print-label-inner">
-            <p className="print-label-title">{printPayload.productTitle}</p>
             <div className="print-label-qr">
-              <QRCodeSVG value={printPayload.qrPayload} size={130} level="M" />
+              <QRCodeSVG value={printPayload.qrPayload} size={160} level="M" />
             </div>
+            <p className="print-label-title">{printPayload.productTitle}</p>
           </div>
         </div>
       )}
@@ -772,7 +766,7 @@ export default function ScalePage() {
         }
         @media print {
           @page {
-            size: 57mm 38mm;
+            size: 2in 3in;
             margin: 0;
           }
           body * {
@@ -787,30 +781,32 @@ export default function ScalePage() {
             position: fixed;
             top: 0;
             left: 0;
-            width: 57mm;
-            height: 38mm;
+            width: 2in;
+            height: 3in;
           }
           .print-label-inner {
             width: 100%;
             height: 100%;
             box-sizing: border-box;
-            padding: 2mm;
+            padding: 0.1in;
             display: flex;
+            flex-direction: column;
             align-items: center;
-            justify-content: space-between;
+            justify-content: center;
+            gap: 0.15in;
             background: #fff;
             color: #000;
-          }
-          .print-label-title {
-            flex: 1;
-            padding-right: 2mm;
-            font-size: 10pt;
-            font-weight: 700;
-            line-height: 1.2;
-            overflow: hidden;
+            text-align: center;
           }
           .print-label-qr {
             flex-shrink: 0;
+          }
+          .print-label-title {
+            font-size: 12pt;
+            font-weight: 700;
+            line-height: 1.2;
+            overflow: hidden;
+            word-break: break-word;
           }
         }
       `}</style>
