@@ -228,23 +228,21 @@ function LabelPreview({
           className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700"
           style={{ aspectRatio: '2.25/1.25' }}
         >
-          <div className="absolute inset-0 flex flex-row items-center gap-2 px-3 py-2">
-            <div className="flex-shrink-0 bg-white p-0.5 rounded border border-slate-200">
+          <div className="absolute inset-0 flex flex-col items-start justify-center gap-1 px-3 py-2">
+            <div className="flex flex-col gap-0.5 w-full">
+              <p className="text-[8px] font-bold text-slate-900 leading-tight truncate">{item.productTitle}</p>
+              <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {item.itemWeight}</p>
+              <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+              <p className="text-[7px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>
+            </div>
+            <div className="flex justify-center w-full pt-0.5">
               <QRCodeSVG
                 value={previewQrPayload}
-                size={60}
+                size={36}
                 level="M"
                 bgColor="#ffffff"
                 fgColor="#0f172a"
               />
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-              <p className="text-[8px] font-bold text-slate-900 leading-tight truncate">
-                {item.productTitle}
-              </p>
-              <p className="text-[7px] text-slate-600 leading-tight">Wt: {item.itemWeight}</p>
-              <p className="text-[7px] text-slate-600 leading-tight">Pack: {formatEst(new Date())}</p>
-              <p className="text-[7px] text-slate-500 leading-tight font-mono">SN: preview</p>
             </div>
           </div>
         </div>
@@ -762,7 +760,7 @@ export default function ScalePage() {
         />
       </div>
 
-      {/* Print-only label — rendered off-screen, shown only inside the browser print dialog */}
+      {/* Print-only label — hidden from screen, shown only in browser print dialog */}
       {printPayload && (
         <div id="print-label" aria-hidden="true">
           <div className="print-label-inner">
@@ -773,7 +771,7 @@ export default function ScalePage() {
               <p className="print-label-line print-label-sn"><span className="print-label-field">SN:</span> {printPayload.sn}</p>
             </div>
             <div className="print-label-qr">
-              <QRCodeSVG value={printPayload.qrPayload} size={96} level="M" />
+              <QRCodeSVG value={printPayload.qrPayload} size={256} level="M" bgColor="#ffffff" fgColor="#000000" />
             </div>
           </div>
         </div>
@@ -784,64 +782,68 @@ export default function ScalePage() {
         }
         @media print {
           @page {
-            size: 2.25in 1.25in landscape;
+            size: 2.25in 1.25in;
             margin: 0;
           }
-          body * {
-            visibility: hidden;
-          }
-          #print-label,
-          #print-label * {
-            visibility: visible;
+          body > * {
+            display: none !important;
           }
           #print-label {
-            display: block;
+            display: block !important;
             position: fixed;
             top: 0;
             left: 0;
             width: 2.25in;
             height: 1.25in;
+            overflow: hidden;
+            background: #fff;
           }
           .print-label-inner {
-            width: 100%;
-            height: 100%;
+            width: 2.25in;
+            height: 1.25in;
             box-sizing: border-box;
-            padding: 0.1in 0.12in;
+            padding: 0.1in 0.14in 0.08in;
             display: flex;
-            flex-direction: row;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.1in;
-            background: #fff;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 0.06in;
             color: #000;
           }
           .print-label-text {
-            flex: 1;
-            min-width: 0;
+            width: 100%;
             display: flex;
             flex-direction: column;
-            gap: 0.03in;
+            gap: 0.02in;
           }
           .print-label-product {
-            font-size: 8pt;
+            font-size: 7.5pt;
             font-weight: 700;
             line-height: 1.2;
+            margin: 0 0 0.025in 0;
+            color: #000;
             word-break: break-word;
-            margin: 0 0 0.04in 0;
           }
           .print-label-line {
-            font-size: 6.5pt;
+            font-size: 6pt;
             line-height: 1.3;
             margin: 0;
+            color: #000;
           }
           .print-label-field {
-            font-weight: 600;
+            font-weight: 700;
           }
           .print-label-sn {
             font-family: monospace;
           }
           .print-label-qr {
-            flex-shrink: 0;
+            display: flex;
+            justify-content: center;
+            width: 100%;
+          }
+          .print-label-qr svg {
+            width: 0.5in !important;
+            height: 0.5in !important;
           }
         }
       `}</style>
