@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
@@ -487,7 +486,6 @@ export default function ScalePage() {
     sn: string;
   } | null>(null);
   const [printRequestId, setPrintRequestId] = useState(0);
-  const [mounted, setMounted] = useState(false);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -604,7 +602,6 @@ export default function ScalePage() {
   const scale = useScale(handleReading);
 
   useEffect(() => {
-    setMounted(true);
     scale.autoConnect();
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -763,8 +760,8 @@ export default function ScalePage() {
         />
       </div>
 
-      {/* Print-only label — portalled onto document.body so display:none on app root doesn't hide it */}
-      {mounted && printPayload && createPortal(
+      {/* Print-only label — visibility:hidden keeps DOM in flow so visibility:visible on this works */}
+      {printPayload && (
         <div id="print-label" aria-hidden="true">
           <div className="print-label-inner">
             <div className="print-label-text">
@@ -777,8 +774,7 @@ export default function ScalePage() {
               <QRCodeSVG value={printPayload.qrPayload} size={256} level="M" bgColor="#ffffff" fgColor="#000000" />
             </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
       <style jsx global>{`
         #print-label {
@@ -789,18 +785,31 @@ export default function ScalePage() {
             size: 1.25in 2.25in;
             margin: 0;
           }
-          body > *:not(#print-label) {
-            display: none !important;
+          html, body {
+            width: 1.25in !important;
+            height: 2.25in !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body * {
+            visibility: hidden;
+          }
+          #print-label,
+          #print-label * {
+            visibility: visible;
           }
           #print-label {
-            display: block !important;
+            display: block;
             position: fixed;
             top: 0;
             left: 0;
             width: 1.25in;
             height: 2.25in;
             overflow: hidden;
-            background: #fff !important;
+            background: #fff;
           }
           .print-label-inner {
             width: 1.25in;
@@ -812,7 +821,7 @@ export default function ScalePage() {
             align-items: flex-start;
             justify-content: flex-start;
             gap: 0.1in;
-            background: #fff !important;
+            background: #fff;
           }
           .print-label-text {
             width: 100%;
@@ -821,25 +830,26 @@ export default function ScalePage() {
             gap: 0.03in;
           }
           .print-label-product {
-            font-size: 7.5pt;
+            font-size: 8pt;
             font-weight: 700;
             line-height: 1.2;
             margin: 0 0 0.04in 0;
-            color: #000 !important;
+            color: #000;
             word-break: break-word;
           }
           .print-label-line {
-            font-size: 6pt;
+            font-size: 7pt;
             line-height: 1.3;
             margin: 0;
-            color: #000 !important;
+            color: #000;
           }
           .print-label-field {
             font-weight: 700;
-            color: #000 !important;
+            color: #000;
           }
           .print-label-sn {
             font-family: monospace;
+            color: #000;
           }
           .print-label-qr {
             display: flex;
