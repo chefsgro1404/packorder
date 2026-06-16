@@ -644,7 +644,8 @@ export default function ScalePage() {
   const canPrint = !!currentItem;
 
   return (
-    <main className="min-h-screen bg-slate-950 pb-safe">
+    <>
+      <main className="min-h-screen bg-slate-950 pb-safe">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800/60 px-4 py-3 flex items-center gap-3">
         <button
@@ -760,7 +761,9 @@ export default function ScalePage() {
         />
       </div>
 
-      {/* Print-only label — visibility:hidden keeps DOM in flow so visibility:visible on this works */}
+      </main>
+
+      {/* Print-only label — sibling of main so hiding main in print doesn't affect it */}
       {printPayload && (
         <div id="print-label" aria-hidden="true">
           <div className="print-label-inner">
@@ -784,6 +787,9 @@ export default function ScalePage() {
           @page {
             size: 1.25in 2.25in;
             margin: 0;
+          }
+          main {
+            display: none !important;
           }
           #print-label {
             display: block;
@@ -848,6 +854,6 @@ export default function ScalePage() {
           }
         }
       `}</style>
-    </main>
+    </>
   );
 }
