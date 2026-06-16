@@ -785,22 +785,6 @@ export default function ScalePage() {
             size: 1.25in 2.25in;
             margin: 0;
           }
-          html, body {
-            width: 1.25in !important;
-            height: 2.25in !important;
-            overflow: hidden !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          body * {
-            visibility: hidden;
-          }
-          #print-label,
-          #print-label * {
-            visibility: visible;
-          }
           #print-label {
             display: block;
             position: fixed;
@@ -810,6 +794,8 @@ export default function ScalePage() {
             height: 2.25in;
             overflow: hidden;
             background: #fff;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
           }
           .print-label-inner {
             width: 1.25in;
