@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
@@ -486,6 +487,7 @@ export default function ScalePage() {
     sn: string;
   } | null>(null);
   const [printRequestId, setPrintRequestId] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -602,6 +604,7 @@ export default function ScalePage() {
   const scale = useScale(handleReading);
 
   useEffect(() => {
+    setMounted(true);
     scale.autoConnect();
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -760,8 +763,8 @@ export default function ScalePage() {
         />
       </div>
 
-      {/* Print-only label — hidden from screen, shown only in browser print dialog */}
-      {printPayload && (
+      {/* Print-only label — portalled onto document.body so display:none on app root doesn't hide it */}
+      {mounted && printPayload && createPortal(
         <div id="print-label" aria-hidden="true">
           <div className="print-label-inner">
             <div className="print-label-text">
@@ -774,7 +777,8 @@ export default function ScalePage() {
               <QRCodeSVG value={printPayload.qrPayload} size={256} level="M" bgColor="#ffffff" fgColor="#000000" />
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       <style jsx global>{`
         #print-label {
@@ -785,29 +789,18 @@ export default function ScalePage() {
             size: 1.25in 2.25in;
             margin: 0;
           }
-          html, body {
-            width: 1.25in;
-            height: 2.25in;
-            overflow: hidden;
-            margin: 0;
-            padding: 0;
-          }
-          body * {
-            visibility: hidden;
-          }
-          #print-label,
-          #print-label * {
-            visibility: visible;
+          body > *:not(#print-label) {
+            display: none !important;
           }
           #print-label {
-            display: block;
+            display: block !important;
             position: fixed;
             top: 0;
             left: 0;
             width: 1.25in;
             height: 2.25in;
             overflow: hidden;
-            background: #fff;
+            background: #fff !important;
           }
           .print-label-inner {
             width: 1.25in;
@@ -819,7 +812,7 @@ export default function ScalePage() {
             align-items: flex-start;
             justify-content: flex-start;
             gap: 0.1in;
-            color: #000;
+            background: #fff !important;
           }
           .print-label-text {
             width: 100%;
@@ -832,17 +825,18 @@ export default function ScalePage() {
             font-weight: 700;
             line-height: 1.2;
             margin: 0 0 0.04in 0;
-            color: #000;
+            color: #000 !important;
             word-break: break-word;
           }
           .print-label-line {
             font-size: 6pt;
             line-height: 1.3;
             margin: 0;
-            color: #000;
+            color: #000 !important;
           }
           .print-label-field {
             font-weight: 700;
+            color: #000 !important;
           }
           .print-label-sn {
             font-family: monospace;
