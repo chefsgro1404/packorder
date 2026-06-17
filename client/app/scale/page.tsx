@@ -222,23 +222,23 @@ function LabelPreview({
         </div>
       )}
 
-      {/* 2.25"×1.25" landscape label preview */}
-      <div className="mx-auto w-full max-w-[270px]">
+      {/* 1.5"×1.5" square label preview */}
+      <div className="mx-auto w-full max-w-[180px]">
         <div
           className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700"
-          style={{ aspectRatio: '2.25/1.25' }}
+          style={{ aspectRatio: '1/1' }}
         >
-          <div className="absolute inset-0 flex flex-row items-center gap-2 px-2.5 py-2">
-            <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+          <div className="absolute inset-0 flex flex-col items-start gap-1.5 px-2.5 py-2.5">
+            <div className="flex flex-col gap-0.5 w-full">
               <p className="text-[7px] font-bold text-slate-900 leading-tight break-words">{item.productTitle}</p>
               <p className="text-[6px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {item.itemWeight}</p>
               <p className="text-[6px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
               <p className="text-[6px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>
             </div>
-            <div className="flex-shrink-0">
+            <div className="flex justify-center w-full">
               <QRCodeSVG
                 value={previewQrPayload}
-                size={52}
+                size={72}
                 level="M"
                 bgColor="#ffffff"
                 fgColor="#0f172a"
@@ -246,7 +246,7 @@ function LabelPreview({
             </div>
           </div>
         </div>
-        <p className="text-center text-[10px] text-slate-600 mt-1.5">2.25&quot; × 1.25&quot; landscape · Godex DT2x</p>
+        <p className="text-center text-[10px] text-slate-600 mt-1.5">1.5&quot; × 1.5&quot; square · Godex DT2x</p>
       </div>
 
       {/* Item details */}
@@ -589,16 +589,16 @@ export default function ScalePage() {
       if (!win) return;
       win.document.write(`<!DOCTYPE html><html><head><style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        @page { size: 2.25in 1.25in; margin: 0; }
-        html, body { width: 2.25in; height: 1.25in; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .print-label-inner { width: 2.25in; height: 1.25in; padding: 0.08in 0.1in; display: flex; flex-direction: row; align-items: center; gap: 0.1in; }
-        .print-label-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.025in; }
-        .print-label-product { font-size: 7pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; margin-bottom: 0.03in; }
-        .print-label-line { font-size: 6pt; line-height: 1.25; color: #000; }
+        @page { size: 1.5in 1.5in; margin: 0; }
+        html, body { width: 1.5in; height: 1.5in; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .print-label-inner { width: 1.5in; height: 1.5in; padding: 0.07in 0.09in; display: flex; flex-direction: column; align-items: flex-start; gap: 0.05in; }
+        .print-label-text { width: 100%; display: flex; flex-direction: column; gap: 0.02in; }
+        .print-label-product { font-size: 6.5pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; margin-bottom: 0.02in; }
+        .print-label-line { font-size: 5.5pt; line-height: 1.25; color: #000; }
         .print-label-field { font-weight: 700; color: #000; }
         .print-label-sn { font-family: monospace; color: #000; }
-        .print-label-qr { flex-shrink: 0; }
-        .print-label-qr svg { width: 0.9in !important; height: 0.9in !important; }
+        .print-label-qr { display: flex; justify-content: center; width: 100%; }
+        .print-label-qr svg { width: 0.85in !important; height: 0.85in !important; }
       </style></head><body>${el.innerHTML}</body></html>`);
       win.document.close();
       win.focus();
@@ -795,7 +795,7 @@ export default function ScalePage() {
               <p className="print-label-line print-label-sn"><span className="print-label-field">SN:</span> {printPayload.sn}</p>
             </div>
             <div className="print-label-qr">
-              <QRCodeSVG value={printPayload.qrPayload} size={256} level="M" bgColor="#ffffff" fgColor="#000000" />
+              <QRCodeSVG value={printPayload.qrPayload} size={244} level="M" bgColor="#ffffff" fgColor="#000000" />
             </div>
           </div>
         </div>
@@ -806,7 +806,7 @@ export default function ScalePage() {
         }
         @media print {
           @page {
-            size: 2.25in 1.25in;
+            size: 1.5in 1.5in;
             margin: 0;
           }
           main {
@@ -817,42 +817,41 @@ export default function ScalePage() {
             position: fixed;
             top: 0;
             left: 0;
-            width: 2in;
-            height: 3in;
+            width: 1.5in;
+            height: 1.5in;
             overflow: hidden;
             background: #fff;
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
           .print-label-inner {
-            width: 2in;
-            height: 3in;
+            width: 1.5in;
+            height: 1.5in;
             box-sizing: border-box;
-            padding: 0.15in 0.15in;
+            padding: 0.07in 0.09in;
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            justify-content: flex-start;
-            gap: 0.12in;
+            gap: 0.05in;
             background: #fff;
           }
           .print-label-text {
             width: 100%;
             display: flex;
             flex-direction: column;
-            gap: 0.04in;
+            gap: 0.02in;
           }
           .print-label-product {
-            font-size: 10pt;
+            font-size: 6.5pt;
             font-weight: 700;
             line-height: 1.2;
-            margin: 0 0 0.05in 0;
+            margin: 0 0 0.02in 0;
             color: #000;
             word-break: break-word;
           }
           .print-label-line {
-            font-size: 8pt;
-            line-height: 1.3;
+            font-size: 5.5pt;
+            line-height: 1.25;
             margin: 0;
             color: #000;
           }
@@ -870,8 +869,8 @@ export default function ScalePage() {
             width: 100%;
           }
           .print-label-qr svg {
-            width: 1.4in !important;
-            height: 1.4in !important;
+            width: 0.85in !important;
+            height: 0.85in !important;
           }
         }
       `}</style>
