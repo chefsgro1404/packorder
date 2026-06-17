@@ -596,14 +596,14 @@ export default function ScalePage() {
         html, body { width: 3in; height: 2in; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
         .print-label-inner { width: 3in; height: 2in; display: flex; align-items: stretch; justify-content: flex-end; }
         .print-label-empty { width: 1in; height: 2in; flex-shrink: 0; }
-        .print-label-content { width: 2in; height: 2in; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 0.15in; gap: 0.08in; }
-        .print-label-text { width: 100%; display: flex; flex-direction: column; gap: 0.04in; }
-        .print-label-product { font-size: 11pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; margin-bottom: 0.05in; }
-        .print-label-line { font-size: 9pt; line-height: 1.3; color: #000; }
+        .print-label-content { width: 2in; height: 2in; flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 0.15in; gap: 0.06in; }
+        .print-label-text { width: 100%; display: flex; flex-direction: column; gap: 0.03in; }
+        .print-label-product { font-size: 10pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; margin-bottom: 0.04in; }
+        .print-label-line { font-size: 8pt; line-height: 1.3; color: #000; }
         .print-label-field { font-weight: 700; color: #000; }
         .print-label-sn { font-family: monospace; color: #000; }
         .print-label-qr { display: flex; justify-content: center; width: 100%; }
-        .print-label-qr svg { width: 1.35in !important; height: 1.35in !important; }
+        .print-label-qr svg { width: 0.85in !important; height: 0.85in !important; }
       </style></head><body>${el.innerHTML}</body></html>`);
       win.document.close();
       win.focus();
@@ -855,24 +855,24 @@ export default function ScalePage() {
             display: flex;
             flex-direction: column;
             align-items: flex-start;
-            gap: 0.08in;
+            gap: 0.06in;
           }
           .print-label-text {
             width: 100%;
             display: flex;
             flex-direction: column;
-            gap: 0.04in;
+            gap: 0.03in;
           }
           .print-label-product {
-            font-size: 11pt;
+            font-size: 10pt;
             font-weight: 700;
             line-height: 1.2;
-            margin: 0 0 0.05in 0;
+            margin: 0 0 0.04in 0;
             color: #000;
             word-break: break-word;
           }
           .print-label-line {
-            font-size: 9pt;
+            font-size: 8pt;
             line-height: 1.3;
             margin: 0;
             color: #000;
@@ -891,8 +891,8 @@ export default function ScalePage() {
             width: 100%;
           }
           .print-label-qr svg {
-            width: 1.35in !important;
-            height: 1.35in !important;
+            width: 0.85in !important;
+            height: 0.85in !important;
           }
         }
       `}</style>
