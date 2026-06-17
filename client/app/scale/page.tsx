@@ -569,7 +569,6 @@ export default function ScalePage() {
     }
   }, [fetchHistory]);
 
-  // ─── Browser-native print: render the label off-screen, then trigger window.print() ──
   const printItem = useCallback(async (item: CurrentItem) => {
     const printedAtEst = formatEst(new Date());
     const sn = generateSn();
@@ -582,8 +581,30 @@ export default function ScalePage() {
 
   useEffect(() => {
     if (printRequestId === 0) return;
-    // Wait a tick for the print-only label to render before opening the print dialog.
-    const id = requestAnimationFrame(() => window.print());
+    // Wait a frame for React to render #print-label with the QR SVG, then open a clean print window.
+    const id = requestAnimationFrame(() => {
+      const el = document.getElementById('print-label');
+      if (!el) return;
+      const win = window.open('', '_blank', 'width=200,height=300');
+      if (!win) return;
+      win.document.write(`<!DOCTYPE html><html><head><style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        @page { size: 2in 3in; margin: 0; }
+        html, body { width: 2in; height: 3in; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .print-label-inner { width: 2in; height: 3in; padding: 0.15in; display: flex; flex-direction: column; gap: 0.12in; }
+        .print-label-text { display: flex; flex-direction: column; gap: 0.04in; }
+        .print-label-product { font-size: 10pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; margin-bottom: 0.05in; }
+        .print-label-line { font-size: 8pt; line-height: 1.3; color: #000; }
+        .print-label-field { font-weight: 700; color: #000; }
+        .print-label-sn { font-family: monospace; color: #000; }
+        .print-label-qr { display: flex; justify-content: center; }
+        .print-label-qr svg { width: 1.4in !important; height: 1.4in !important; }
+      </style></head><body>${el.innerHTML}</body></html>`);
+      win.document.close();
+      win.focus();
+      win.onafterprint = () => win.close();
+      win.print();
+    });
     return () => cancelAnimationFrame(id);
   }, [printRequestId]);
 
