@@ -19,6 +19,7 @@ public class TableStorageService
     private readonly TableClient _productLookup;
     private readonly TableClient _printedLabels;
     private readonly TableClient _scannedLabels;
+    private readonly TableClient _barcodeAudits;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -35,6 +36,7 @@ public class TableStorageService
         _productLookup        = tableServiceClient.GetTableClient("productlookup");
         _printedLabels        = tableServiceClient.GetTableClient("printedlabels");
         _scannedLabels        = tableServiceClient.GetTableClient("scannedlabels");
+        _barcodeAudits        = tableServiceClient.GetTableClient("barcodeaudits");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -50,6 +52,7 @@ public class TableStorageService
         await _productLookup.CreateIfNotExistsAsync();
         await _printedLabels.CreateIfNotExistsAsync();
         await _scannedLabels.CreateIfNotExistsAsync();
+        await _barcodeAudits.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -176,6 +179,21 @@ public class TableStorageService
         await foreach (var e in _productVariants.QueryAsync<ProductVariantEntity>())
             toDelete.Add(e);
         await BatchDeleteAsync(toDelete);
+    }
+
+    public async Task<ProductVariantEntity?> GetProductVariantAsync(string productId, string variantId)
+    {
+        var pk = StripGid(productId);
+        var rk = StripGid(variantId);
+        try
+        {
+            var response = await _productVariants.GetEntityAsync<ProductVariantEntity>(pk, rk);
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
     }
 
     public async Task UpdateProductVariantBarcodeAsync(string productId, string variantId, string barcode)
@@ -810,5 +828,38 @@ public class TableStorageService
             ScannedAt = DateTimeOffset.UtcNow,
         };
         await _scannedLabels.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    // ─── Assign mode: barcode assignment audit log ───────────────────────────
+
+    public async Task LogBarcodeAuditAsync(BarcodeAuditEntity entity)
+    {
+        try
+        {
+            entity.PartitionKey = "barcode";
+            entity.RowKey = $"{DateTimeOffset.UtcNow.Ticks:D20}-{Guid.NewGuid():N}";
+            entity.AssignedAt = DateTimeOffset.UtcNow;
+            await _barcodeAudits.AddEntityAsync(entity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning("Failed to write barcode audit: {Message}", ex.Message);
+        }
+    }
+
+    public async Task<List<BarcodeAuditEntity>> ListBarcodeAuditsAsync(
+        DateTimeOffset? from, DateTimeOffset? to, string? productId, string? variantId, string? assignedBy)
+    {
+        var results = new List<BarcodeAuditEntity>();
+        await foreach (var e in _barcodeAudits.QueryAsync<BarcodeAuditEntity>(filter: "PartitionKey eq 'barcode'"))
+        {
+            if (from.HasValue && e.AssignedAt < from) continue;
+            if (to.HasValue && e.AssignedAt > to) continue;
+            if (!string.IsNullOrEmpty(productId) && !e.ProductId.Equals(productId, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.IsNullOrEmpty(variantId) && !e.VariantId.Equals(variantId, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.IsNullOrEmpty(assignedBy) && !(e.AssignedBy ?? "").Equals(assignedBy, StringComparison.OrdinalIgnoreCase)) continue;
+            results.Add(e);
+        }
+        return results.OrderByDescending(e => e.AssignedAt).ToList();
     }
 }

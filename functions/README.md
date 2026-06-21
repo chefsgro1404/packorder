@@ -24,7 +24,7 @@ functions/
 │   ├── OrderFunction.cs       # GET /api/order?ref=
 │   ├── DraftOrderFunction.cs  # POST /api/draft-order (create/add-item/complete)
 │   ├── FulfillFunction.cs     # POST /api/fulfill
-│   ├── VariantFunction.cs     # GET /api/variant?q=, PATCH /api/variant
+│   ├── VariantFunction.cs     # GET /api/variant?q=, PATCH /api/variant, GET /api/variant/audit
 │   ├── HealthFunction.cs      # GET /api/health (exempt from auth middleware)
 │   ├── SyncShipOrdersFunction.cs  # POST /api/sync/ship-orders (pull fulfilled orders from Shopify)
 │   ├── ShipOrdersFunction.cs      # GET /api/ship-orders (list pending shipments), GET /api/ship-orders/lookup (single-order Shopify lookup)
@@ -101,7 +101,7 @@ All secrets are stored in Azure Key Vault and surfaced as app settings using the
 
 ### Storage access
 
-`TableServiceClient` is constructed with `DefaultAzureCredential` and the storage account URI. No connection strings or storage account keys are used. The Functions app identity must be granted `Storage Table Data Contributor` on the storage account. All tables are created automatically on startup: `auditlog`, `revokedtokens`, `productvariants`, `syncsettings`, `unfulfilledorders`, `scanhistory`, `fulfillmentshipments`, `shipmentscans`, `productlookup`, `printedlabels`.
+`TableServiceClient` is constructed with `DefaultAzureCredential` and the storage account URI. No connection strings or storage account keys are used. The Functions app identity must be granted `Storage Table Data Contributor` on the storage account. All tables are created automatically on startup: `auditlog`, `revokedtokens`, `productvariants`, `syncsettings`, `unfulfilledorders`, `scanhistory`, `fulfillmentshipments`, `shipmentscans`, `productlookup`, `printedlabels`, `scannedlabels`, `barcodeaudits`.
 
 ## API Reference
 
@@ -207,11 +207,20 @@ Searches by product title (`products` query, trailing wildcard) and by SKU (`pro
 
 ### `PATCH /api/variant`
 
-Assigns a barcode to a variant using `productVariantsBulkUpdate`.
+Assigns a barcode to a variant using `productVariantsBulkUpdate`. Every call is logged to the `barcodeaudits` table (old barcode, new barcode, the staff JWT `userId`, and a computed `action`: `added` if there was no previous barcode, `removed` if the new value is empty, `rescanned` if the new value equals the old one, otherwise `changed`).
 
 **Request body**
 ```json
 { "productId": "gid://...", "variantId": "gid://...", "barcode": "1234567890" }
+```
+
+### `GET /api/variant/audit`
+
+Returns the barcode assignment audit trail, most recent first. Optional query params: `from`, `to` (ISO date, compared against `AssignedAt`), `productId`, `variantId`, `assignedBy`.
+
+**Response**
+```json
+{ "success": true, "data": { "audits": [ { "id": "...", "productId": "gid://...", "variantId": "gid://...", "productTitle": "...", "variantTitle": "...", "sku": "...", "oldBarcode": "111", "newBarcode": "222", "action": "changed", "assignedBy": "staff", "assignedAt": "2026-06-22T..." } ], "total": 1 } }
 ```
 
 ### `POST /api/sync/ship-orders`

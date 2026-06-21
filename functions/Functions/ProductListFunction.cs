@@ -42,47 +42,15 @@ public class ProductListFunction
             var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
             var page     = int.TryParse(qs["page"],     out var p)  ? Math.Max(1, p)          : 1;
             var pageSize = int.TryParse(qs["pageSize"], out var ps) ? Math.Clamp(ps, 1, 200)  : 50;
-            var search      = qs["search"]?.Trim();
-            var vendor      = qs["vendor"]?.Trim();
-            var hasBarcodeQ = qs["hasBarcode"]?.Trim(); // "yes" | "no" | absent
-            var statusQ     = qs["status"]?.Trim().ToUpperInvariant(); // "ACTIVE" | "DRAFT" | "ARCHIVED" | absent
 
             var entities = await _tableStorage.GetAllProductVariantsAsync();
             var lastSync = await _tableStorage.GetLastSyncAsync();
 
-            // Build vendor list from the full unfiltered set
-            var vendors = entities
-                .Select(e => e.Vendor)
-                .Where(v => !string.IsNullOrEmpty(v))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(v => v)
-                .ToList();
+            var vendors = BuildDistinctList(entities, e => new[] { e.Vendor });
+            var collections = BuildDistinctList(entities,
+                e => JsonConvert.DeserializeObject<List<string>>(e.Collections ?? "[]") ?? new List<string>());
 
-            // Apply filters
-            IEnumerable<ProductVariantEntity> filtered = entities;
-
-            if (!string.IsNullOrEmpty(vendor))
-                filtered = filtered.Where(e => string.Equals(e.Vendor, vendor, StringComparison.OrdinalIgnoreCase));
-
-            if (!string.IsNullOrEmpty(statusQ))
-                filtered = filtered.Where(e => string.Equals(e.Status, statusQ, StringComparison.OrdinalIgnoreCase));
-
-            if (hasBarcodeQ == "yes")
-                filtered = filtered.Where(e => !string.IsNullOrEmpty(e.Barcode));
-            else if (hasBarcodeQ == "no")
-                filtered = filtered.Where(e => string.IsNullOrEmpty(e.Barcode));
-
-            if (!string.IsNullOrEmpty(search))
-            {
-                var q = search.ToLowerInvariant();
-                filtered = filtered.Where(e =>
-                    (e.ProductTitle?.ToLowerInvariant().Contains(q) ?? false) ||
-                    (e.VariantTitle?.ToLowerInvariant().Contains(q) ?? false) ||
-                    (e.Sku?.ToLowerInvariant().Contains(q) ?? false) ||
-                    (e.Barcode?.ToLowerInvariant().Contains(q) ?? false));
-            }
-
-            var filteredList = filtered.ToList();
+            var filteredList = ApplyFilters(entities, qs);
             var missingCount = filteredList.Count(e => string.IsNullOrEmpty(e.Barcode));
 
             // Group by product — pagination is over products, not variants
@@ -106,6 +74,7 @@ public class ProductListFunction
                         imageUrl     = first.ImageUrl,
                         status       = first.Status,
                         tags         = JsonConvert.DeserializeObject<List<string>>(first.Tags ?? "[]") ?? new List<string>(),
+                        collections  = JsonConvert.DeserializeObject<List<string>>(first.Collections ?? "[]") ?? new List<string>(),
                         variants     = g.Select(e => new
                         {
                             variantId    = e.VariantId,
@@ -125,6 +94,7 @@ public class ProductListFunction
                 missingCount,
                 totalInStorage = entities.Count,
                 vendors,
+                collections,
                 page,
                 pageSize,
                 hasMore        = page * pageSize < total,
@@ -136,5 +106,104 @@ public class ProductListFunction
             _logger.LogError(ex, "Failed to load product list");
             return await ResponseHelper.WriteError(req, "Failed to load products", HttpStatusCode.InternalServerError, _allowedOrigins);
         }
+    }
+
+    [Function("ProductExport")]
+    public async Task<HttpResponseData> Export(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "products/export")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+            var entities = await _tableStorage.GetAllProductVariantsAsync();
+            var filteredList = ApplyFilters(entities, qs);
+
+            var rows = filteredList
+                .OrderBy(e => e.ProductTitle, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(e => e.VariantTitle, StringComparer.OrdinalIgnoreCase)
+                .Select(e => new
+                {
+                    productTitle = e.ProductTitle,
+                    variantTitle = e.VariantTitle,
+                    sku          = e.Sku ?? "",
+                    barcode      = e.Barcode ?? "",
+                    vendor       = e.Vendor,
+                    status       = e.Status,
+                    collections  = string.Join(", ", JsonConvert.DeserializeObject<List<string>>(e.Collections ?? "[]") ?? new List<string>()),
+                })
+                .ToList();
+
+            return await ResponseHelper.WriteSuccess(req, new { rows, total = rows.Count }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to export products");
+            return await ResponseHelper.WriteError(req, "Failed to export products", HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    private static List<string> BuildDistinctList(
+        List<ProductVariantEntity> entities, Func<ProductVariantEntity, IEnumerable<string>> select)
+    {
+        return entities
+            .SelectMany(select)
+            .Where(v => !string.IsNullOrEmpty(v))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(v => v)
+            .ToList();
+    }
+
+    private static List<ProductVariantEntity> ApplyFilters(
+        List<ProductVariantEntity> entities, System.Collections.Specialized.NameValueCollection qs)
+    {
+        var search            = qs["search"]?.Trim();
+        var vendor            = qs["vendor"]?.Trim();
+        var hasBarcodeQ       = qs["hasBarcode"]?.Trim(); // "yes" | "no" | absent
+        var statusQ           = qs["status"]?.Trim().ToUpperInvariant(); // "ACTIVE" | "DRAFT" | "ARCHIVED" | absent
+        var collection        = qs["collection"]?.Trim();
+        var excludeCollection = string.Equals(qs["excludeCollection"]?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+
+        IEnumerable<ProductVariantEntity> filtered = entities;
+
+        if (!string.IsNullOrEmpty(vendor))
+            filtered = filtered.Where(e => string.Equals(e.Vendor, vendor, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrEmpty(statusQ))
+            filtered = filtered.Where(e => string.Equals(e.Status, statusQ, StringComparison.OrdinalIgnoreCase));
+
+        if (hasBarcodeQ == "yes")
+            filtered = filtered.Where(e => !string.IsNullOrEmpty(e.Barcode));
+        else if (hasBarcodeQ == "no")
+            filtered = filtered.Where(e => string.IsNullOrEmpty(e.Barcode));
+
+        if (!string.IsNullOrEmpty(collection))
+        {
+            filtered = filtered.Where(e =>
+            {
+                var inCollection = (JsonConvert.DeserializeObject<List<string>>(e.Collections ?? "[]") ?? new List<string>())
+                    .Any(c => string.Equals(c, collection, StringComparison.OrdinalIgnoreCase));
+                return excludeCollection ? !inCollection : inCollection;
+            });
+        }
+
+        if (!string.IsNullOrEmpty(search))
+        {
+            var q = search.ToLowerInvariant();
+            filtered = filtered.Where(e =>
+                (e.ProductTitle?.ToLowerInvariant().Contains(q) ?? false) ||
+                (e.VariantTitle?.ToLowerInvariant().Contains(q) ?? false) ||
+                (e.Sku?.ToLowerInvariant().Contains(q) ?? false) ||
+                (e.Barcode?.ToLowerInvariant().Contains(q) ?? false));
+        }
+
+        return filtered.ToList();
     }
 }

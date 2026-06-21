@@ -329,6 +329,24 @@ public class UpdateBarcodeRequest
     public string? Barcode { get; set; }
 }
 
+public class BarcodeAuditEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "barcode";
+    public string RowKey { get; set; } = "";       // ticks-guid, sortable
+    public string ProductId { get; set; } = "";    // full GID
+    public string VariantId { get; set; } = "";    // full GID
+    public string ProductTitle { get; set; } = "";
+    public string? VariantTitle { get; set; }
+    public string? Sku { get; set; }
+    public string? OldBarcode { get; set; }
+    public string NewBarcode { get; set; } = "";
+    public string Action { get; set; } = "";       // added | changed | removed | rescanned
+    public string? AssignedBy { get; set; }
+    public DateTimeOffset AssignedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
 // ─── GraphQL helpers ─────────────────────────────────────────────────────────
 
 public class EdgeList<T>
@@ -373,6 +391,7 @@ public class ProductVariantEntity : ITableEntity
     public string? Barcode { get; set; }
     public string Vendor { get; set; } = "";
     public string Tags { get; set; } = "[]";       // JSON-encoded string array
+    public string Collections { get; set; } = "[]"; // JSON-encoded string array of collection titles
     public string? ImageUrl { get; set; }
     public string Price { get; set; } = "0.00";
     public string Status { get; set; } = "ACTIVE"; // ACTIVE | DRAFT | ARCHIVED

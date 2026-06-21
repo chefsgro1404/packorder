@@ -6,16 +6,99 @@ import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
 import { SyncModal } from "@/components/SyncModal";
 import { useScanner } from "@/hooks/useScanner";
-import { CachedVariant, AssignProduct, AssignVariant } from "@/lib/types";
+import { CachedVariant, AssignProduct, AssignVariant, BarcodeAudit, ProductExportRow } from "@/lib/types";
 import {
   ArrowLeft, Search, Tag, CheckCircle2, X, ScanLine,
-  RefreshCw, Filter, ChevronDown, Trash2,
+  RefreshCw, Filter, ChevronDown, Trash2, History, Download,
+  FileSpreadsheet, FileText,
 } from "lucide-react";
 import Image from "next/image";
 
 type AssignStep = "list" | "scan" | "confirm" | "saving" | "done" | "remove-confirm" | "removing";
 type BarcodeFilter = "all" | "yes" | "no";
 type StatusFilter = "all" | "ACTIVE" | "DRAFT" | "ARCHIVED";
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeCsvField(value: string): string {
+  if (/[",\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function rowsToCsv(rows: ProductExportRow[]): string {
+  const headers = ["Product Title", "Variant Title", "SKU", "Barcode", "Vendor", "Status", "Collections"];
+  const lines = [headers.join(",")];
+  for (const r of rows) {
+    lines.push(
+      [r.productTitle, r.variantTitle, r.sku, r.barcode, r.vendor, r.status, r.collections]
+        .map((v) => escapeCsvField(v ?? ""))
+        .join(",")
+    );
+  }
+  return lines.join("\n");
+}
+
+function downloadCsv(csv: string, filename: string) {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function openPrintView(rows: ProductExportRow[]) {
+  const win = window.open("", "_blank");
+  if (!win) return;
+  const tableRows = rows
+    .map(
+      (r) => `<tr>
+        <td>${escapeHtml(r.productTitle)}</td>
+        <td>${escapeHtml(r.variantTitle)}</td>
+        <td>${escapeHtml(r.sku)}</td>
+        <td>${escapeHtml(r.barcode)}</td>
+        <td>${escapeHtml(r.vendor)}</td>
+        <td>${escapeHtml(r.status)}</td>
+        <td>${escapeHtml(r.collections)}</td>
+      </tr>`
+    )
+    .join("");
+  win.document.write(`<!DOCTYPE html><html><head><title>Product Export</title>
+    <style>
+      body { font-family: -apple-system, Helvetica, Arial, sans-serif; padding: 24px; color: #111; }
+      h1 { font-size: 16px; margin: 0 0 12px; }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th, td { border: 1px solid #ccc; padding: 5px 8px; text-align: left; }
+      th { background: #f0f0f0; }
+    </style></head>
+    <body>
+      <h1>Product Export &mdash; ${rows.length} item${rows.length !== 1 ? "s" : ""}</h1>
+      <table>
+        <thead><tr><th>Product</th><th>Variant</th><th>SKU</th><th>Barcode</th><th>Vendor</th><th>Status</th><th>Collections</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
+
+const AUDIT_ACTION_STYLES: Record<BarcodeAudit["action"], string> = {
+  added: "bg-green-900/40 text-green-400 border-green-800/50",
+  changed: "bg-blue-900/40 text-blue-400 border-blue-800/50",
+  removed: "bg-red-900/40 text-red-400 border-red-800/50",
+  rescanned: "bg-slate-700/40 text-slate-400 border-slate-600/50",
+};
 
 interface BannerState {
   type: "success" | "error" | "warning" | "info";
@@ -24,18 +107,38 @@ interface BannerState {
 
 const PAGE_SIZE = 50;
 
+function buildFilterParams(
+  search: string,
+  vendor: string,
+  hasBarcode: BarcodeFilter,
+  status: StatusFilter,
+  collection: string,
+  excludeCollection: boolean
+) {
+  const params = new URLSearchParams();
+  if (search.trim())        params.set("search",     search.trim());
+  if (vendor !== "all")     params.set("vendor",     vendor);
+  if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
+  if (status !== "all")     params.set("status",     status);
+  if (collection !== "all") {
+    params.set("collection", collection);
+    if (excludeCollection) params.set("excludeCollection", "true");
+  }
+  return params;
+}
+
 function buildApiUrl(
   search: string,
   vendor: string,
   hasBarcode: BarcodeFilter,
   status: StatusFilter,
+  collection: string,
+  excludeCollection: boolean,
   page: number
 ) {
-  const params = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
-  if (search.trim())        params.set("search",     search.trim());
-  if (vendor !== "all")     params.set("vendor",     vendor);
-  if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
-  if (status !== "all")     params.set("status",     status);
+  const params = buildFilterParams(search, vendor, hasBarcode, status, collection, excludeCollection);
+  params.set("page", String(page));
+  params.set("pageSize", String(PAGE_SIZE));
   return `/api/products?${params}`;
 }
 
@@ -63,10 +166,12 @@ function AssignPageInner() {
   const searchParams = useSearchParams();
   const { handleScan, playBeep } = useScanner();
 
-  const urlSearch     = searchParams.get("search")     ?? "";
-  const urlVendor     = searchParams.get("vendor")     ?? "all";
-  const urlHasBarcode = (searchParams.get("hasBarcode") ?? "all") as BarcodeFilter;
-  const urlStatus     = (searchParams.get("status")    ?? "all") as StatusFilter;
+  const urlSearch            = searchParams.get("search")     ?? "";
+  const urlVendor            = searchParams.get("vendor")     ?? "all";
+  const urlHasBarcode        = (searchParams.get("hasBarcode") ?? "all") as BarcodeFilter;
+  const urlStatus            = (searchParams.get("status")    ?? "all") as StatusFilter;
+  const urlCollection        = searchParams.get("collection") ?? "all";
+  const urlExcludeCollection = searchParams.get("excludeCollection") === "true";
 
   const [searchInput, setSearchInput] = useState(urlSearch);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,9 +185,18 @@ function AssignPageInner() {
   const [missingCount, setMissingCount] = useState(0);
   const [lastSync, setLastSync]       = useState<string | null>(null);
   const [vendors, setVendors]         = useState<string[]>([]);
+  const [collections, setCollections] = useState<string[]>([]);
   const [syncOpen, setSyncOpen]       = useState(false);
   const [banner, setBanner]           = useState<BannerState | null>(null);
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
+
+  const [exportOpen, setExportOpen]   = useState(false);
+  const [exporting, setExporting]     = useState(false);
+
+  const [historyOpen, setHistoryOpen]     = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [auditHistory, setAuditHistory]   = useState<BarcodeAudit[]>([]);
 
   const [step, setStep]                         = useState<AssignStep>("list");
   const [selectedVariant, setSelectedVariant]   = useState<CachedVariant | null>(null);
@@ -90,12 +204,15 @@ function AssignPageInner() {
 
   // ── URL updater ─────────────────────────────────────────────────────────
   const pushFilters = useCallback(
-    (search: string, vendor: string, hasBarcode: BarcodeFilter, status: StatusFilter) => {
-      const params = new URLSearchParams();
-      if (search.trim())        params.set("search",     search.trim());
-      if (vendor !== "all")     params.set("vendor",     vendor);
-      if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
-      if (status !== "all")     params.set("status",     status);
+    (
+      search: string,
+      vendor: string,
+      hasBarcode: BarcodeFilter,
+      status: StatusFilter,
+      collection: string,
+      excludeCollection: boolean
+    ) => {
+      const params = buildFilterParams(search, vendor, hasBarcode, status, collection, excludeCollection);
       router.replace(`${pathname}?${params}`, { scroll: false });
     },
     [router, pathname]
@@ -108,6 +225,8 @@ function AssignPageInner() {
       vendor: string,
       hasBarcode: BarcodeFilter,
       status: StatusFilter,
+      collection: string,
+      excludeCollection: boolean,
       p: number,
       append: boolean
     ) => {
@@ -115,7 +234,7 @@ function AssignPageInner() {
       else         setLoadingMore(true);
 
       try {
-        const res  = await fetch(buildApiUrl(search, vendor, hasBarcode, status, p));
+        const res  = await fetch(buildApiUrl(search, vendor, hasBarcode, status, collection, excludeCollection, p));
         const data = await res.json();
         const incoming: AssignProduct[] = data.products ?? [];
         setProducts(prev => append ? [...prev, ...incoming] : incoming);
@@ -124,6 +243,7 @@ function AssignPageInner() {
         setHasMore(data.hasMore ?? false);
         setLastSync(data.lastSync ?? null);
         if (data.vendors?.length) setVendors(data.vendors);
+        if (data.collections?.length) setCollections(data.collections);
       } catch {
         setBanner({ type: "error", message: "Failed to load product list" });
       } finally {
@@ -139,7 +259,7 @@ function AssignPageInner() {
     setPage(1);
     setProducts([]);
     setExpandedProducts(new Set());
-    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, 1, false);
+    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection, 1, false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -148,18 +268,69 @@ function AssignPageInner() {
     setSearchInput(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      pushFilters(value, urlVendor, urlHasBarcode, urlStatus);
+      pushFilters(value, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection);
     }, 300);
   };
 
-  const handleVendorChange     = (v: string)        => pushFilters(urlSearch, v,         urlHasBarcode, urlStatus);
-  const handleHasBarcodeChange = (v: BarcodeFilter) => pushFilters(urlSearch, urlVendor, v,             urlStatus);
-  const handleStatusChange     = (v: StatusFilter)  => pushFilters(urlSearch, urlVendor, urlHasBarcode, v);
+  const handleVendorChange     = (v: string)        => pushFilters(urlSearch, v, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection);
+  const handleHasBarcodeChange = (v: BarcodeFilter) => pushFilters(urlSearch, urlVendor, v, urlStatus, urlCollection, urlExcludeCollection);
+  const handleStatusChange     = (v: StatusFilter)  => pushFilters(urlSearch, urlVendor, urlHasBarcode, v, urlCollection, urlExcludeCollection);
+  const handleCollectionChange = (v: string)        => pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus, v, urlExcludeCollection);
+  const handleExcludeCollectionToggle = () =>
+    pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, !urlExcludeCollection);
 
   const handleLoadMore = () => {
     const next = page + 1;
     setPage(next);
-    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, next, true);
+    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection, next, true);
+  };
+
+  // ── Export ───────────────────────────────────────────────────────────────
+  const handleExport = async (format: "csv" | "pdf") => {
+    setExportOpen(false);
+    setExporting(true);
+    try {
+      const params = buildFilterParams(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection);
+      const res = await fetch(`/api/products/export?${params}`);
+      const data = await res.json();
+      const rows: ProductExportRow[] = data.rows ?? [];
+      if (rows.length === 0) {
+        setBanner({ type: "warning", message: "No products match the current filters" });
+        return;
+      }
+      if (format === "csv") {
+        downloadCsv(rowsToCsv(rows), `products-export-${Date.now()}.csv`);
+      } else {
+        openPrintView(rows);
+      }
+    } catch {
+      setBanner({ type: "error", message: "Export failed" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ── Assign history ──────────────────────────────────────────────────────
+  const fetchAuditHistory = useCallback(async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await fetch("/api/variant/audit");
+      const data = await res.json();
+      setAuditHistory(data.audits ?? []);
+    } catch {
+      setBanner({ type: "error", message: "Failed to load assign history" });
+    } finally {
+      setHistoryLoading(false);
+      setHistoryLoaded(true);
+    }
+  }, []);
+
+  const toggleHistory = () => {
+    setHistoryOpen(prev => {
+      const next = !prev;
+      if (next && !historyLoaded) fetchAuditHistory();
+      return next;
+    });
   };
 
   // ── Product expand/collapse ───────────────────────────────────────────────
@@ -178,7 +349,7 @@ function AssignPageInner() {
     setPage(1);
     setProducts([]);
     setExpandedProducts(new Set());
-    await fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, 1, false);
+    await fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection, 1, false);
     setBanner({ type: "success", message: `Synced ${count} variants` });
   };
   const handleSyncError = (msg: string) => setBanner({ type: "error", message: msg });
@@ -356,7 +527,7 @@ function AssignPageInner() {
               />
               {searchInput && (
                 <button
-                  onClick={() => { setSearchInput(""); pushFilters("", urlVendor, urlHasBarcode, urlStatus); }}
+                  onClick={() => { setSearchInput(""); pushFilters("", urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection); }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                 >
                   <X className="w-4 h-4" />
@@ -414,6 +585,65 @@ function AssignPageInner() {
                     {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
                   </select>
                   <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                </div>
+              )}
+
+              {/* Collection filter */}
+              {collections.length > 0 && (
+                <>
+                  <div className="relative">
+                    <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                    <select
+                      value={urlCollection}
+                      onChange={(e) => handleCollectionChange(e.target.value)}
+                      className="pl-8 pr-7 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[36px]"
+                    >
+                      <option value="all">All collections</option>
+                      {collections.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                  </div>
+                  {urlCollection !== "all" && (
+                    <button
+                      onClick={handleExcludeCollectionToggle}
+                      className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors min-h-[36px] ${
+                        urlExcludeCollection
+                          ? "bg-red-900/40 border-red-800/50 text-red-300"
+                          : "bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200"
+                      }`}
+                      title={urlExcludeCollection ? "Excluding this collection — click to include instead" : "Including this collection — click to exclude instead"}
+                    >
+                      {urlExcludeCollection ? "Exclude" : "Include"}
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Export */}
+            <div className="relative self-start">
+              <button
+                onClick={() => setExportOpen((o) => !o)}
+                disabled={exporting}
+                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 border border-slate-700 hover:border-purple-500/50 rounded-lg text-xs font-medium text-slate-300 transition-colors min-h-[36px] disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" />
+                {exporting ? "Exporting…" : "Export"}
+              </button>
+              {exportOpen && (
+                <div className="absolute left-0 top-full mt-1 z-20 bg-slate-900 border border-slate-700 rounded-lg shadow-lg overflow-hidden w-44">
+                  <button
+                    onClick={() => handleExport("csv")}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-slate-500" />Export CSV
+                  </button>
+                  <button
+                    onClick={() => handleExport("pdf")}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800 transition-colors border-t border-slate-800"
+                  >
+                    <FileText className="w-4 h-4 text-slate-500" />Export PDF (Print)
+                  </button>
                 </div>
               )}
             </div>
@@ -586,6 +816,53 @@ function AssignPageInner() {
                 )}
               </div>
             )}
+
+            {/* Assign History */}
+            <div className="rounded-xl overflow-hidden border border-slate-700">
+              <button
+                onClick={toggleHistory}
+                className="w-full flex items-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 transition-colors text-left"
+              >
+                <History className="w-4 h-4 text-slate-500" />
+                <span className="flex-1 text-sm font-medium text-slate-300">Assign History</span>
+                {historyLoaded && (
+                  <span className="text-xs text-slate-500">{auditHistory.length} record{auditHistory.length !== 1 ? "s" : ""}</span>
+                )}
+                <ChevronDown className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-200 ${historyOpen ? "" : "-rotate-90"}`} />
+              </button>
+              {historyOpen && (
+                <div className="border-t border-slate-800 max-h-72 overflow-y-auto">
+                  {historyLoading && (
+                    <div className="flex items-center justify-center py-6">
+                      <RefreshCw className="w-4 h-4 text-slate-500 animate-spin" />
+                    </div>
+                  )}
+                  {!historyLoading && auditHistory.length === 0 && (
+                    <p className="text-xs text-slate-500 text-center py-6">No barcode assignments yet</p>
+                  )}
+                  {!historyLoading && auditHistory.map((a) => (
+                    <div key={a.id} className="px-4 py-3 border-b border-slate-800/60 last:border-b-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm text-slate-200 font-medium truncate">
+                          {a.variantTitle && a.variantTitle !== "Default Title" ? `${a.productTitle} — ${a.variantTitle}` : a.productTitle}
+                        </p>
+                        <span className={`text-xs px-1.5 py-0.5 rounded border shrink-0 ${AUDIT_ACTION_STYLES[a.action]}`}>
+                          {a.action}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
+                        {a.oldBarcode && <span className="font-mono line-through text-slate-600">{a.oldBarcode}</span>}
+                        {a.oldBarcode && a.newBarcode && <span>→</span>}
+                        {a.newBarcode && <span className="font-mono text-slate-400">{a.newBarcode}</span>}
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">
+                        {a.assignedBy ?? "Unknown"} · {new Date(a.assignedAt).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </>
         )}
 

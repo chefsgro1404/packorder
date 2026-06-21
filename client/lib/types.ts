@@ -126,7 +126,32 @@ export interface AssignProduct {
   imageUrl: string | null;
   status: "ACTIVE" | "DRAFT" | "ARCHIVED";
   tags: string[];
+  collections: string[];
   variants: AssignVariant[];
+}
+
+export interface BarcodeAudit {
+  id: string;
+  productId: string;
+  variantId: string;
+  productTitle: string;
+  variantTitle: string | null;
+  sku: string | null;
+  oldBarcode: string | null;
+  newBarcode: string;
+  action: "added" | "changed" | "removed" | "rescanned";
+  assignedBy: string | null;
+  assignedAt: string;
+}
+
+export interface ProductExportRow {
+  productTitle: string;
+  variantTitle: string;
+  sku: string;
+  barcode: string;
+  vendor: string;
+  status: string;
+  collections: string;
 }
 
 export interface CachedVariant {

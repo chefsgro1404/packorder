@@ -75,7 +75,7 @@ public class VariantFunction
 
     private async Task<HttpResponseData> UpdateBarcode(HttpRequestData req)
     {
-        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        var (userId, _, authError) = await _authHelper.ValidateRequest(req);
         if (authError != null)
             return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
 
@@ -92,9 +92,30 @@ public class VariantFunction
                     HttpStatusCode.BadRequest, _allowedOrigins);
 
             var barcode = request.Barcode.Trim();
+            var cached = await _tableStorage.GetProductVariantAsync(request.ProductId, request.VariantId);
+            var oldBarcode = cached?.Barcode;
+
             var variant = await _shopify.UpdateVariantBarcodeAsync(request.ProductId, request.VariantId, barcode);
 
             _ = _tableStorage.UpdateProductVariantBarcodeAsync(request.ProductId, request.VariantId, barcode);
+
+            var action = string.IsNullOrEmpty(oldBarcode) && !string.IsNullOrEmpty(barcode) ? "added"
+                : !string.IsNullOrEmpty(oldBarcode) && string.IsNullOrEmpty(barcode) ? "removed"
+                : !string.IsNullOrEmpty(oldBarcode) && string.Equals(oldBarcode, barcode, StringComparison.OrdinalIgnoreCase) ? "rescanned"
+                : "changed";
+
+            _ = _tableStorage.LogBarcodeAuditAsync(new BarcodeAuditEntity
+            {
+                ProductId = request.ProductId,
+                VariantId = request.VariantId,
+                ProductTitle = cached?.ProductTitle ?? variant?["product"]?["title"]?.ToString() ?? "",
+                VariantTitle = cached?.VariantTitle,
+                Sku = cached?.Sku,
+                OldBarcode = oldBarcode,
+                NewBarcode = barcode,
+                Action = action,
+                AssignedBy = userId,
+            });
 
             return await ResponseHelper.WriteSuccess(req, new { ok = true, variant }, _allowedOrigins);
         }
@@ -103,6 +124,57 @@ public class VariantFunction
             _logger.LogError(ex, "Variant barcode update error");
             return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
+    }
+
+    private async Task<HttpResponseData> AuditHistory(HttpRequestData req)
+    {
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+            DateTimeOffset? from = DateTimeOffset.TryParse(qs["from"], out var f) ? f : null;
+            DateTimeOffset? to   = DateTimeOffset.TryParse(qs["to"],   out var t) ? t : null;
+            var productId  = qs["productId"];
+            var variantId  = qs["variantId"];
+            var assignedBy = qs["assignedBy"];
+
+            var entities = await _tableStorage.ListBarcodeAuditsAsync(from, to, productId, variantId, assignedBy);
+            var audits = entities.Select(e => new
+            {
+                id = e.RowKey,
+                productId = e.ProductId,
+                variantId = e.VariantId,
+                productTitle = e.ProductTitle,
+                variantTitle = e.VariantTitle,
+                sku = e.Sku,
+                oldBarcode = e.OldBarcode,
+                newBarcode = e.NewBarcode,
+                action = e.Action,
+                assignedBy = e.AssignedBy,
+                assignedAt = e.AssignedAt,
+            }).ToList();
+
+            return await ResponseHelper.WriteSuccess(req, new { audits, total = audits.Count }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Barcode audit history error");
+            return await ResponseHelper.WriteError(req, "Failed to load audit history", HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("VariantAudit")]
+    public async Task<HttpResponseData> HandleAudit(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "variant/audit")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        return await AuditHistory(req);
     }
 
     private static string? GetQueryParam(HttpRequestData req, string key)

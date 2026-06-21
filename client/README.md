@@ -20,7 +20,7 @@ Next.js 15 (App Router) progressive web app for warehouse staff. Runs on mobile 
 |---|---|---|---|
 | POS | `/pos` | Scan barcode → product lookup → add to cart → complete draft order | Yes |
 | Ship | `/ship` | Browse fulfilled Shopify orders with tracking; scan each product to record shipment; mark as shipped (complete or incomplete with reason); view shipment history with per-scan audit trail | Yes |
-| Assign Barcode | `/assign` | Search product variant → scan physical barcode → write to Shopify | Yes |
+| Assign Barcode | `/assign` | Browse/filter products (vendor, status, barcode status, collection) → scan physical barcode → write to Shopify. Every assignment, removal, or rescan is logged to a server-side audit trail viewable in the collapsible Assign History panel. The filtered product list can be exported as CSV or a print-ready PDF view. | Yes |
 | Scale & Print | `/scale` | Read weight from a Torrey scale over USB-serial, look up the item's PLU/title in the product lookup table, and auto-print a label (product title + QR code) on a Godex DT2x thermal printer. Every print is logged to a server-side audit table; the last 10 prints can be reprinted from history. | Yes |
 | Manage Products | `/scale/products` | Add, edit, and delete the scale item-number → PLU / product title / price-per-lb mappings used by Scale & Print | Yes |
 
@@ -159,6 +159,14 @@ Ship mode reads and writes the staff name to `localStorage` under the key `ships
 - Not found → a warning banner ("Order not found")
 - Found but unfulfilled, or fulfilled/partial without tracking → a warning banner explaining why it isn't shippable yet
 - Found and eligible (fulfilled/partial, non-POS, has tracking) → the order is added to the Active list and persisted to the `fulfillmentshipments` table for future loads
+
+## Assign Mode — Filters, Export & Audit Trail
+
+**Filters**: the product browser on `/assign` supports Barcode status (All/Has barcode/No barcode), Status (Active/Draft/Archived), Vendor, and Collection. Vendor and Collection options are populated from the locally cached product catalogue (synced from Shopify via the sync button) — collection membership is fetched as part of that same sync, so a product can match multiple collections. When a collection is selected, an **Include/Exclude** toggle appears next to it to flip between "only products in this collection" and "only products NOT in this collection."
+
+**Export**: the Export button exports the *entire* filtered set (not just the loaded page) via `GET /api/products/export`, applying the same filters as the on-screen list. **Export CSV** downloads a file with one row per variant (Product Title, Variant Title, SKU, Barcode — blank if unset, Vendor, Status, Collections). **Export PDF** opens a clean, print-formatted table in a new browser tab and triggers the print dialog — use "Save as PDF" there. This is intended for handing a colleague a list of products still missing barcodes (filter by "No barcode", optionally narrow by vendor/collection, then export).
+
+**Assign History**: every barcode write — add, change, removal, or rescan of the same value — is logged server-side with who made the change and the old/new barcode values. The collapsible "Assign History" panel at the bottom of the product list (`GET /api/variant/audit`) shows this trail, color-coded by action (added/changed/removed/rescanned).
 
 ## Scale & Print Mode — Hardware Integration
 

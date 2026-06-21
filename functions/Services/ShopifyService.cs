@@ -459,6 +459,9 @@ public class ShopifyService
               node {
                 id title vendor tags status updatedAt
                 featuredImage { url }
+                collections(first: 10) {
+                  edges { node { title } }
+                }
                 variants(first: 100) {
                   edges { node { id sku barcode title price } }
                 }
@@ -491,6 +494,11 @@ public class ShopifyService
                 var status = product["status"]?.ToString() ?? "ACTIVE";
                 var rawTags = product["tags"]?.ToObject<List<string>>() ?? new List<string>();
                 var tagsJson = JsonConvert.SerializeObject(rawTags);
+                var rawCollections = ((product["collections"]?["edges"] as JArray) ?? new JArray())
+                    .Select(e => e["node"]?["title"]?.ToString())
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .ToList();
+                var collectionsJson = JsonConvert.SerializeObject(rawCollections);
                 var featuredImageToken = product["featuredImage"];
                 var imageUrl = featuredImageToken != null && featuredImageToken.Type != JTokenType.Null
                     ? featuredImageToken["url"]?.ToString() : null;
@@ -512,6 +520,7 @@ public class ShopifyService
                         Vendor = vendor,
                         Status = status,
                         Tags = tagsJson,
+                        Collections = collectionsJson,
                         ImageUrl = imageUrl,
                         Price = v["price"]?.ToString() ?? "0.00"
                     });
