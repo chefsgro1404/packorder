@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Package,
   ChevronRight,
+  ChevronDown,
   Truck,
   MapPin,
   Tag,
@@ -144,6 +145,7 @@ export default function ShipPage() {
   const [selectedHistory, setSelectedHistory] = useState<ShipmentFulfillment | null>(null);
   const [historyScans, setHistoryScans] = useState<ShipmentScanRecord[]>([]);
   const [historyScansLoading, setHistoryScansLoading] = useState(false);
+  const [expandedHistoryItems, setExpandedHistoryItems] = useState<Set<string>>(new Set());
 
   const didFetch = useRef(false);
 
@@ -1195,7 +1197,7 @@ export default function ShipPage() {
       <main className="min-h-screen flex flex-col bg-slate-950">
         {renderTopBar(
           selectedHistory.orderName,
-          () => { setSelectedHistory(null); setHistoryScans([]); }
+          () => { setSelectedHistory(null); setHistoryScans([]); setExpandedHistoryItems(new Set()); }
         )}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-6">
           {/* Order summary */}
@@ -1234,6 +1236,7 @@ export default function ShipPage() {
                 (s) => s.fulfillmentLineItemId === li.fulfillmentLineItemId
               );
               const done = li.quantityShipped >= li.quantityExpected;
+              const isExpanded = expandedHistoryItems.has(li.fulfillmentLineItemId ?? "");
               return (
                 <div
                   key={li.fulfillmentLineItemId}
@@ -1241,7 +1244,20 @@ export default function ShipPage() {
                     done ? "border-green-800/50" : "border-slate-700"
                   }`}
                 >
-                  <div className="p-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="w-full p-3 flex items-center gap-3 text-left"
+                    disabled={liScans.length === 0}
+                    onClick={() => {
+                      const key = li.fulfillmentLineItemId ?? "";
+                      setExpandedHistoryItems((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(key)) next.delete(key);
+                        else next.add(key);
+                        return next;
+                      });
+                    }}
+                  >
                     {li.imageUrl ? (
                       <img
                         src={li.imageUrl}
@@ -1264,8 +1280,15 @@ export default function ShipPage() {
                     }`}>
                       {li.quantityShipped}/{li.quantityExpected}
                     </span>
-                  </div>
-                  {liScans.length > 0 && (
+                    {liScans.length > 0 && (
+                      <ChevronDown
+                        className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    )}
+                  </button>
+                  {isExpanded && liScans.length > 0 && (
                     <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-2 space-y-1">
                       {liScans.map((scan, i) => (
                         <div key={i} className="flex flex-col gap-0.5">
