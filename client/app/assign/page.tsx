@@ -112,18 +112,16 @@ function buildFilterParams(
   vendor: string,
   hasBarcode: BarcodeFilter,
   status: StatusFilter,
-  collection: string,
-  excludeCollection: boolean
+  includeCollections: string[],
+  excludeCollections: string[]
 ) {
   const params = new URLSearchParams();
   if (search.trim())        params.set("search",     search.trim());
   if (vendor !== "all")     params.set("vendor",     vendor);
   if (hasBarcode !== "all") params.set("hasBarcode", hasBarcode);
   if (status !== "all")     params.set("status",     status);
-  if (collection !== "all") {
-    params.set("collection", collection);
-    if (excludeCollection) params.set("excludeCollection", "true");
-  }
+  if (includeCollections.length) params.set("collections",        includeCollections.join(","));
+  if (excludeCollections.length) params.set("excludeCollections", excludeCollections.join(","));
   return params;
 }
 
@@ -132,14 +130,19 @@ function buildApiUrl(
   vendor: string,
   hasBarcode: BarcodeFilter,
   status: StatusFilter,
-  collection: string,
-  excludeCollection: boolean,
+  includeCollections: string[],
+  excludeCollections: string[],
   page: number
 ) {
-  const params = buildFilterParams(search, vendor, hasBarcode, status, collection, excludeCollection);
+  const params = buildFilterParams(search, vendor, hasBarcode, status, includeCollections, excludeCollections);
   params.set("page", String(page));
   params.set("pageSize", String(PAGE_SIZE));
   return `/api/products?${params}`;
+}
+
+function parseCsvParam(value: string | null): string[] {
+  if (!value) return [];
+  return value.split(",").map((v) => v.trim()).filter(Boolean);
 }
 
 function toCachedVariant(product: AssignProduct, variant: AssignVariant): CachedVariant {
@@ -166,12 +169,12 @@ function AssignPageInner() {
   const searchParams = useSearchParams();
   const { handleScan, playBeep } = useScanner();
 
-  const urlSearch            = searchParams.get("search")     ?? "";
-  const urlVendor            = searchParams.get("vendor")     ?? "all";
-  const urlHasBarcode        = (searchParams.get("hasBarcode") ?? "all") as BarcodeFilter;
-  const urlStatus            = (searchParams.get("status")    ?? "all") as StatusFilter;
-  const urlCollection        = searchParams.get("collection") ?? "all";
-  const urlExcludeCollection = searchParams.get("excludeCollection") === "true";
+  const urlSearch             = searchParams.get("search")     ?? "";
+  const urlVendor             = searchParams.get("vendor")     ?? "all";
+  const urlHasBarcode         = (searchParams.get("hasBarcode") ?? "all") as BarcodeFilter;
+  const urlStatus             = (searchParams.get("status")    ?? "all") as StatusFilter;
+  const urlIncludeCollections = parseCsvParam(searchParams.get("collections"));
+  const urlExcludeCollections = parseCsvParam(searchParams.get("excludeCollections"));
 
   const [searchInput, setSearchInput] = useState(urlSearch);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -192,6 +195,7 @@ function AssignPageInner() {
 
   const [exportOpen, setExportOpen]   = useState(false);
   const [exporting, setExporting]     = useState(false);
+  const [collectionsFilterOpen, setCollectionsFilterOpen] = useState(false);
 
   const [historyOpen, setHistoryOpen]     = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -209,10 +213,10 @@ function AssignPageInner() {
       vendor: string,
       hasBarcode: BarcodeFilter,
       status: StatusFilter,
-      collection: string,
-      excludeCollection: boolean
+      includeCollections: string[],
+      excludeCollections: string[]
     ) => {
-      const params = buildFilterParams(search, vendor, hasBarcode, status, collection, excludeCollection);
+      const params = buildFilterParams(search, vendor, hasBarcode, status, includeCollections, excludeCollections);
       router.replace(`${pathname}?${params}`, { scroll: false });
     },
     [router, pathname]
@@ -225,8 +229,8 @@ function AssignPageInner() {
       vendor: string,
       hasBarcode: BarcodeFilter,
       status: StatusFilter,
-      collection: string,
-      excludeCollection: boolean,
+      includeCollections: string[],
+      excludeCollections: string[],
       p: number,
       append: boolean
     ) => {
@@ -234,7 +238,7 @@ function AssignPageInner() {
       else         setLoadingMore(true);
 
       try {
-        const res  = await fetch(buildApiUrl(search, vendor, hasBarcode, status, collection, excludeCollection, p));
+        const res  = await fetch(buildApiUrl(search, vendor, hasBarcode, status, includeCollections, excludeCollections, p));
         const data = await res.json();
         const incoming: AssignProduct[] = data.products ?? [];
         setProducts(prev => append ? [...prev, ...incoming] : incoming);
@@ -259,7 +263,7 @@ function AssignPageInner() {
     setPage(1);
     setProducts([]);
     setExpandedProducts(new Set());
-    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection, 1, false);
+    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections, 1, false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -268,21 +272,32 @@ function AssignPageInner() {
     setSearchInput(value);
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      pushFilters(value, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection);
+      pushFilters(value, urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections);
     }, 300);
   };
 
-  const handleVendorChange     = (v: string)        => pushFilters(urlSearch, v, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection);
-  const handleHasBarcodeChange = (v: BarcodeFilter) => pushFilters(urlSearch, urlVendor, v, urlStatus, urlCollection, urlExcludeCollection);
-  const handleStatusChange     = (v: StatusFilter)  => pushFilters(urlSearch, urlVendor, urlHasBarcode, v, urlCollection, urlExcludeCollection);
-  const handleCollectionChange = (v: string)        => pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus, v, urlExcludeCollection);
-  const handleExcludeCollectionToggle = () =>
-    pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, !urlExcludeCollection);
+  const handleVendorChange     = (v: string)        => pushFilters(urlSearch, v, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections);
+  const handleHasBarcodeChange = (v: BarcodeFilter) => pushFilters(urlSearch, urlVendor, v, urlStatus, urlIncludeCollections, urlExcludeCollections);
+  const handleStatusChange     = (v: StatusFilter)  => pushFilters(urlSearch, urlVendor, urlHasBarcode, v, urlIncludeCollections, urlExcludeCollections);
+
+  // Cycles a collection through none -> include -> exclude -> none on repeated clicks
+  const handleCycleCollection = (c: string) => {
+    if (urlIncludeCollections.includes(c)) {
+      pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus,
+        urlIncludeCollections.filter((v) => v !== c), [...urlExcludeCollections, c]);
+    } else if (urlExcludeCollections.includes(c)) {
+      pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus,
+        urlIncludeCollections, urlExcludeCollections.filter((v) => v !== c));
+    } else {
+      pushFilters(urlSearch, urlVendor, urlHasBarcode, urlStatus,
+        [...urlIncludeCollections, c], urlExcludeCollections);
+    }
+  };
 
   const handleLoadMore = () => {
     const next = page + 1;
     setPage(next);
-    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection, next, true);
+    fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections, next, true);
   };
 
   // ── Export ───────────────────────────────────────────────────────────────
@@ -290,7 +305,7 @@ function AssignPageInner() {
     setExportOpen(false);
     setExporting(true);
     try {
-      const params = buildFilterParams(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection);
+      const params = buildFilterParams(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections);
       const res = await fetch(`/api/products/export?${params}`);
       const data = await res.json();
       const rows: ProductExportRow[] = data.rows ?? [];
@@ -349,7 +364,7 @@ function AssignPageInner() {
     setPage(1);
     setProducts([]);
     setExpandedProducts(new Set());
-    await fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection, 1, false);
+    await fetchPage(urlSearch, urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections, 1, false);
     setBanner({ type: "success", message: `Synced ${count} variants` });
   };
   const handleSyncError = (msg: string) => setBanner({ type: "error", message: msg });
@@ -527,7 +542,7 @@ function AssignPageInner() {
               />
               {searchInput && (
                 <button
-                  onClick={() => { setSearchInput(""); pushFilters("", urlVendor, urlHasBarcode, urlStatus, urlCollection, urlExcludeCollection); }}
+                  onClick={() => { setSearchInput(""); pushFilters("", urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections); }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
                 >
                   <X className="w-4 h-4" />
@@ -588,35 +603,16 @@ function AssignPageInner() {
                 </div>
               )}
 
-              {/* Collection filter */}
+              {/* Collection filter — tap once to include, again to exclude, again to clear */}
               {collections.length > 0 && (
-                <>
-                  <div className="relative">
-                    <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                    <select
-                      value={urlCollection}
-                      onChange={(e) => handleCollectionChange(e.target.value)}
-                      className="pl-8 pr-7 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[36px]"
-                    >
-                      <option value="all">All collections</option>
-                      {collections.map((c) => <option key={c} value={c}>{c}</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
-                  </div>
-                  {urlCollection !== "all" && (
-                    <button
-                      onClick={handleExcludeCollectionToggle}
-                      className={`px-3 py-2 rounded-lg border text-xs font-medium transition-colors min-h-[36px] ${
-                        urlExcludeCollection
-                          ? "bg-red-900/40 border-red-800/50 text-red-300"
-                          : "bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200"
-                      }`}
-                      title={urlExcludeCollection ? "Excluding this collection — click to include instead" : "Including this collection — click to exclude instead"}
-                    >
-                      {urlExcludeCollection ? "Exclude" : "Include"}
-                    </button>
-                  )}
-                </>
+                <CollectionMultiSelect
+                  options={collections}
+                  included={urlIncludeCollections}
+                  excluded={urlExcludeCollections}
+                  open={collectionsFilterOpen}
+                  onToggleOpen={() => setCollectionsFilterOpen((o) => !o)}
+                  onCycleOption={handleCycleCollection}
+                />
               )}
             </div>
 
@@ -1055,6 +1051,64 @@ function AssignPageInner() {
 }
 
 // ── Shared sub-components ─────────────────────────────────────────────────────
+
+function CollectionMultiSelect({
+  options,
+  included,
+  excluded,
+  open,
+  onToggleOpen,
+  onCycleOption,
+}: {
+  options: string[];
+  included: string[];
+  excluded: string[];
+  open: boolean;
+  onToggleOpen: () => void;
+  onCycleOption: (value: string) => void;
+}) {
+  const activeCount = included.length + excluded.length;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={onToggleOpen}
+        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors min-h-[36px] ${
+          activeCount > 0 ? "bg-purple-900/40 border-purple-700/50 text-purple-300" : "bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200"
+        }`}
+      >
+        <Filter className="w-3.5 h-3.5" />
+        Collections
+        {activeCount > 0 && <span className="ml-0.5">({activeCount})</span>}
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-1 z-20 bg-slate-900 border border-slate-700 rounded-lg shadow-lg overflow-hidden w-56 max-h-64 overflow-y-auto">
+          <p className="px-3 py-2 text-[11px] text-slate-500 border-b border-slate-800">Tap to include, tap again to exclude, tap again to clear</p>
+          {options.map((c) => {
+            const isIncluded = included.includes(c);
+            const isExcluded = excluded.includes(c);
+            return (
+              <button
+                key={c}
+                onClick={() => onCycleOption(c)}
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+              >
+                <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${
+                  isIncluded ? "bg-green-600 border-green-600" : isExcluded ? "bg-red-600 border-red-600" : "border-slate-600"
+                }`}>
+                  {isIncluded && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  {isExcluded && <X className="w-3 h-3 text-white" />}
+                </span>
+                <span className="truncate">{c}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StatusBadge({ status }: { status: "ACTIVE" | "DRAFT" | "ARCHIVED" }) {
   if (status === "ACTIVE") {

@@ -164,12 +164,12 @@ public class ProductListFunction
     private static List<ProductVariantEntity> ApplyFilters(
         List<ProductVariantEntity> entities, System.Collections.Specialized.NameValueCollection qs)
     {
-        var search            = qs["search"]?.Trim();
-        var vendor            = qs["vendor"]?.Trim();
-        var hasBarcodeQ       = qs["hasBarcode"]?.Trim(); // "yes" | "no" | absent
-        var statusQ           = qs["status"]?.Trim().ToUpperInvariant(); // "ACTIVE" | "DRAFT" | "ARCHIVED" | absent
-        var collection        = qs["collection"]?.Trim();
-        var excludeCollection = string.Equals(qs["excludeCollection"]?.Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        var search             = qs["search"]?.Trim();
+        var vendor             = qs["vendor"]?.Trim();
+        var hasBarcodeQ        = qs["hasBarcode"]?.Trim(); // "yes" | "no" | absent
+        var statusQ            = qs["status"]?.Trim().ToUpperInvariant(); // "ACTIVE" | "DRAFT" | "ARCHIVED" | absent
+        var includeCollections = SplitCsv(qs["collections"]);
+        var excludeCollections = SplitCsv(qs["excludeCollections"]);
 
         IEnumerable<ProductVariantEntity> filtered = entities;
 
@@ -184,13 +184,20 @@ public class ProductListFunction
         else if (hasBarcodeQ == "no")
             filtered = filtered.Where(e => string.IsNullOrEmpty(e.Barcode));
 
-        if (!string.IsNullOrEmpty(collection))
+        // Include: product must be in at least one of the selected collections.
+        // Exclude: product must not be in any of the selected collections. Both can be applied together.
+        if (includeCollections.Count > 0 || excludeCollections.Count > 0)
         {
             filtered = filtered.Where(e =>
             {
-                var inCollection = (JsonConvert.DeserializeObject<List<string>>(e.Collections ?? "[]") ?? new List<string>())
-                    .Any(c => string.Equals(c, collection, StringComparison.OrdinalIgnoreCase));
-                return excludeCollection ? !inCollection : inCollection;
+                var productCollections = JsonConvert.DeserializeObject<List<string>>(e.Collections ?? "[]") ?? new List<string>();
+                if (includeCollections.Count > 0 &&
+                    !productCollections.Any(c => includeCollections.Contains(c, StringComparer.OrdinalIgnoreCase)))
+                    return false;
+                if (excludeCollections.Count > 0 &&
+                    productCollections.Any(c => excludeCollections.Contains(c, StringComparer.OrdinalIgnoreCase)))
+                    return false;
+                return true;
             });
         }
 
@@ -205,5 +212,11 @@ public class ProductListFunction
         }
 
         return filtered.ToList();
+    }
+
+    private static List<string> SplitCsv(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return new List<string>();
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
     }
 }
