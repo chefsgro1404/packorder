@@ -403,6 +403,15 @@ public class TableStorageService
         await _fulfillmentShipments.UpsertEntityAsync(entity, TableUpdateMode.Replace);
     }
 
+    public async Task<FulfillmentShipmentEntity?> UpdateFulfillmentNotesAsync(string numericFulfillmentId, string? notes)
+    {
+        var entity = await GetFulfillmentShipmentAsync(numericFulfillmentId);
+        if (entity == null) return null;
+        entity.Notes = notes;
+        await _fulfillmentShipments.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        return entity;
+    }
+
     public async Task SyncFulfillmentShipmentsAsync(IEnumerable<FulfillmentShipmentEntity> incoming)
     {
         foreach (var newEntity in incoming)

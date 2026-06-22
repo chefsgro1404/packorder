@@ -573,8 +573,15 @@ public class FulfillmentShipmentEntity : ITableEntity
     public string? CompletedBy { get; set; }
     public bool IsManualComplete { get; set; }
     public string? ManualReason { get; set; }
+    public string? Notes { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
+}
+
+public class UpdateFulfillmentNotesRequest
+{
+    [JsonProperty("fulfillmentId")] public string FulfillmentId { get; set; } = "";
+    [JsonProperty("notes")]         public string? Notes { get; set; }
 }
 
 public class ShipmentLineItemCache

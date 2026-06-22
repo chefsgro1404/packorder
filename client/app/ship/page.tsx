@@ -28,6 +28,7 @@ import {
   ExternalLink,
   ArrowUp,
   ArrowDown,
+  StickyNote,
 } from "lucide-react";
 
 type ActiveStep = "list" | "detail" | "scanning";
@@ -281,6 +282,29 @@ export default function ShipPage() {
       );
       return updated;
     });
+  }, []);
+
+  // ─── Save a free-text note on an order, for either the Active detail or History detail view ──
+  const saveFulfillmentNotes = useCallback(async (fulfillmentId: string, notes: string, target: "active" | "history") => {
+    try {
+      const res = await fetch("/api/shipment/notes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fulfillmentId, notes }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save note");
+      const saved: string = data.notes ?? notes;
+      if (target === "active") {
+        setSelectedFulfillment((prev) => (prev && prev.fulfillmentId === fulfillmentId ? { ...prev, notes: saved } : prev));
+        setFulfillments((all) => all.map((f) => (f.fulfillmentId === fulfillmentId ? { ...f, notes: saved } : f)));
+      } else {
+        setSelectedHistory((prev) => (prev && prev.fulfillmentId === fulfillmentId ? { ...prev, notes: saved } : prev));
+        setHistoryFulfillments((all) => all.map((f) => (f.fulfillmentId === fulfillmentId ? { ...f, notes: saved } : f)));
+      }
+    } catch (e) {
+      setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to save note" });
+    }
   }, []);
 
   // ─── Record a scan against a matched line item ────────────────────────────────
@@ -1033,6 +1057,27 @@ export default function ShipPage() {
             </div>
           )}
 
+          {/* Notes */}
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <StickyNote className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Notes</span>
+            </div>
+            <textarea
+              key={selectedFulfillment.fulfillmentId}
+              defaultValue={selectedFulfillment.notes ?? ""}
+              onBlur={(e) => {
+                const value = e.target.value.trim();
+                if (value !== (selectedFulfillment.notes ?? "")) {
+                  saveFulfillmentNotes(selectedFulfillment.fulfillmentId, value, "active");
+                }
+              }}
+              placeholder="e.g. added extra items, price issue, item damaged…"
+              rows={2}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-green-600"
+            />
+          </div>
+
           {/* Line items */}
           <div className="space-y-2">
             <p className="text-xs text-slate-500 font-medium uppercase tracking-wider">Line Items</p>
@@ -1241,6 +1286,27 @@ export default function ShipPage() {
             <p className="text-xs text-slate-400">
               {shipped}/{expected} items scanned
             </p>
+          </div>
+
+          {/* Notes */}
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2">
+              <StickyNote className="w-4 h-4 text-slate-400 shrink-0" />
+              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Notes</span>
+            </div>
+            <textarea
+              key={selectedHistory.fulfillmentId}
+              defaultValue={selectedHistory.notes ?? ""}
+              onBlur={(e) => {
+                const value = e.target.value.trim();
+                if (value !== (selectedHistory.notes ?? "")) {
+                  saveFulfillmentNotes(selectedHistory.fulfillmentId, value, "history");
+                }
+              }}
+              placeholder="e.g. added extra items, price issue, item damaged…"
+              rows={2}
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-green-600"
+            />
           </div>
 
           {/* Line items with scan events */}
@@ -1631,6 +1697,7 @@ export default function ShipPage() {
                           >
                             {f.status}
                           </span>
+                          {f.notes && <StickyNote className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="font-mono text-xs text-slate-400 truncate">{f.trackingNumber}</span>
@@ -1811,6 +1878,7 @@ export default function ShipPage() {
                               Complete
                             </span>
                           )}
+                          {f.notes && <StickyNote className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
                         </div>
                         <span className="font-mono text-xs text-slate-400">{f.trackingNumber}</span>
                       </div>

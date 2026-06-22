@@ -277,6 +277,40 @@ public class ShipmentFunction
         }
     }
 
+    [Function("ShipmentNotes")]
+    public async Task<HttpResponseData> UpdateNotes(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "patch", "options", Route = "shipment/notes")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body    = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<UpdateFulfillmentNotesRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.FulfillmentId))
+                return await ResponseHelper.WriteError(req, "fulfillmentId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var numericId = TableStorageService.StripGid(request.FulfillmentId);
+            var updated   = await _tableStorage.UpdateFulfillmentNotesAsync(numericId, request.Notes?.Trim());
+            if (updated == null)
+                return await ResponseHelper.WriteError(req, "Fulfillment not found", HttpStatusCode.NotFound, _allowedOrigins);
+
+            return await ResponseHelper.WriteSuccess(req, new { ok = true, notes = updated.Notes }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Update shipment notes failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     [Function("ShipmentHistory")]
     public async Task<HttpResponseData> History(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "shipment/history")]

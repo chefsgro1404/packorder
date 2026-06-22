@@ -257,6 +257,7 @@ export interface ShipmentFulfillment {
   completedBy: string | null;
   isManualComplete: boolean;
   manualReason: string | null;
+  notes: string | null;
 }
 
 export interface ShipmentScanRecord {

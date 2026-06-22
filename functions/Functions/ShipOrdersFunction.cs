@@ -129,6 +129,7 @@ public class ShipOrdersFunction
             completedBy              = e.CompletedBy,
             isManualComplete         = e.IsManualComplete,
             manualReason             = e.ManualReason,
+            notes                    = e.Notes,
         };
     }
 }
