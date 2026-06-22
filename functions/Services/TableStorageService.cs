@@ -119,14 +119,33 @@ public class TableStorageService
     }
 
     // ─── Product variants ────────────────────────────────────────────────────
+    //
+    // GetAllProductVariantsAsync is called on every /api/products and /api/products/export
+    // request (i.e. every filter click), and was doing a full Table Storage scan each time —
+    // the dominant source of latency when filtering. TableStorageService is registered as a
+    // singleton (Program.cs), so an in-memory cache here survives across requests on a warm
+    // instance. Writes explicitly invalidate it for immediate consistency; the TTL is just a
+    // safety net for any write path that might not call Invalidate.
+
+    private List<ProductVariantEntity>? _variantsCache;
+    private DateTimeOffset _variantsCacheAt;
+    private static readonly TimeSpan VariantsCacheTtl = TimeSpan.FromSeconds(30);
 
     public async Task<List<ProductVariantEntity>> GetAllProductVariantsAsync()
     {
+        if (_variantsCache != null && DateTimeOffset.UtcNow - _variantsCacheAt < VariantsCacheTtl)
+            return _variantsCache;
+
         var results = new List<ProductVariantEntity>();
         await foreach (var entity in _productVariants.QueryAsync<ProductVariantEntity>())
             results.Add(entity);
+
+        _variantsCache = results;
+        _variantsCacheAt = DateTimeOffset.UtcNow;
         return results;
     }
+
+    private void InvalidateVariantsCache() => _variantsCache = null;
 
     public async Task BulkUpsertProductVariantsAsync(IEnumerable<ProductVariantEntity> entities)
     {
@@ -144,6 +163,7 @@ public class TableStorageService
                 }
             }));
         await Task.WhenAll(tasks);
+        InvalidateVariantsCache();
     }
 
     public async Task DeleteProductVariantsByProductIdAsync(string numericProductId)
@@ -159,6 +179,7 @@ public class TableStorageService
                 new TableTransactionAction(TableTransactionActionType.Delete, e));
             await _productVariants.SubmitTransactionAsync(actions);
         }
+        InvalidateVariantsCache();
     }
 
     public async Task DeleteProductVariantsByVendorsAsync(IEnumerable<string> vendors)
@@ -171,6 +192,7 @@ public class TableStorageService
                 toDelete.Add(e);
         }
         await BatchDeleteAsync(toDelete);
+        InvalidateVariantsCache();
     }
 
     public async Task DeleteAllProductVariantsAsync()
@@ -179,6 +201,7 @@ public class TableStorageService
         await foreach (var e in _productVariants.QueryAsync<ProductVariantEntity>())
             toDelete.Add(e);
         await BatchDeleteAsync(toDelete);
+        InvalidateVariantsCache();
     }
 
     public async Task<ProductVariantEntity?> GetProductVariantAsync(string productId, string variantId)
@@ -206,6 +229,7 @@ public class TableStorageService
             var entity = response.Value;
             entity.Barcode = barcode;
             await _productVariants.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+            InvalidateVariantsCache();
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
