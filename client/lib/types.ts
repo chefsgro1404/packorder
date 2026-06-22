@@ -296,10 +296,15 @@ export interface ShipmentScanRecord {
 // ─── Scale & Print Mode ───────────────────────────────────────────────────────
 
 export interface ProductLookup {
-  itemNumber: string;
+  itemNumber: string | null;
   plu: string;
   productTitle: string;
   pricePerLb: number;
+  productId?: string | null;
+  variantId?: string | null;
+  variantTitle?: string | null;
+  imageUrl?: string | null;
+  pinned?: boolean;
 }
 
 export interface ProductLookupResult {
@@ -308,6 +313,19 @@ export interface ProductLookupResult {
   plu?: string;
   productTitle?: string;
   pricePerLb?: number;
+}
+
+export interface ScaleProduct {
+  found: boolean;
+  productId?: string;
+  variantId?: string;
+  productTitle?: string;
+  variantTitle?: string | null;
+  imageUrl?: string | null;
+  itemNumber?: string | null;
+  plu?: string;
+  pricePerLb?: number;
+  pinned?: boolean;
 }
 
 export interface PrintedLabel {

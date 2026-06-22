@@ -1,6 +1,6 @@
 # ShipScan
 
-ShipScan is a mobile-first warehouse operations tool that integrates with Shopify. Staff scan product barcodes and order labels using their phone camera to perform point-of-sale transactions, ship fulfillments, and assign barcodes to product variants. A Scale & Print mode reads weights from a USB scale, looks up the item against a managed PLU/product table, and prints QR labels on a thermal printer, logging every print to an audit trail.
+ShipScan is a mobile-first warehouse operations tool that integrates with Shopify. Staff scan product barcodes and order labels using their phone camera to perform point-of-sale transactions, ship fulfillments, and assign barcodes to product variants. A Scale & Print mode reads weights from a USB scale and prints QR labels on a thermal printer: products with a saved scale slot resolve automatically by item number, while any other synced product can be opened directly from a searchable product picker (with an optional slot, price-per-lb, and PLU editable there) so a weight signal always prints the right label, logging every print to an audit trail.
 
 ## Repository Structure
 

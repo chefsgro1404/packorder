@@ -700,10 +700,16 @@ public class CompleteShipmentRequest
 public class ProductLookupEntity : ITableEntity
 {
     public string PartitionKey { get; set; } = "product";
-    public string RowKey { get; set; } = "";       // scale item number / serial
+    public string RowKey { get; set; } = "";       // scale item number, or "v:<variantId>" when unmapped to a slot
     public string Plu { get; set; } = "";
     public string ProductTitle { get; set; } = "";
     public double PricePerLb { get; set; }
+    public string? ItemNumber { get; set; }        // optional scale slot; mirrors RowKey when RowKey is numeric
+    public string? ProductId { get; set; }          // full GID, set when created via the product picker
+    public string? VariantId { get; set; }          // full GID
+    public string? VariantTitle { get; set; }
+    public string? ImageUrl { get; set; }
+    public bool Pinned { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -714,6 +720,20 @@ public class UpsertProductLookupRequest
     [JsonProperty("plu")]          public string Plu { get; set; } = "";
     [JsonProperty("productTitle")] public string ProductTitle { get; set; } = "";
     [JsonProperty("pricePerLb")]   public double PricePerLb { get; set; }
+    [JsonProperty("pinned")]       public bool? Pinned { get; set; }
+}
+
+public class UpsertScaleProductRequest
+{
+    [JsonProperty("productId")]     public string ProductId { get; set; } = "";
+    [JsonProperty("variantId")]     public string VariantId { get; set; } = "";
+    [JsonProperty("productTitle")]  public string ProductTitle { get; set; } = "";
+    [JsonProperty("variantTitle")]  public string? VariantTitle { get; set; }
+    [JsonProperty("imageUrl")]      public string? ImageUrl { get; set; }
+    [JsonProperty("itemNumber")]    public string? ItemNumber { get; set; }
+    [JsonProperty("plu")]           public string Plu { get; set; } = "";
+    [JsonProperty("pricePerLb")]    public double PricePerLb { get; set; }
+    [JsonProperty("pinned")]        public bool Pinned { get; set; }
 }
 
 public class PrintedLabelEntity : ITableEntity

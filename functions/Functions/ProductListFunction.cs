@@ -108,6 +108,48 @@ public class ProductListFunction
         }
     }
 
+    [Function("ProductByVariant")]
+    public async Task<HttpResponseData> GetByVariant(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "products/variant")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+            var variantId = qs["variantId"] ?? "";
+            if (string.IsNullOrWhiteSpace(variantId))
+                return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var entity = await _tableStorage.GetProductVariantByVariantIdAsync(variantId);
+            if (entity == null)
+                return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found = true,
+                productId = entity.ProductId,
+                variantId = entity.VariantId,
+                productTitle = entity.ProductTitle,
+                variantTitle = entity.VariantTitle,
+                imageUrl = entity.ImageUrl,
+                barcode = entity.Barcode,
+                price = entity.Price,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load product by variant");
+            return await ResponseHelper.WriteError(req, "Failed to load product", HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     [Function("ProductExport")]
     public async Task<HttpResponseData> Export(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "products/export")]

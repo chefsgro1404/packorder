@@ -219,6 +219,13 @@ public class TableStorageService
         }
     }
 
+    public async Task<ProductVariantEntity?> GetProductVariantByVariantIdAsync(string variantId)
+    {
+        var rk = StripGid(variantId);
+        var all = await GetAllProductVariantsAsync();
+        return all.FirstOrDefault(e => e.RowKey == rk);
+    }
+
     public async Task UpdateProductVariantBarcodeAsync(string productId, string variantId, string barcode)
     {
         var pk = StripGid(productId);
@@ -799,6 +806,58 @@ public class TableStorageService
         try
         {
             await _productLookup.DeleteEntityAsync("product", itemNumber);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return false;
+        }
+    }
+
+    // ─── Scale & Print: product lookup by variant (optional item-number slot) ──
+
+    private static string VariantRowKey(string variantId) => $"v:{variantId}";
+
+    public async Task<ProductLookupEntity?> GetProductLookupByVariantAsync(string variantId)
+    {
+        try
+        {
+            var response = await _productLookup.GetEntityAsync<ProductLookupEntity>("product", VariantRowKey(variantId));
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task<ProductLookupEntity?> FindProductLookupByItemNumberAsync(string itemNumber)
+    {
+        var all = await ListProductLookupsAsync();
+        return all.FirstOrDefault(e => string.Equals(e.ItemNumber, itemNumber, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task<(bool ok, string? conflictMessage)> UpsertScaleProductAsync(ProductLookupEntity entity)
+    {
+        if (!string.IsNullOrWhiteSpace(entity.ItemNumber))
+        {
+            var all = await ListProductLookupsAsync();
+            var collision = all.FirstOrDefault(e =>
+                e.RowKey != entity.RowKey &&
+                string.Equals(e.ItemNumber, entity.ItemNumber, StringComparison.OrdinalIgnoreCase));
+            if (collision != null)
+                return (false, $"Item number {entity.ItemNumber} is already mapped to {collision.ProductTitle}");
+        }
+
+        await _productLookup.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        return (true, null);
+    }
+
+    public async Task<bool> DeleteProductLookupByVariantAsync(string variantId)
+    {
+        try
+        {
+            await _productLookup.DeleteEntityAsync("product", VariantRowKey(variantId));
             return true;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)

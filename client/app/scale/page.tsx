@@ -21,10 +21,13 @@ import {
   Copy,
   Check,
   History,
-  Settings,
+  ListFilter,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
+import { usePrintLabel } from '@/hooks/usePrintLabel';
+import { PrintLabelPortal } from '@/components/PrintLabelPortal';
+import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel } from '@/lib/types';
 
@@ -35,15 +38,6 @@ interface CurrentItem {
   plu: string;
   productTitle: string;
   found: boolean;
-}
-
-function generateSn(): string {
-  return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
-}
-
-function buildQrPayload(item: CurrentItem, printedAtEst: string, sn: string): string {
-  const plu = item.found ? item.plu : 'N/A';
-  return `${plu} | ${item.productTitle} | ${item.itemWeight} | ${printedAtEst} | SN:${sn}`;
 }
 
 // ─── Status indicator dot ────────────────────────────────────────────────────
@@ -190,7 +184,9 @@ function LabelPreview({
 }) {
   const [copied, setCopied] = useState(false);
 
-  const previewQrPayload = item ? buildQrPayload(item, formatEst(new Date()), 'preview') : '';
+  const previewQrPayload = item
+    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, itemWeight: item.itemWeight }, formatEst(new Date()), 'preview')
+    : '';
 
   const handleCopy = async () => {
     if (!item) return;
@@ -216,8 +212,7 @@ function LabelPreview({
         <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-900 rounded-xl px-3 py-2.5">
           <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
           <p className="text-xs text-amber-300">
-            Item {item.itemNumber} isn&apos;t in the product lookup table. Printing with a placeholder PLU —
-            add it under Manage Products.
+            Item {item.itemNumber} isn&apos;t mapped. Printed with a placeholder PLU — map it under Select Product, or open that product directly next time to print from there.
           </p>
         </div>
       )}
@@ -477,15 +472,7 @@ export default function ScalePage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [currentItem, setCurrentItem] = useState<CurrentItem | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
-  const [printedAt, setPrintedAt] = useState<Date | null>(null);
-  const [printPayload, setPrintPayload] = useState<{
-    productTitle: string;
-    qrPayload: string;
-    itemWeight: string;
-    printedAtEst: string;
-    sn: string;
-  } | null>(null);
-  const [printRequestId, setPrintRequestId] = useState(0);
+  const { printPayload, printedAt, triggerPrint, printVerbatim, reset: resetPrinted } = usePrintLabel();
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -570,55 +557,24 @@ export default function ScalePage() {
   }, [fetchHistory]);
 
   const printItem = useCallback(async (item: CurrentItem) => {
-    const printedAtEst = formatEst(new Date());
-    const sn = generateSn();
-    const qrPayload = buildQrPayload(item, printedAtEst, sn);
-    setPrintPayload({ productTitle: item.productTitle, qrPayload, itemWeight: item.itemWeight, printedAtEst, sn });
-    setPrintRequestId((n) => n + 1);
-    setPrintedAt(new Date());
-    await logPrintedLabel(item, qrPayload, printedAtEst, sn);
-  }, [logPrintedLabel]);
-
-  useEffect(() => {
-    if (printRequestId === 0) return;
-    // Wait a frame for React to render #print-label with the QR SVG, then open a clean print window.
-    const id = requestAnimationFrame(() => {
-      const el = document.getElementById('print-label');
-      if (!el) return;
-      const win = window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`);
-      if (!win) return;
-      win.document.write(`<!DOCTYPE html><html><head><style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        @page { size: 3in 2in; margin: 0; }
-        html, body { width: 3in; height: 2in; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        .print-label-inner { width: 3in; height: 2in; display: flex; align-items: center; justify-content: center; }
-        .print-label-content { width: 2in; display: flex; flex-direction: column; align-items: flex-start; padding: 0.15in; gap: 0.06in; }
-        .print-label-text { width: 100%; display: flex; flex-direction: column; gap: 0.03in; }
-        .print-label-product { font-size: 10pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; margin-bottom: 0.04in; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-        .print-label-line { font-size: 8pt; line-height: 1.3; color: #000; }
-        .print-label-field { font-weight: 700; color: #000; }
-        .print-label-sn { font-family: monospace; color: #000; }
-        .print-label-qr { display: flex; justify-content: center; width: 100%; }
-        .print-label-qr svg { width: 0.85in !important; height: 0.85in !important; }
-      </style></head><body>${el.innerHTML}</body></html>`);
-      win.document.close();
-      win.focus();
-      win.onafterprint = () => win.close();
-      win.print();
+    const { sn, printedAtEst, qrPayload } = triggerPrint({
+      plu: item.found ? item.plu : null,
+      productTitle: item.productTitle,
+      itemWeight: item.itemWeight,
     });
-    return () => cancelAnimationFrame(id);
-  }, [printRequestId]);
+    await logPrintedLabel(item, qrPayload, printedAtEst, sn);
+  }, [triggerPrint, logPrintedLabel]);
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
-      setPrintedAt(null);
+      resetPrinted();
       setLookupLoading(true);
       const item = await lookupProduct(reading);
       setCurrentItem(item);
       setLookupLoading(false);
       await printItem(item);
     },
-    [lookupProduct, printItem]
+    [lookupProduct, printItem, resetPrinted]
   );
 
   const scale = useScale(handleReading);
@@ -640,8 +596,8 @@ export default function ScalePage() {
   const handleReprint = async (record: PrintedLabel) => {
     console.log('[scale] reprinting:', record.productTitle, record.printedAtEst);
     const printedAtEst = formatEst(new Date());
-    setPrintPayload({ productTitle: record.productTitle, qrPayload: record.qrPayload, itemWeight: record.itemWeight, printedAtEst, sn: record.sn ?? generateSn() });
-    setPrintRequestId((n) => n + 1);
+    const sn = record.sn ?? generateSn();
+    printVerbatim({ productTitle: record.productTitle, qrPayload: record.qrPayload, itemWeight: record.itemWeight, printedAtEst, sn });
     await logPrintedLabel(
       {
         itemNumber: record.itemNumber,
@@ -653,7 +609,7 @@ export default function ScalePage() {
       },
       record.qrPayload,
       printedAtEst,
-      record.sn ?? generateSn()
+      sn
     );
   };
 
@@ -687,17 +643,24 @@ export default function ScalePage() {
             <StatusDot status={scaleStatus} />
             <span className="text-xs text-slate-400 font-medium">Scale</span>
           </div>
-          <button
-            onClick={() => router.push('/scale/products')}
-            aria-label="Manage products"
-            className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-900 border border-slate-800 hover:bg-slate-800 transition-colors"
-          >
-            <Settings className="w-3.5 h-3.5 text-slate-400" />
-          </button>
         </div>
       </div>
 
       <div className="px-4 py-5 flex flex-col gap-4">
+        {/* Select Product entry point */}
+        <button
+          onClick={() => router.push('/scale/products')}
+          className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-2xl px-4 py-3.5 transition-colors active:scale-[0.99]"
+        >
+          <div className="w-9 h-9 rounded-xl bg-blue-500/40 flex items-center justify-center flex-shrink-0">
+            <ListFilter className="w-4 h-4 text-white" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <p className="text-sm font-bold text-white leading-tight">Select Product</p>
+            <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog to print labels for any product</p>
+          </div>
+        </button>
+
         {/* Scale monitor card */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-1 flex items-center gap-2">
@@ -754,7 +717,7 @@ export default function ScalePage() {
                   <button
                     onClick={() => {
                       setCurrentItem(null);
-                      setPrintedAt(null);
+                      resetPrinted();
                     }}
                     className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"
                   >
@@ -785,109 +748,7 @@ export default function ScalePage() {
 
       </main>
 
-      {/* Print-only label — sibling of main so hiding main in print doesn't affect it */}
-      {printPayload && (
-        <div id="print-label" aria-hidden="true">
-          <div className="print-label-inner">
-            <div className="print-label-content">
-              <div className="print-label-text">
-                <p className="print-label-product">{printPayload.productTitle}</p>
-                <p className="print-label-line"><span className="print-label-field">Weight:</span> {printPayload.itemWeight}</p>
-                <p className="print-label-line"><span className="print-label-field">Packing Date:</span> {printPayload.printedAtEst}</p>
-                <p className="print-label-line print-label-sn"><span className="print-label-field">SN:</span> {printPayload.sn}</p>
-              </div>
-              <div className="print-label-qr">
-                <QRCodeSVG value={printPayload.qrPayload} size={388} level="M" bgColor="#ffffff" fgColor="#000000" />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      <style jsx global>{`
-        #print-label {
-          display: none;
-        }
-        @media print {
-          @page {
-            size: 3in 2in;
-            margin: 0;
-          }
-          main {
-            display: none !important;
-          }
-          #print-label {
-            display: block;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 3in;
-            height: 2in;
-            overflow: hidden;
-            background: #fff;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          .print-label-inner {
-            width: 3in;
-            height: 2in;
-            box-sizing: border-box;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #fff;
-          }
-          .print-label-content {
-            width: 2in;
-            box-sizing: border-box;
-            padding: 0.15in;
-            display: flex;
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.06in;
-          }
-          .print-label-text {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            gap: 0.03in;
-          }
-          .print-label-product {
-            font-size: 10pt;
-            font-weight: 700;
-            line-height: 1.2;
-            margin: 0 0 0.04in 0;
-            color: #000;
-            word-break: break-word;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-          }
-          .print-label-line {
-            font-size: 8pt;
-            line-height: 1.3;
-            margin: 0;
-            color: #000;
-          }
-          .print-label-field {
-            font-weight: 700;
-            color: #000;
-          }
-          .print-label-sn {
-            font-family: monospace;
-            color: #000;
-          }
-          .print-label-qr {
-            display: flex;
-            justify-content: center;
-            width: 100%;
-          }
-          .print-label-qr svg {
-            width: 0.85in !important;
-            height: 0.85in !important;
-          }
-        }
-      `}</style>
+      <PrintLabelPortal payload={printPayload} />
     </>
   );
 }

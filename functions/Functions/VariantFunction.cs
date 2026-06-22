@@ -99,10 +99,7 @@ public class VariantFunction
 
             _ = _tableStorage.UpdateProductVariantBarcodeAsync(request.ProductId, request.VariantId, barcode);
 
-            var action = string.IsNullOrEmpty(oldBarcode) && !string.IsNullOrEmpty(barcode) ? "added"
-                : !string.IsNullOrEmpty(oldBarcode) && string.IsNullOrEmpty(barcode) ? "removed"
-                : !string.IsNullOrEmpty(oldBarcode) && string.Equals(oldBarcode, barcode, StringComparison.OrdinalIgnoreCase) ? "rescanned"
-                : "changed";
+            var action = BarcodeAuditHelper.ComputeAction(oldBarcode, barcode);
 
             _ = _tableStorage.LogBarcodeAuditAsync(new BarcodeAuditEntity
             {

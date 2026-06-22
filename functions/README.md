@@ -29,9 +29,12 @@ functions/
 │   ├── SyncShipOrdersFunction.cs  # POST /api/sync/ship-orders (pull fulfilled orders from Shopify)
 │   ├── ShipOrdersFunction.cs      # GET /api/ship-orders (list pending shipments), GET /api/ship-orders/lookup (single-order Shopify lookup)
 │   ├── ShipmentFunction.cs        # POST /api/shipment/scan, POST /api/shipment/complete, GET /api/shipment/history, GET /api/shipment/scans
-│   └── ScaleFunction.cs           # GET /api/scale/lookup, GET/POST/PATCH/DELETE /api/scale/products, GET/POST /api/scale/print-log
+│   ├── ProductListFunction.cs     # GET /api/products, GET /api/products/variant, GET /api/products/export
+│   └── ScaleFunction.cs           # GET /api/scale/lookup, GET/POST/PATCH/DELETE /api/scale/products,
+│                                   #   GET/PUT/DELETE /api/scale/products/by-variant, GET/POST /api/scale/print-log
 ├── Helpers/
 │   ├── AuthHelper.cs          # Reads access_token cookie, validates JWT + JTI revocation
+│   ├── BarcodeAuditHelper.cs  # Computes added/changed/removed/rescanned, shared by VariantFunction + ScaleFunction
 │   ├── CorsHelper.cs          # CORS preflight and response header injection
 │   └── ResponseHelper.cs      # Writes { success, data } / { success, error } envelopes
 ├── Middleware/
@@ -223,6 +226,20 @@ Returns the barcode assignment audit trail, most recent first. Optional query pa
 { "success": true, "data": { "audits": [ { "id": "...", "productId": "gid://...", "variantId": "gid://...", "productTitle": "...", "variantTitle": "...", "sku": "...", "oldBarcode": "111", "newBarcode": "222", "action": "changed", "assignedBy": "staff", "assignedAt": "2026-06-22T..." } ], "total": 1 } }
 ```
 
+### `GET /api/products/variant?variantId=<numeric or full GID>`
+
+Point lookup of a single synced variant from the `productvariants` cache (used by the Scale & Print product detail page to pre-fill live Shopify data when nothing has been saved for that variant yet).
+
+**Response (found)**
+```json
+{ "success": true, "data": { "found": true, "productId": "gid://...", "variantId": "gid://...", "productTitle": "...", "variantTitle": "...", "imageUrl": "...", "barcode": "...", "price": "9.99" } }
+```
+
+**Response (not found)**
+```json
+{ "success": true, "data": { "found": false } }
+```
+
 ### `POST /api/sync/ship-orders`
 
 Fetches fulfilled and partially-fulfilled, non-POS orders that have tracking numbers from Shopify (GraphQL, paginated using `(fulfillment_status:fulfilled OR fulfillment_status:partial) -source_name:pos`), then upserts into the `fulfillmentshipments` table only the fulfillments whose `fulfillment.createdAt` (UTC date) falls within the requested date range. Preserves existing scan progress for any fulfillment that has not yet been marked shipped.
@@ -303,9 +320,11 @@ Returns shipped fulfillments. Supports optional query params: `from` (ISO date),
 
 Returns all `ShipmentScanEntity` records for a given fulfillment, ordered by `ScannedAt`. Required query param: `fulfillmentId`.
 
+Scale & Print is product-centric: a `productlookup` row can be keyed either by a **scale item number** (the legacy "slot" flow below, `RowKey = itemNumber`) or by a **Shopify variant** (`RowKey = v:<variantId>`, used by the `/scale/products/[id]` product page). A row's `itemNumber` field is always optional — the scale's limited number of programmable PLU slots means most products are mapped by variant only, with no slot assigned at all. `GET /api/scale/lookup` scans both kinds of rows by their `itemNumber` field, so a slot assigned from either flow resolves the same way.
+
 ### `GET /api/scale/lookup?itemNumber=<value>`
 
-Looks up a `productlookup` row by scale item number (the `N` in the scale's `ITEM N` output).
+Looks up a `productlookup` row whose `itemNumber` field matches (the `N` in the scale's `ITEM N` output) — works for rows created by either flow below.
 
 **Response (found)**
 ```json
@@ -319,16 +338,16 @@ Looks up a `productlookup` row by scale item number (the `N` in the scale's `ITE
 
 ### `GET /api/scale/products`
 
-Returns every row in `productlookup`.
+Returns every row in `productlookup` (both slot-keyed and variant-keyed), pinned rows first. Optional `?variantId=` filters to a single variant-keyed row.
 
 **Response**
 ```json
-{ "success": true, "data": { "products": [ { "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "pricePerLb": 0.59 } ], "total": 1 } }
+{ "success": true, "data": { "products": [ { "itemNumber": "12345", "plu": "4011", "productTitle": "Bananas", "variantTitle": null, "imageUrl": null, "pricePerLb": 0.59, "productId": null, "variantId": null, "pinned": false } ], "total": 1 } }
 ```
 
 ### `POST /api/scale/products`
 
-Creates a new `productlookup` row. `itemNumber`, `plu`, and `productTitle` are required.
+Legacy slot-only flow: creates a new `productlookup` row keyed by item number. `itemNumber`, `plu`, and `productTitle` are required.
 
 **Request body**
 ```json
@@ -339,11 +358,38 @@ Returns `409 Conflict` if `itemNumber` is already mapped.
 
 ### `PATCH /api/scale/products`
 
-Updates an existing `productlookup` row, matched by `itemNumber`. Same body shape as `POST`. Returns `404` if the item number doesn't exist.
+Updates an existing slot-keyed `productlookup` row, matched by `itemNumber`. Same body shape as `POST`, plus an optional `pinned` boolean. Returns `404` if the item number doesn't exist.
 
 ### `DELETE /api/scale/products?itemNumber=<value>`
 
-Deletes the `productlookup` row for the given item number. Returns `404` if it doesn't exist.
+Deletes the slot-keyed `productlookup` row for the given item number. Returns `404` if it doesn't exist.
+
+### `GET /api/scale/products/by-variant?variantId=<numeric or full GID>`
+
+Loads the variant-keyed `productlookup` row for the product page at `/scale/products/[id]`.
+
+**Response (found)**
+```json
+{ "success": true, "data": { "found": true, "productId": "gid://...", "variantId": "gid://...", "productTitle": "Bananas", "variantTitle": null, "imageUrl": null, "itemNumber": null, "plu": "4011", "pricePerLb": 0.59, "pinned": false } }
+```
+
+**Response (not found)**
+```json
+{ "success": true, "data": { "found": false } }
+```
+
+### `PUT /api/scale/products/by-variant`
+
+Idempotent upsert of a variant-keyed `productlookup` row (`productId`, `variantId`, `productTitle` required; `itemNumber`, `plu`, `pricePerLb`, `pinned` all optional/updatable). The same call both creates the row (first save) and edits it (later saves). If `itemNumber` is set, it must not collide with another row's item number (`409 Conflict`). If `plu` differs from the row's current value, the variant's barcode is also updated in Shopify via `ShopifyService.UpdateVariantBarcodeAsync` and a `barcodeaudits` entry is written — the same audit path as `PATCH /api/variant`.
+
+**Request body**
+```json
+{ "productId": "gid://...", "variantId": "gid://...", "productTitle": "Bananas", "variantTitle": null, "itemNumber": null, "plu": "4011", "pricePerLb": 0.59, "pinned": true }
+```
+
+### `DELETE /api/scale/products/by-variant?variantId=<value>`
+
+Deletes the variant-keyed `productlookup` row.
 
 ### `GET /api/scale/print-log`
 

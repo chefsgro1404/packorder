@@ -13,14 +13,15 @@ public class ScaleFunction
 {
     private readonly ILogger<ScaleFunction> _logger;
     private readonly TableStorageService _tableStorage;
+    private readonly ShopifyService _shopify;
     private readonly AuthHelper _authHelper;
     private readonly string[] _allowedOrigins;
 
     public ScaleFunction(ILogger<ScaleFunction> logger, TableStorageService tableStorage,
-        AuthHelper authHelper, string[] allowedOrigins)
+        ShopifyService shopify, AuthHelper authHelper, string[] allowedOrigins)
     {
         _logger = logger; _tableStorage = tableStorage;
-        _authHelper = authHelper; _allowedOrigins = allowedOrigins;
+        _shopify = shopify; _authHelper = authHelper; _allowedOrigins = allowedOrigins;
     }
 
     [Function("ScaleLookup")]
@@ -45,7 +46,7 @@ public class ScaleFunction
                 return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
             }
 
-            var entity = await _tableStorage.GetProductLookupAsync(itemNumber);
+            var entity = await _tableStorage.FindProductLookupByItemNumberAsync(itemNumber);
             if (entity == null)
             {
                 _logger.LogWarning("Scale lookup miss: item number {ItemNumber} not in productlookup", itemNumber);
@@ -58,7 +59,7 @@ public class ScaleFunction
             return await ResponseHelper.WriteSuccess(req, new
             {
                 found = true,
-                itemNumber = entity.RowKey,
+                itemNumber,
                 plu = entity.Plu,
                 productTitle = entity.ProductTitle,
                 pricePerLb = entity.PricePerLb,
@@ -87,14 +88,27 @@ public class ScaleFunction
         {
             if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
             {
+                var qsGet = ParseQueryString(req.Url.Query);
+                var filterVariantId = qsGet.TryGetValue("variantId", out var vid) ? vid : null;
+
                 var entities = await _tableStorage.ListProductLookupsAsync();
-                var products = entities.Select(e => new
-                {
-                    itemNumber = e.RowKey,
-                    plu = e.Plu,
-                    productTitle = e.ProductTitle,
-                    pricePerLb = e.PricePerLb,
-                }).ToList();
+                if (!string.IsNullOrWhiteSpace(filterVariantId))
+                    entities = entities.Where(e => e.VariantId == filterVariantId).ToList();
+
+                var products = entities
+                    .OrderByDescending(e => e.Pinned)
+                    .Select(e => new
+                    {
+                        itemNumber = e.ItemNumber ?? (e.RowKey.StartsWith("v:") ? null : e.RowKey),
+                        plu = e.Plu,
+                        productTitle = e.ProductTitle,
+                        variantTitle = e.VariantTitle,
+                        imageUrl = e.ImageUrl,
+                        pricePerLb = e.PricePerLb,
+                        productId = e.ProductId,
+                        variantId = e.VariantId,
+                        pinned = e.Pinned,
+                    }).ToList();
                 return await ResponseHelper.WriteSuccess(req, new { products, total = products.Count }, _allowedOrigins);
             }
 
@@ -157,9 +171,15 @@ public class ScaleFunction
             var entityToSave = new ProductLookupEntity
             {
                 RowKey = request.ItemNumber,
+                ItemNumber = request.ItemNumber,
                 Plu = request.Plu,
                 ProductTitle = request.ProductTitle,
                 PricePerLb = request.PricePerLb,
+                Pinned = request.Pinned ?? existing?.Pinned ?? false,
+                ProductId = existing?.ProductId,
+                VariantId = existing?.VariantId,
+                VariantTitle = existing?.VariantTitle,
+                ImageUrl = existing?.ImageUrl,
             };
             await _tableStorage.UpsertProductLookupAsync(entityToSave);
 
@@ -177,6 +197,133 @@ public class ScaleFunction
         catch (Exception ex)
         {
             _logger.LogError(ex, "Scale products operation failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ScaleProductByVariant")]
+    public async Task<HttpResponseData> ProductByVariant(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "put", "delete", "options", Route = "scale/products/by-variant")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (userId, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("DELETE", StringComparison.OrdinalIgnoreCase))
+            {
+                var qsDel = ParseQueryString(req.Url.Query);
+                var variantIdDel = qsDel.TryGetValue("variantId", out var vd) ? vd : "";
+                if (string.IsNullOrWhiteSpace(variantIdDel))
+                    return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+                var deleted = await _tableStorage.DeleteProductLookupByVariantAsync(variantIdDel);
+                return await ResponseHelper.WriteSuccess(req, new { ok = deleted }, _allowedOrigins);
+            }
+
+            if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                var qs = ParseQueryString(req.Url.Query);
+                var variantId = qs.TryGetValue("variantId", out var v) ? v : "";
+                if (string.IsNullOrWhiteSpace(variantId))
+                    return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+                var entity = await _tableStorage.GetProductLookupByVariantAsync(variantId);
+                if (entity == null)
+                    return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+
+                return await ResponseHelper.WriteSuccess(req, new
+                {
+                    found = true,
+                    productId = entity.ProductId,
+                    variantId = entity.VariantId,
+                    productTitle = entity.ProductTitle,
+                    variantTitle = entity.VariantTitle,
+                    imageUrl = entity.ImageUrl,
+                    itemNumber = entity.ItemNumber,
+                    plu = entity.Plu,
+                    pricePerLb = entity.PricePerLb,
+                    pinned = entity.Pinned,
+                }, _allowedOrigins);
+            }
+
+            // PUT — upsert keyed by variantId; idempotent (first save creates, later saves edit)
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<UpsertScaleProductRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.ProductId) || string.IsNullOrWhiteSpace(request.VariantId))
+                return await ResponseHelper.WriteError(req, "productId and variantId are required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.ProductTitle))
+                return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var existing = await _tableStorage.GetProductLookupByVariantAsync(request.VariantId);
+            var oldBarcode = existing?.Plu;
+            var newPlu = request.Plu?.Trim() ?? "";
+
+            if (!string.IsNullOrEmpty(newPlu) && !string.Equals(oldBarcode, newPlu, StringComparison.OrdinalIgnoreCase))
+            {
+                // PLU edit pushes a real barcode update to Shopify, audited the same way /assign does
+                var variant = await _shopify.UpdateVariantBarcodeAsync(request.ProductId, request.VariantId, newPlu);
+                _ = _tableStorage.UpdateProductVariantBarcodeAsync(request.ProductId, request.VariantId, newPlu);
+
+                _ = _tableStorage.LogBarcodeAuditAsync(new BarcodeAuditEntity
+                {
+                    ProductId = request.ProductId,
+                    VariantId = request.VariantId,
+                    ProductTitle = request.ProductTitle,
+                    VariantTitle = request.VariantTitle,
+                    OldBarcode = oldBarcode,
+                    NewBarcode = newPlu,
+                    Action = BarcodeAuditHelper.ComputeAction(oldBarcode, newPlu),
+                    AssignedBy = userId,
+                });
+            }
+
+            var entityToSave = new ProductLookupEntity
+            {
+                RowKey = $"v:{request.VariantId}",
+                ProductId = request.ProductId,
+                VariantId = request.VariantId,
+                ProductTitle = request.ProductTitle,
+                VariantTitle = request.VariantTitle,
+                ImageUrl = request.ImageUrl,
+                ItemNumber = string.IsNullOrWhiteSpace(request.ItemNumber) ? null : request.ItemNumber.Trim(),
+                Plu = newPlu,
+                PricePerLb = request.PricePerLb,
+                Pinned = request.Pinned,
+            };
+
+            var (ok, conflictMessage) = await _tableStorage.UpsertScaleProductAsync(entityToSave);
+            if (!ok)
+            {
+                _logger.LogWarning("Scale product upsert rejected: {Message}", conflictMessage);
+                return await ResponseHelper.WriteError(req, conflictMessage ?? "Conflict", HttpStatusCode.Conflict, _allowedOrigins);
+            }
+
+            _logger.LogInformation("Scale product (by variant) saved: variant {VariantId} ({ProductTitle})",
+                request.VariantId, request.ProductTitle);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                productId = entityToSave.ProductId,
+                variantId = entityToSave.VariantId,
+                productTitle = entityToSave.ProductTitle,
+                variantTitle = entityToSave.VariantTitle,
+                imageUrl = entityToSave.ImageUrl,
+                itemNumber = entityToSave.ItemNumber,
+                plu = entityToSave.Plu,
+                pricePerLb = entityToSave.PricePerLb,
+                pinned = entityToSave.Pinned,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Scale product (by variant) operation failed");
             return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
     }
