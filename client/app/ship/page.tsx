@@ -110,6 +110,9 @@ export default function ShipPage() {
   const [pendingQr, setPendingQr] = useState<QrLabel | null>(null);
   const [extraContext, setExtraContext] = useState<ExtraContext>("not-in-order");
   const [extraReason, setExtraReason] = useState("");
+  // Reason entered once per barcode/PLU is remembered for the rest of the scanning session,
+  // so repeat over-scans of the same item don't re-prompt — they just keep adding like a normal scan.
+  const rememberedExtraReasonsRef = useRef<Map<string, string>>(new Map());
   const [extraLoading, setExtraLoading] = useState(false);
 
   // ─── Complete modal ───────────────────────────────────────────────────────────
@@ -337,6 +340,70 @@ export default function ShipPage() {
     }
   }, [selectedFulfillment, staffName, playBeep, applyLineItemUpdate]);
 
+  // ─── Item not in this order / over quantity — submit as an extra with a reason ─
+  // Shared by the manual "Accept" button and by silent repeat-scans that reuse a
+  // previously-entered reason for the same barcode (see rememberedExtraReasonsRef).
+  const submitExtra = useCallback(async (barcodeValue: string, qr: QrLabel | null, reason: string) => {
+    if (!selectedFulfillment || !reason.trim()) return;
+    setExtraLoading(true);
+    try {
+      const res = await fetch("/api/shipment/scan-extra", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fulfillmentId: selectedFulfillment.fulfillmentId,
+          barcode: barcodeValue,
+          reason: reason.trim(),
+          scannedBy: staffName,
+          ...(qr ? {
+            plu: qr.plu,
+            qrSn: qr.sn,
+            packagedAt: qr.printedAt,
+            weightGrams: qr.weightGrams,
+          } : {}),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to add item");
+
+      if (data.duplicate) {
+        setBanner({ type: "warning", message: "This label was already scanned" });
+        return;
+      }
+
+      playBeep();
+      navigator.vibrate?.(80);
+      const weightSuffix = qr?.weightGrams != null ? ` (${formatWeightGrams(qr.weightGrams)})` : "";
+      setBanner({ type: "success", message: `${data.productTitle} added as extra item${weightSuffix}` });
+
+      const extraItem: ShipmentLineItem = {
+        fulfillmentLineItemId: data.fulfillmentLineItemId,
+        lineItemId: "",
+        name: data.productTitle,
+        quantityExpected: data.quantityExpected,
+        quantityShipped: data.quantityShipped,
+        variantId: null,
+        sku: data.sku ?? null,
+        barcode: data.barcode ?? barcodeValue,
+        productTitle: data.productTitle,
+        variantTitle: data.variantTitle ?? null,
+        imageUrl: data.imageUrl ?? null,
+        price: data.price ?? "0.00",
+        weight: data.weight ?? null,
+        weightUnit: data.weightUnit ?? null,
+        isExtra: true,
+        addedReason: reason.trim(),
+        addedBy: staffName,
+      };
+      applyLineItemUpdate(selectedFulfillment.fulfillmentId, data.fulfillmentStatus, "__none__", 0, extraItem);
+      rememberedExtraReasonsRef.current.set(barcodeValue.trim().toLowerCase(), reason.trim());
+    } catch (e) {
+      setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to add item" });
+    } finally {
+      setExtraLoading(false);
+    }
+  }, [selectedFulfillment, staffName, playBeep, applyLineItemUpdate]);
+
   // ─── Barcode (or printed QR label) detected ────────────────────────────────────
   const handleBarcodeDetected = useCallback((value: string) => {
     if (!selectedFulfillment || scanStep !== "idle") return;
@@ -360,8 +427,13 @@ export default function ShipPage() {
     });
 
     const barcode = qr ? qr.plu : value;
+    const rememberedReason = rememberedExtraReasonsRef.current.get(barcode.trim().toLowerCase());
 
     if (!item) {
+      if (rememberedReason) {
+        submitExtra(barcode, qr, rememberedReason);
+        return;
+      }
       setPendingBarcode(barcode);
       setPendingQr(qr);
       setPendingItem(null);
@@ -372,6 +444,10 @@ export default function ShipPage() {
     }
 
     if (item.quantityShipped >= item.quantityExpected) {
+      if (rememberedReason) {
+        submitExtra(barcode, qr, rememberedReason);
+        return;
+      }
       setPendingBarcode(barcode);
       setPendingQr(qr);
       setPendingItem(item);
@@ -390,7 +466,7 @@ export default function ShipPage() {
     setPendingQr(qr);
     setPendingItem(item);
     setScanStep("confirm");
-  }, [selectedFulfillment, scanStep, scanMode, performScan]);
+  }, [selectedFulfillment, scanStep, scanMode, performScan, submitExtra]);
 
   // ─── Staff confirms a regular-mode scan ────────────────────────────────────────
   const handleConfirmScan = useCallback(async () => {
@@ -411,76 +487,15 @@ export default function ShipPage() {
     setExtraReason("");
   }, []);
 
-  // ─── Item not in this order — accept (with reason) or decline ─────────────────
   const handleAcceptExtra = useCallback(async () => {
-    if (!selectedFulfillment || !extraReason.trim()) return;
-    setExtraLoading(true);
-    try {
-      const res = await fetch("/api/shipment/scan-extra", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fulfillmentId: selectedFulfillment.fulfillmentId,
-          barcode: pendingBarcode,
-          reason: extraReason.trim(),
-          scannedBy: staffName,
-          ...(pendingQr ? {
-            plu: pendingQr.plu,
-            qrSn: pendingQr.sn,
-            packagedAt: pendingQr.printedAt,
-            weightGrams: pendingQr.weightGrams,
-          } : {}),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to add item");
-
-      if (data.duplicate) {
-        setBanner({ type: "warning", message: "This label was already scanned" });
-        setScanStep("idle");
-        setPendingBarcode("");
-        setPendingQr(null);
-        setExtraReason("");
-        return;
-      }
-
-      playBeep();
-      navigator.vibrate?.(80);
-      const weightSuffix = pendingQr?.weightGrams != null ? ` (${formatWeightGrams(pendingQr.weightGrams)})` : "";
-      setBanner({ type: "success", message: `${data.productTitle} added as extra item${weightSuffix}` });
-
-      const extraItem: ShipmentLineItem = {
-        fulfillmentLineItemId: data.fulfillmentLineItemId,
-        lineItemId: "",
-        name: data.productTitle,
-        quantityExpected: data.quantityExpected,
-        quantityShipped: data.quantityShipped,
-        variantId: null,
-        sku: data.sku ?? null,
-        barcode: data.barcode ?? pendingBarcode,
-        productTitle: data.productTitle,
-        variantTitle: data.variantTitle ?? null,
-        imageUrl: data.imageUrl ?? null,
-        price: data.price ?? "0.00",
-        weight: data.weight ?? null,
-        weightUnit: data.weightUnit ?? null,
-        isExtra: true,
-        addedReason: extraReason.trim(),
-        addedBy: staffName,
-      };
-      applyLineItemUpdate(selectedFulfillment.fulfillmentId, data.fulfillmentStatus, "__none__", 0, extraItem);
-
-      setScanStep("idle");
-      setPendingBarcode("");
-      setPendingItem(null);
-      setPendingQr(null);
-      setExtraReason("");
-    } catch (e) {
-      setBanner({ type: "error", message: e instanceof Error ? e.message : "Failed to add item" });
-    } finally {
-      setExtraLoading(false);
-    }
-  }, [selectedFulfillment, pendingBarcode, pendingQr, extraReason, staffName, playBeep, applyLineItemUpdate]);
+    if (!extraReason.trim()) return;
+    await submitExtra(pendingBarcode, pendingQr, extraReason);
+    setScanStep("idle");
+    setPendingBarcode("");
+    setPendingItem(null);
+    setPendingQr(null);
+    setExtraReason("");
+  }, [pendingBarcode, pendingQr, extraReason, submitExtra]);
 
   const handleDeclineExtra = useCallback(() => {
     setBanner({ type: "info", message: "Scan discarded — item not added" });
@@ -1094,7 +1109,7 @@ export default function ShipPage() {
         {/* Bottom actions */}
         <div className="fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-800 p-4 space-y-2">
           <button
-            onClick={() => { setBanner(null); setActiveStep("scanning"); }}
+            onClick={() => { setBanner(null); rememberedExtraReasonsRef.current.clear(); setActiveStep("scanning"); }}
             className="w-full py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
           >
             Scan Barcode
