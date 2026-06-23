@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Plus, Pencil, Trash2, X, Check, AlertCircle, Package, RefreshCw, Search, Pin, PinOff } from 'lucide-react';
 import { ProductLookup, AssignProduct } from '@/lib/types';
+import { stripGid } from '@/lib/scaleLabel';
 
 interface FormState {
   itemNumber: string;
@@ -253,7 +254,7 @@ export default function ScaleProductsPage() {
                   {p.variants.map((v) => (
                     <button
                       key={v.variantId}
-                      onClick={() => router.push(`/scale/products/${encodeURIComponent(v.variantId)}`)}
+                      onClick={() => router.push(`/scale/products/${stripGid(v.variantId)}`)}
                       className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-slate-900 text-left"
                     >
                       <span className="text-xs text-slate-400 truncate">{v.variantTitle}</span>
@@ -370,7 +371,7 @@ export default function ScaleProductsPage() {
                 return (
                   <div
                     key={key}
-                    onClick={() => p.variantId && router.push(`/scale/products/${encodeURIComponent(p.variantId)}`)}
+                    onClick={() => p.variantId && router.push(`/scale/products/${stripGid(p.variantId)}`)}
                     className={`flex items-center gap-3 px-4 py-3 ${p.variantId ? 'cursor-pointer hover:bg-slate-900/60' : ''}`}
                   >
                     <div className="flex-1 min-w-0">

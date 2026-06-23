@@ -286,7 +286,7 @@ public class ScaleFunction
 
             var entityToSave = new ProductLookupEntity
             {
-                RowKey = $"v:{request.VariantId}",
+                RowKey = TableStorageService.VariantRowKey(request.VariantId),
                 ProductId = request.ProductId,
                 VariantId = request.VariantId,
                 ProductTitle = request.ProductTitle,

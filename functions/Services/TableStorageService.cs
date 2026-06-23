@@ -816,7 +816,7 @@ public class TableStorageService
 
     // ─── Scale & Print: product lookup by variant (optional item-number slot) ──
 
-    private static string VariantRowKey(string variantId) => $"v:{variantId}";
+    public static string VariantRowKey(string variantId) => $"v:{StripGid(variantId)}";
 
     public async Task<ProductLookupEntity?> GetProductLookupByVariantAsync(string variantId)
     {

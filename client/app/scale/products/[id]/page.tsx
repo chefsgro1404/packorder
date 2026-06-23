@@ -22,13 +22,20 @@ import { ScaleProduct } from '@/lib/types';
 export default function ScaleProductDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const variantId = decodeURIComponent(params.id);
+  // Bare numeric ID from the URL — used only for lookup query params. Never put a full
+  // Shopify GID in a URL path segment: its slashes get percent-encoded, but edge routing
+  // (Azure SWA, CDNs) often decodes %2F before matching routes, splitting the path into
+  // segments that no longer match this single [id] dynamic route, causing a 404.
+  const routeVariantId = decodeURIComponent(params.id);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
 
+  // Full GIDs, populated from the lookup responses — required by the Shopify mutation
+  // when saving, so the bare route ID above is never sent in a request body.
+  const [variantId, setVariantId] = useState('');
   const [productId, setProductId] = useState('');
   const [productTitle, setProductTitle] = useState('');
   const [variantTitle, setVariantTitle] = useState<string | null>(null);
@@ -47,12 +54,13 @@ export default function ScaleProductDetailPage() {
       setLoading(true);
       setError(null);
       try {
-        const savedRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(variantId)}`);
+        const savedRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(routeVariantId)}`);
         const saved: ScaleProduct = await savedRes.json();
 
         if (saved.found) {
           if (cancelled) return;
           setProductId(saved.productId ?? '');
+          setVariantId(saved.variantId ?? routeVariantId);
           setProductTitle(saved.productTitle ?? '');
           setVariantTitle(saved.variantTitle ?? null);
           setImageUrl(saved.imageUrl ?? null);
@@ -65,7 +73,7 @@ export default function ScaleProductDetailPage() {
 
         // Not saved yet — fall back to the live synced Shopify variant so the page
         // is still print-ready immediately, with nothing persisted until Save is pressed.
-        const liveRes = await fetch(`/api/products/variant?variantId=${encodeURIComponent(variantId)}`);
+        const liveRes = await fetch(`/api/products/variant?variantId=${encodeURIComponent(routeVariantId)}`);
         const live = await liveRes.json();
         if (cancelled) return;
         if (!live.found) {
@@ -73,6 +81,7 @@ export default function ScaleProductDetailPage() {
           return;
         }
         setProductId(live.productId ?? '');
+        setVariantId(live.variantId ?? routeVariantId);
         setProductTitle(live.productTitle ?? '');
         setVariantTitle(live.variantTitle && live.variantTitle !== 'Default Title' ? live.variantTitle : null);
         setImageUrl(live.imageUrl ?? null);
@@ -87,7 +96,7 @@ export default function ScaleProductDetailPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [variantId]);
+  }, [routeVariantId]);
 
   const displayTitle = variantTitle ? `${productTitle} - ${variantTitle}` : productTitle;
 

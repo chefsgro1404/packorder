@@ -1,3 +1,12 @@
+/** Strips a Shopify GID (e.g. "gid://shopify/ProductVariant/123") down to its
+ * bare numeric ID. Used when building URLs — a raw GID contains slashes that
+ * get percent-encoded, but edge routing (Azure SWA, CDNs) often decodes %2F
+ * before matching routes, splitting the path into segments that no longer
+ * match a single Next.js dynamic route and 404ing. */
+export function stripGid(gid: string): string {
+  return gid.includes('/') ? gid.split('/').pop()! : gid;
+}
+
 export function generateSn(): string {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
 }
