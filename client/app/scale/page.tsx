@@ -22,6 +22,7 @@ import {
   Check,
   History,
   ListFilter,
+  Bug,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -472,6 +473,7 @@ export default function ScalePage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [currentItem, setCurrentItem] = useState<CurrentItem | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [debugOpen, setDebugOpen] = useState(false);
   const { printPayload, printedAt, triggerPrint, printVerbatim, reset: resetPrinted } = usePrintLabel();
 
   const fetchHistory = useCallback(async () => {
@@ -744,6 +746,32 @@ export default function ScalePage() {
           canPrint={true}
           onReprint={handleReprint}
         />
+
+        {/* Diagnostics — same fields as /scale/products/[id], for direct comparison */}
+        <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+          <button
+            className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+            onClick={() => setDebugOpen((v) => !v)}
+          >
+            <div className="flex items-center gap-2">
+              <Bug className="w-4 h-4 text-slate-500" />
+              <span className="text-sm font-semibold text-slate-200">Diagnostics</span>
+            </div>
+            {debugOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+          </button>
+          {debugOpen && (
+            <div className="border-t border-slate-800 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
+              <p>state: <span className="text-slate-200">{scale.state}</span></p>
+              <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
+              <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
+              <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
+              <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
+              <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
+              <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
+              <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
+            </div>
+          )}
+        </div>
       </div>
 
       </main>

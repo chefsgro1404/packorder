@@ -16,6 +16,7 @@ export type ScaleState = 'disconnected' | 'connected' | 'receiving' | 'processin
 
 const SILENCE_MS = 2000;
 const POLL_MS = 50;
+const STALL_MS = 8000; // no chunks at all for this long while "receiving" — give up and log it, instead of hanging silently
 const STORAGE_KEY = 'shipscale_scale_granted';
 
 // Module-level singleton — the actual port/reader and connection state live here, not in
@@ -23,13 +24,19 @@ const STORAGE_KEY = 'shipscale_scale_granted';
 // can remount the component tree (e.g. transitioning into a dynamic [id] segment); if the
 // connection lived in per-component state/refs, that remount would silently lose it and the
 // next page would have to reopen a port that — from the browser's perspective — never closed.
-// Living outside React, the connection survives any number of mounts/unmounts.
+// Living outside React, the connection survives any number of mounts/unmounts. The boot log
+// below is a deliberate diagnostic: if this module were ever duplicated across route chunks
+// (which would silently break the singleton), it would log more than once per page load.
+console.log('[scale] useScale module instance booted at', new Date().toISOString());
+
 interface ScaleSnapshot {
   state: ScaleState;
   error: string | null;
   chunkCount: number;
   portLabel: string | null;
   lastReading: ParsedReading | null;
+  lastRawBuffer: string | null;
+  listenerActive: boolean;
 }
 
 let snapshot: ScaleSnapshot = {
@@ -38,6 +45,8 @@ let snapshot: ScaleSnapshot = {
   chunkCount: 0,
   portLabel: null,
   lastReading: null,
+  lastRawBuffer: null,
+  listenerActive: false,
 };
 let port: SerialPort | null = null;
 let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -62,11 +71,19 @@ async function startListening(p: SerialPort) {
     const r = p.readable!.getReader();
     reader = r;
     setSnapshot({ state: 'receiving' });
+    const receivingSince = Date.now();
 
-    // Wait for 2s silence to know the transmission is complete
+    // Wait for 2s silence to know the transmission is complete. If literally nothing
+    // arrives for STALL_MS (e.g. the scale was triggered without sending anything, or a
+    // cable/setting issue), give up and log it instead of sitting in "receiving" forever
+    // with no visible feedback.
     const checker = setInterval(() => {
       if (Date.now() - lastReceive > SILENCE_MS && buffer.length > 0) {
         streamDone = true;
+        clearInterval(checker);
+        r.cancel().catch(() => {});
+      } else if (buffer.length === 0 && Date.now() - receivingSince > STALL_MS) {
+        console.warn('[scale] stalled — no data received within', STALL_MS, 'ms; resetting to connected');
         clearInterval(checker);
         r.cancel().catch(() => {});
       }
@@ -91,21 +108,29 @@ async function startListening(p: SerialPort) {
 
     if (!active) break;
 
+    if (buffer.length === 0) {
+      console.warn('[scale] no chunks received this cycle — listener active:', onReadingCallback != null);
+    }
+
     if (streamDone && buffer.length > 0) {
-      setSnapshot({ state: 'processing' });
+      setSnapshot({ state: 'processing', lastRawBuffer: buffer });
       const result = parseScaleBuffer(buffer);
       console.log(`[scale] received ${chunks} chunk(s), ${buffer.length} bytes:`, JSON.stringify(buffer));
 
-      if (result.success && result.itemName && result.itemWeight && result.qrPayload) {
+      // itemName/itemNumber are allowed to be empty — a weight-only signal (no PLU
+      // recall) is valid input for pages that already know the product, e.g.
+      // /scale/products/[id]. Only the weight itself is required.
+      if (result.success && result.itemWeight && result.qrPayload) {
         const parsedReading: ParsedReading = {
-          itemName: result.itemName,
+          itemName: result.itemName ?? '',
           itemNumber: result.itemNumber ?? '',
           itemWeight: result.itemWeight,
           qrPayload: result.qrPayload,
           rawBuffer: buffer,
           timestamp: new Date(),
         };
-        console.log('[scale] parsed reading:', parsedReading.itemName, parsedReading.itemNumber, parsedReading.itemWeight);
+        console.log('[scale] parsed reading:', parsedReading.itemName || '(weight-only)', parsedReading.itemNumber || '(no item)', parsedReading.itemWeight,
+          '— listener active:', onReadingCallback != null);
         setSnapshot({ lastReading: parsedReading, error: null });
         onReadingCallback?.(parsedReading);
       } else if (result.error === 'OVERLOAD') {
@@ -196,8 +221,12 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
   // that should react to the next reading.
   useEffect(() => {
     onReadingCallback = onReading ?? null;
+    setSnapshot({ listenerActive: onReadingCallback != null });
     return () => {
-      if (onReadingCallback === onReading) onReadingCallback = null;
+      if (onReadingCallback === onReading) {
+        onReadingCallback = null;
+        setSnapshot({ listenerActive: false });
+      }
     };
   }, [onReading]);
 
@@ -207,6 +236,8 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
     chunkCount: snapshot.chunkCount,
     portLabel: snapshot.portLabel,
     lastReading: snapshot.lastReading,
+    lastRawBuffer: snapshot.lastRawBuffer,
+    listenerActive: snapshot.listenerActive,
     connect,
     disconnect,
     autoConnect,

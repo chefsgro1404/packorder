@@ -7,36 +7,53 @@ export interface ParseResult {
   error?: 'NO_ITEM' | 'OVERLOAD' | 'PARSE_ERROR';
 }
 
+const WEIGHT_RE = /([\d]+\.[\d]+\s*lb)/;
+
 export function parseScaleBuffer(buffer: string): ParseResult {
   if (buffer.includes('OVERLOAD')) {
     return { success: false, error: 'OVERLOAD' };
   }
 
-  const lines = buffer
+  const itemLines = buffer
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter((l) => l.includes('ITEM'));
 
-  if (lines.length === 0) {
-    return { success: false, error: 'NO_ITEM' };
+  if (itemLines.length > 0) {
+    const line = itemLines[0];
+
+    const itemNameMatch = line.match(/(ITEM\s+(\d+))/);
+    const weightMatch = line.match(WEIGHT_RE);
+
+    if (itemNameMatch && weightMatch) {
+      const itemName = itemNameMatch[1].trim();
+      const itemNumber = itemNameMatch[2];
+      const itemWeight = weightMatch[1].trim();
+      return {
+        success: true,
+        itemName,
+        itemNumber,
+        itemWeight,
+        qrPayload: `${itemName} | ${itemWeight}`,
+      };
+    }
   }
 
-  const line = lines[0];
+  // No "ITEM N" recall line — happens when staff just weighs and sends the signal
+  // directly (e.g. from /scale/products/[id], where the product is already known and
+  // there's no need to recall a PLU slot first). Fall back to a weight-only reading
+  // as long as a weight pattern shows up anywhere in the buffer.
+  const weightOnlyMatch = buffer.match(WEIGHT_RE);
+  if (weightOnlyMatch) {
+    const itemWeight = weightOnlyMatch[1].trim();
+    return {
+      success: true,
+      itemName: '',
+      itemNumber: '',
+      itemWeight,
+      qrPayload: itemWeight,
+    };
+  }
 
-  const itemNameMatch = line.match(/(ITEM\s+(\d+))/);
-  if (!itemNameMatch) return { success: false, error: 'PARSE_ERROR' };
-  const itemName = itemNameMatch[1].trim();
-  const itemNumber = itemNameMatch[2];
-
-  const weightMatch = line.match(/([\d]+\.[\d]+\s*lb)/);
-  if (!weightMatch) return { success: false, error: 'PARSE_ERROR' };
-  const itemWeight = weightMatch[1].trim();
-
-  return {
-    success: true,
-    itemName,
-    itemNumber,
-    itemWeight,
-    qrPayload: `${itemName} | ${itemWeight}`,
-  };
+  return { success: false, error: 'NO_ITEM' };
 }

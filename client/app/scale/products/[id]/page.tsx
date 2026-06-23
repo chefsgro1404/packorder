@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
   Check,
@@ -12,10 +13,15 @@ import {
   Radio,
   CheckCircle2,
   Lock,
+  Printer,
+  ChevronDown,
+  ChevronUp,
+  Bug,
 } from 'lucide-react';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
+import { buildQrPayload } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
 import { ScaleProduct } from '@/lib/types';
 
@@ -46,6 +52,8 @@ export default function ScaleProductDetailPage() {
   const [pinned, setPinned] = useState(false);
 
   const [printCount, setPrintCount] = useState(0);
+  const [manualWeight, setManualWeight] = useState('');
+  const [debugOpen, setDebugOpen] = useState(false);
   const { printPayload, triggerPrint } = usePrintLabel();
 
   useEffect(() => {
@@ -150,22 +158,38 @@ export default function ScaleProductDetailPage() {
     }
   }, [itemNumber, plu, displayTitle]);
 
-  // Locked-and-auto-print: any weight reading while this page is open prints a label
-  // for this product immediately, regardless of what item number the scale reports.
-  const handleReading = useCallback(
-    async (reading: ParsedReading) => {
+  const printForWeight = useCallback(
+    async (weight: string) => {
       const { sn, printedAtEst, qrPayload } = triggerPrint({
         plu: plu || null,
         productTitle: displayTitle,
-        itemWeight: reading.itemWeight,
+        itemWeight: weight,
       });
       setPrintCount((n) => n + 1);
-      await logPrintedLabel(reading.itemWeight, qrPayload, printedAtEst, sn);
+      await logPrintedLabel(weight, qrPayload, printedAtEst, sn);
     },
     [triggerPrint, plu, displayTitle, logPrintedLabel]
   );
 
+  // Locked-and-auto-print: any weight reading while this page is open prints a label
+  // for this product immediately, regardless of what item number the scale reports.
+  const handleReading = useCallback(
+    async (reading: ParsedReading) => {
+      await printForWeight(reading.itemWeight);
+    },
+    [printForWeight]
+  );
+
   const scale = useScale(handleReading);
+
+  // Fallback for when the scale's auto-print doesn't fire the print dialog on its own
+  // (e.g. the browser blocked the popup, or staff just wants to reprint without re-weighing).
+  // Uses the last weight the scale reported this session, or a manually typed one.
+  const previewWeight = scale.lastReading?.itemWeight || manualWeight;
+  const handleManualPrint = useCallback(async () => {
+    if (!previewWeight.trim()) return;
+    await printForWeight(previewWeight.trim());
+  }, [previewWeight, printForWeight]);
 
   useEffect(() => {
     scale.autoConnect();
@@ -226,6 +250,58 @@ export default function ScaleProductDetailPage() {
             <p className="text-xs text-blue-300">
               This product is locked in. Any weight signal from the scale prints a label for it immediately — no confirmation needed.
             </p>
+          </div>
+
+          {/* Label preview — lets you see and print without waiting on a scale signal */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+              <span className="w-1 h-4 bg-emerald-500 rounded-full" />
+              <h2 className="text-sm font-semibold text-slate-200">Label Preview</h2>
+            </div>
+            <div className="px-4 pb-4 flex flex-col gap-3">
+              <div className="mx-auto w-full max-w-[220px]">
+                <div className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700" style={{ aspectRatio: '3/2' }}>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
+                      <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{displayTitle || 'Product'}</p>
+                      <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {previewWeight || '—'}</p>
+                      <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                      <div className="flex justify-center w-full mt-0.5">
+                        <QRCodeSVG
+                          value={buildQrPayload({ plu: plu || null, productTitle: displayTitle || 'Product', itemWeight: previewWeight || '0.00 lb' }, formatEst(new Date()), 'preview')}
+                          size={48}
+                          level="M"
+                          bgColor="#ffffff"
+                          fgColor="#0f172a"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">Weight</label>
+                <input
+                  type="text"
+                  value={manualWeight}
+                  onChange={(e) => setManualWeight(e.target.value)}
+                  placeholder={scale.lastReading?.itemWeight ? `Last reading: ${scale.lastReading.itemWeight}` : 'e.g. 1.23 lb'}
+                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-[11px] text-slate-600 mt-1">
+                  Auto-fills from the scale's last reading. Type a weight here to preview/print without waiting on the scale.
+                </p>
+              </div>
+
+              <button
+                onClick={handleManualPrint}
+                disabled={!previewWeight.trim()}
+                className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl text-sm font-bold transition-all"
+              >
+                <Printer className="w-4 h-4" /> Print Label
+              </button>
+            </div>
           </div>
 
           {/* Scale waiting indicator */}
@@ -326,6 +402,34 @@ export default function ScaleProductDetailPage() {
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               Save
             </button>
+          </div>
+
+          {/* Diagnostics — verify connection/listener/last-signal state directly instead of guessing */}
+          <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+            <button
+              className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+              onClick={() => setDebugOpen((v) => !v)}
+            >
+              <div className="flex items-center gap-2">
+                <Bug className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-semibold text-slate-200">Diagnostics</span>
+              </div>
+              {debugOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+            </button>
+            {debugOpen && (
+              <div className="border-t border-slate-800 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
+                <p>state: <span className="text-slate-200">{scale.state}</span></p>
+                <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
+                <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
+                <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
+                <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
+                <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
+                <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
+                <p>lastReading.timestamp: <span className="text-slate-200">{scale.lastReading?.timestamp ? formatEst(scale.lastReading.timestamp) : '(none)'}</span></p>
+                <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
+                <p className="text-slate-600 mt-1">Also check the browser console for [scale] log lines — every connect, chunk, parse, and stall is logged there.</p>
+              </div>
+            )}
           </div>
         </div>
       </main>
