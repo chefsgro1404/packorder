@@ -153,19 +153,41 @@ public class ScaleFunction
                 return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
             }
 
-            var existing = await _tableStorage.GetProductLookupAsync(request.ItemNumber);
-            if (req.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase))
+            var isPatch = req.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase);
+            var lookupKey = isPatch ? (request.PreviousItemNumber ?? request.ItemNumber) : request.ItemNumber;
+            var existing = await _tableStorage.GetProductLookupAsync(lookupKey);
+
+            if (isPatch)
             {
                 if (existing == null)
                 {
-                    _logger.LogWarning("Scale product update failed: item {ItemNumber} not found", request.ItemNumber);
+                    _logger.LogWarning("Scale product update failed: item {ItemNumber} not found", lookupKey);
                     return await ResponseHelper.WriteError(req, "Product not found", HttpStatusCode.NotFound, _allowedOrigins);
                 }
             }
-            else if (existing != null)
+            else
             {
-                _logger.LogWarning("Scale product create rejected: item {ItemNumber} already mapped", request.ItemNumber);
-                return await ResponseHelper.WriteError(req, "Item number already mapped", HttpStatusCode.Conflict, _allowedOrigins);
+                // Numeric-aware: catches "03" colliding with an existing "3", not just an exact string match.
+                var duplicate = existing ?? await _tableStorage.FindProductLookupByItemNumberAsync(request.ItemNumber);
+                if (duplicate != null)
+                {
+                    _logger.LogWarning("Scale product create rejected: item {ItemNumber} already mapped", request.ItemNumber);
+                    return await ResponseHelper.WriteError(req, "Item number already mapped", HttpStatusCode.Conflict, _allowedOrigins);
+                }
+            }
+
+            // Renaming the slot (item number changed during edit) — re-key the row, since
+            // RowKey can't be updated in place. Block it if the new number is already used
+            // by a different row (numeric-aware: "3" and "03" are the same slot).
+            var isRename = isPatch && !string.Equals(lookupKey, request.ItemNumber, StringComparison.OrdinalIgnoreCase);
+            if (isRename)
+            {
+                var collision = await _tableStorage.FindProductLookupByItemNumberAsync(request.ItemNumber);
+                if (collision != null && collision.RowKey != existing!.RowKey)
+                {
+                    _logger.LogWarning("Scale product rename rejected: item {ItemNumber} already mapped to {Title}", request.ItemNumber, collision.ProductTitle);
+                    return await ResponseHelper.WriteError(req, $"Item number {request.ItemNumber} is already mapped to {collision.ProductTitle}", HttpStatusCode.Conflict, _allowedOrigins);
+                }
             }
 
             var entityToSave = new ProductLookupEntity
@@ -182,9 +204,11 @@ public class ScaleFunction
                 ImageUrl = existing?.ImageUrl,
             };
             await _tableStorage.UpsertProductLookupAsync(entityToSave);
+            if (isRename)
+                await _tableStorage.DeleteProductLookupAsync(lookupKey);
 
             _logger.LogInformation("Scale product {Action}: item {ItemNumber} -> PLU {Plu} ({ProductTitle})",
-                existing == null ? "created" : "updated", entityToSave.RowKey, entityToSave.Plu, entityToSave.ProductTitle);
+                existing == null ? "created" : isRename ? "renamed" : "updated", entityToSave.RowKey, entityToSave.Plu, entityToSave.ProductTitle);
 
             return await ResponseHelper.WriteSuccess(req, new
             {

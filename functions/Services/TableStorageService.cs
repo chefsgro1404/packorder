@@ -831,14 +831,24 @@ public class TableStorageService
         }
     }
 
+    // The scale reports item numbers as raw digits straight off its display (e.g. "ITEM 03"
+    // for slot 3), which won't string-equal a staff-typed "3" — compare numerically so a
+    // leading zero on either side doesn't cause a lookup miss.
+    private static bool ItemNumbersMatch(string? a, string? b)
+    {
+        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
+        if (int.TryParse(a, out var ai) && int.TryParse(b, out var bi)) return ai == bi;
+        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<ProductLookupEntity?> FindProductLookupByItemNumberAsync(string itemNumber)
     {
         var all = await ListProductLookupsAsync();
         return all.FirstOrDefault(e =>
-            string.Equals(e.ItemNumber, itemNumber, StringComparison.OrdinalIgnoreCase) ||
+            ItemNumbersMatch(e.ItemNumber, itemNumber) ||
             // Rows written before the ItemNumber column existed have no value there at all
             // (Table Storage is schemaless) — for those, RowKey itself is the item number.
-            (string.IsNullOrEmpty(e.ItemNumber) && string.Equals(e.RowKey, itemNumber, StringComparison.OrdinalIgnoreCase)));
+            (string.IsNullOrEmpty(e.ItemNumber) && ItemNumbersMatch(e.RowKey, itemNumber)));
     }
 
     public async Task<(bool ok, string? conflictMessage)> UpsertScaleProductAsync(ProductLookupEntity entity)
@@ -848,7 +858,7 @@ public class TableStorageService
             var all = await ListProductLookupsAsync();
             var collision = all.FirstOrDefault(e =>
                 e.RowKey != entity.RowKey &&
-                string.Equals(e.ItemNumber, entity.ItemNumber, StringComparison.OrdinalIgnoreCase));
+                ItemNumbersMatch(e.ItemNumber, entity.ItemNumber));
             if (collision != null)
                 return (false, $"Item number {entity.ItemNumber} is already mapped to {collision.ProductTitle}");
         }

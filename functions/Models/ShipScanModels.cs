@@ -716,11 +716,12 @@ public class ProductLookupEntity : ITableEntity
 
 public class UpsertProductLookupRequest
 {
-    [JsonProperty("itemNumber")]   public string ItemNumber { get; set; } = "";
-    [JsonProperty("plu")]          public string Plu { get; set; } = "";
-    [JsonProperty("productTitle")] public string ProductTitle { get; set; } = "";
-    [JsonProperty("pricePerLb")]   public double PricePerLb { get; set; }
-    [JsonProperty("pinned")]       public bool? Pinned { get; set; }
+    [JsonProperty("itemNumber")]         public string ItemNumber { get; set; } = "";
+    [JsonProperty("previousItemNumber")] public string? PreviousItemNumber { get; set; }
+    [JsonProperty("plu")]                public string Plu { get; set; } = "";
+    [JsonProperty("productTitle")]       public string ProductTitle { get; set; } = "";
+    [JsonProperty("pricePerLb")]         public double PricePerLb { get; set; }
+    [JsonProperty("pinned")]             public bool? Pinned { get; set; }
 }
 
 public class UpsertScaleProductRequest
