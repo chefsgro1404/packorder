@@ -834,7 +834,11 @@ public class TableStorageService
     public async Task<ProductLookupEntity?> FindProductLookupByItemNumberAsync(string itemNumber)
     {
         var all = await ListProductLookupsAsync();
-        return all.FirstOrDefault(e => string.Equals(e.ItemNumber, itemNumber, StringComparison.OrdinalIgnoreCase));
+        return all.FirstOrDefault(e =>
+            string.Equals(e.ItemNumber, itemNumber, StringComparison.OrdinalIgnoreCase) ||
+            // Rows written before the ItemNumber column existed have no value there at all
+            // (Table Storage is schemaless) — for those, RowKey itself is the item number.
+            (string.IsNullOrEmpty(e.ItemNumber) && string.Equals(e.RowKey, itemNumber, StringComparison.OrdinalIgnoreCase)));
     }
 
     public async Task<(bool ok, string? conflictMessage)> UpsertScaleProductAsync(ProductLookupEntity entity)
