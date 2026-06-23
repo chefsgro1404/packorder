@@ -310,17 +310,17 @@ export default function ScaleProductDetailPage() {
               <div className="relative">
                 <div
                   className={`w-10 h-10 rounded-full border-2 flex items-center justify-center ${
-                    scaleStatus === 'ok' ? 'bg-emerald-950/60 border-emerald-800' : 'bg-slate-900 border-slate-700'
+                    scaleStatus === 'ok' || scaleStatus === 'busy' ? 'bg-emerald-950/60 border-emerald-800' : 'bg-slate-900 border-slate-700'
                   }`}
                 >
-                  <Radio className={`w-4 h-4 ${scaleStatus === 'ok' ? 'text-emerald-400' : 'text-slate-500'}`} />
+                  <Radio className={`w-4 h-4 ${scaleStatus === 'ok' || scaleStatus === 'busy' ? 'text-emerald-400' : 'text-slate-500'}`} />
                 </div>
-                {scaleStatus === 'ok' && (
+                {(scaleStatus === 'ok' || scaleStatus === 'busy') && (
                   <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full border-2 border-slate-950 animate-pulse" />
                 )}
               </div>
               <p className="text-sm font-semibold text-slate-200">
-                {scaleStatus === 'ok' ? 'Waiting for weight…' : 'Scale not connected'}
+                {scaleStatus === 'ok' ? 'Waiting for weight…' : scaleStatus === 'busy' ? 'Receiving signal…' : 'Scale not connected'}
               </p>
               {printCount > 0 && (
                 <p className="text-xs text-emerald-400 flex items-center gap-1">
