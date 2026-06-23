@@ -113,6 +113,7 @@ export default function ScaleProductsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itemNumber: form.itemNumber.trim(),
+          previousItemNumber: editingItemNumber,
           plu: form.plu.trim(),
           productTitle: form.productTitle.trim(),
           pricePerLb: parseFloat(form.pricePerLb) || 0,
@@ -287,10 +288,9 @@ export default function ScaleProductsPage() {
                 type="text"
                 inputMode="numeric"
                 value={form.itemNumber}
-                disabled={!!editingItemNumber}
                 onChange={(e) => setForm((f) => ({ ...f, itemNumber: e.target.value }))}
                 placeholder="e.g. 12345"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
