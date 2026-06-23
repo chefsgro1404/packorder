@@ -161,8 +161,14 @@ export function useScale(onReading?: (r: ParsedReading) => void) {
   }, []);
 
   useEffect(() => () => {
+    // Close the port on unmount so a later remount (e.g. navigating back into /scale)
+    // can reopen it — Web Serial rejects opening a port that's still marked open by an
+    // earlier, now-unmounted instance, which otherwise looks like a silent disconnect.
     activeRef.current = false;
-    readerRef.current?.cancel().catch(() => {});
+    (async () => {
+      await readerRef.current?.cancel().catch(() => {});
+      await portRef.current?.close().catch(() => {});
+    })();
   }, []);
 
   return { state, connect, disconnect, autoConnect, lastReading, error, chunkCount, portLabel };

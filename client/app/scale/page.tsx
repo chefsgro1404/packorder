@@ -24,7 +24,8 @@ import {
   ListFilter,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useScale, type ParsedReading } from '@/hooks/useScale';
+import { type ParsedReading } from '@/hooks/useScale';
+import { useScaleContext } from '@/contexts/ScaleContext';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
@@ -577,10 +578,14 @@ export default function ScalePage() {
     [lookupProduct, printItem, resetPrinted]
   );
 
-  const scale = useScale(handleReading);
+  const scale = useScaleContext();
 
   useEffect(() => {
-    scale.autoConnect();
+    scale.setReadingHandler(handleReading);
+    return () => scale.setReadingHandler(null);
+  }, [scale, handleReading]);
+
+  useEffect(() => {
     fetchHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
