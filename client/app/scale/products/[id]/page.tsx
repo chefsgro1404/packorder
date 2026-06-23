@@ -13,8 +13,7 @@ import {
   CheckCircle2,
   Lock,
 } from 'lucide-react';
-import { type ParsedReading } from '@/hooks/useScale';
-import { useScaleContext } from '@/contexts/ScaleContext';
+import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { formatEst } from '@/lib/dateFormat';
@@ -166,12 +165,12 @@ export default function ScaleProductDetailPage() {
     [triggerPrint, plu, displayTitle, logPrintedLabel]
   );
 
-  const scale = useScaleContext();
+  const scale = useScale(handleReading);
 
   useEffect(() => {
-    scale.setReadingHandler(handleReading);
-    return () => scale.setReadingHandler(null);
-  }, [scale, handleReading]);
+    scale.autoConnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
