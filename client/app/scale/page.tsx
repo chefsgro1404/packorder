@@ -28,6 +28,7 @@ import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
+import { UnmappedItemModal } from '@/components/UnmappedItemModal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel } from '@/lib/types';
@@ -474,6 +475,7 @@ export default function ScalePage() {
   const [currentItem, setCurrentItem] = useState<CurrentItem | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
   const { printPayload, printedAt, triggerPrint, printVerbatim, reset: resetPrinted } = usePrintLabel();
 
   const fetchHistory = useCallback(async () => {
@@ -572,11 +574,64 @@ export default function ScalePage() {
       resetPrinted();
       setLookupLoading(true);
       const item = await lookupProduct(reading);
-      setCurrentItem(item);
       setLookupLoading(false);
+      // Unmapped item number — pause instead of silently printing a placeholder. Staff get a
+      // prompt to search the catalog and, if useful, map this item number on the spot.
+      if (!item.found && item.itemNumber) {
+        setUnmappedPrompt({ itemNumber: item.itemNumber, weight: item.itemWeight });
+        return;
+      }
+      setCurrentItem(item);
       await printItem(item);
     },
     [lookupProduct, printItem, resetPrinted]
+  );
+
+  const handleUnmappedResolved = useCallback(
+    async (
+      chosen: { productId: string; productTitle: string; variantId: string; variantTitle: string | null; imageUrl: string | null; plu: string },
+      mapping: { save: boolean; pricePerLb: number }
+    ) => {
+      if (!unmappedPrompt) return;
+      if (mapping.save) {
+        try {
+          const res = await fetch('/api/scale/products/by-variant', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              productId: chosen.productId,
+              variantId: chosen.variantId,
+              productTitle: chosen.productTitle,
+              variantTitle: chosen.variantTitle,
+              imageUrl: chosen.imageUrl,
+              itemNumber: unmappedPrompt.itemNumber,
+              plu: chosen.plu,
+              pricePerLb: mapping.pricePerLb,
+              pinned: false,
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            console.error('[scale] failed to save item mapping:', data.error || res.status);
+          }
+        } catch (err) {
+          console.error('[scale] failed to save item mapping:', err);
+        }
+      }
+
+      const item: CurrentItem = {
+        itemNumber: unmappedPrompt.itemNumber,
+        itemName: chosen.productTitle,
+        itemWeight: unmappedPrompt.weight,
+        plu: chosen.plu,
+        productTitle: chosen.productTitle,
+        found: true,
+      };
+      setUnmappedPrompt(null);
+      setCurrentItem(item);
+      await printItem(item);
+    },
+    [unmappedPrompt, printItem]
   );
 
   const scale = useScale(handleReading);
@@ -775,6 +830,15 @@ export default function ScalePage() {
       </div>
 
       </main>
+
+      {unmappedPrompt && (
+        <UnmappedItemModal
+          itemNumber={unmappedPrompt.itemNumber}
+          weight={unmappedPrompt.weight}
+          onClose={() => setUnmappedPrompt(null)}
+          onResolved={handleUnmappedResolved}
+        />
+      )}
 
       <PrintLabelPortal payload={printPayload} />
     </>

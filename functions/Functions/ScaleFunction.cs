@@ -63,6 +63,8 @@ public class ScaleFunction
                 plu = entity.Plu,
                 productTitle = entity.ProductTitle,
                 pricePerLb = entity.PricePerLb,
+                productId = entity.ProductId,
+                variantId = entity.VariantId,
             }, _allowedOrigins);
         }
         catch (Exception ex)
@@ -141,6 +143,11 @@ public class ScaleFunction
             {
                 _logger.LogWarning("Scale product upsert rejected: missing itemNumber");
                 return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
+            if (int.TryParse(request.ItemNumber, out var parsedZero) && parsedZero == 0)
+            {
+                _logger.LogWarning("Scale product upsert rejected: item number 0 is reserved");
+                return await ResponseHelper.WriteError(req, "Item number 0 is reserved as a placeholder and can't be mapped to a product", HttpStatusCode.BadRequest, _allowedOrigins);
             }
             if (string.IsNullOrWhiteSpace(request.Plu))
             {
@@ -282,6 +289,8 @@ public class ScaleFunction
 
             if (string.IsNullOrWhiteSpace(request?.ProductId) || string.IsNullOrWhiteSpace(request.VariantId))
                 return await ResponseHelper.WriteError(req, "productId and variantId are required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (!string.IsNullOrWhiteSpace(request.ItemNumber) && int.TryParse(request.ItemNumber, out var byVariantZero) && byVariantZero == 0)
+                return await ResponseHelper.WriteError(req, "Item number 0 is reserved as a placeholder and can't be mapped to a product", HttpStatusCode.BadRequest, _allowedOrigins);
             if (string.IsNullOrWhiteSpace(request.ProductTitle))
                 return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
 

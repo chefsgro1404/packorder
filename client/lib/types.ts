@@ -313,6 +313,8 @@ export interface ProductLookupResult {
   plu?: string;
   productTitle?: string;
   pricePerLb?: number;
+  productId?: string | null;
+  variantId?: string | null;
 }
 
 export interface ScaleProduct {

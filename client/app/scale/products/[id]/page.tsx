@@ -8,6 +8,7 @@ import {
   Check,
   RefreshCw,
   AlertCircle,
+  AlertTriangle,
   Pin,
   PinOff,
   Radio,
@@ -21,9 +22,26 @@ import {
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
-import { buildQrPayload } from '@/lib/scaleLabel';
+import { buildQrPayload, stripGid } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
-import { ScaleProduct } from '@/lib/types';
+import { ScaleProduct, ProductLookupResult } from '@/lib/types';
+
+// "0" (or "00", etc.) recalled on the scale is a reserved placeholder meaning "ignore the
+// item number — use whatever product page is currently open." Real mappings can never use it
+// (enforced server-side too), so any other numeric/blank value is either unmapped or a genuine
+// conflict to resolve against.
+function isPlaceholderItemNumber(itemNumber: string): boolean {
+  const trimmed = itemNumber.trim();
+  if (trimmed === '') return true;
+  return /^0+$/.test(trimmed);
+}
+
+interface ItemConflict {
+  itemNumber: string;
+  weight: string;
+  mappedPlu: string;
+  mappedTitle: string;
+}
 
 export default function ScaleProductDetailPage() {
   const router = useRouter();
@@ -54,6 +72,7 @@ export default function ScaleProductDetailPage() {
   const [printCount, setPrintCount] = useState(0);
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
+  const [conflict, setConflict] = useState<ItemConflict | null>(null);
   const { printPayload, triggerPrint } = usePrintLabel();
 
   useEffect(() => {
@@ -138,15 +157,15 @@ export default function ScaleProductDetailPage() {
     }
   }, [productId, variantId, productTitle, variantTitle, imageUrl, itemNumber, plu, pricePerLb, pinned]);
 
-  const logPrintedLabel = useCallback(async (weight: string, qrPayload: string, printedAtEst: string, sn: string) => {
+  const logPrintedLabel = useCallback(async (logItemNumber: string, logPlu: string, logTitle: string, weight: string, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
       await fetch('/api/scale/print-log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          itemNumber: itemNumber || '',
-          plu: plu || 'N/A',
-          productTitle: displayTitle,
+          itemNumber: logItemNumber,
+          plu: logPlu || 'N/A',
+          productTitle: logTitle,
           itemWeight: weight,
           printedAtEst,
           qrPayload,
@@ -156,28 +175,52 @@ export default function ScaleProductDetailPage() {
     } catch (err) {
       console.error('[scale/products] failed to log printed label:', err);
     }
-  }, [itemNumber, plu, displayTitle]);
+  }, []);
 
+  // override lets a conflict resolution print a *different* product's PLU/title (the one
+  // mapped to the recalled item number) instead of this page's own opened product.
   const printForWeight = useCallback(
-    async (weight: string) => {
+    async (weight: string, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
       const { sn, printedAtEst, qrPayload } = triggerPrint({
-        plu: plu || null,
-        productTitle: displayTitle,
+        plu: override?.plu ?? (plu || null),
+        productTitle: override?.productTitle ?? displayTitle,
         itemWeight: weight,
       });
       setPrintCount((n) => n + 1);
-      await logPrintedLabel(weight, qrPayload, printedAtEst, sn);
+      await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), override?.plu ?? plu, override?.productTitle ?? displayTitle, weight, qrPayload, printedAtEst, sn);
     },
-    [triggerPrint, plu, displayTitle, logPrintedLabel]
+    [triggerPrint, plu, displayTitle, itemNumber, logPrintedLabel]
   );
 
-  // Locked-and-auto-print: any weight reading while this page is open prints a label
-  // for this product immediately, regardless of what item number the scale reports.
+  // Locked-and-auto-print: any weight reading while this page is open prints a label for this
+  // product immediately — UNLESS the scale recalled a non-placeholder item number that's
+  // actually mapped to a *different* product, in which case we pause and ask which to print.
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
+      const recalled = reading.itemNumber || '';
+      if (isPlaceholderItemNumber(recalled)) {
+        await printForWeight(reading.itemWeight);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/scale/lookup?itemNumber=${encodeURIComponent(recalled)}`);
+        const data: ProductLookupResult = await res.json();
+        if (data.found && data.variantId && stripGid(data.variantId) !== stripGid(variantId || routeVariantId)) {
+          setConflict({
+            itemNumber: recalled,
+            weight: reading.itemWeight,
+            mappedPlu: data.plu || '',
+            mappedTitle: data.productTitle || `Item ${recalled}`,
+          });
+          return;
+        }
+      } catch (err) {
+        console.error('[scale/products] lookup for recalled item failed:', err);
+      }
+      // Not mapped (or mapped to this same product) — same as the placeholder case.
       await printForWeight(reading.itemWeight);
     },
-    [printForWeight]
+    [printForWeight, variantId, routeVariantId]
   );
 
   const scale = useScale(handleReading);
@@ -190,6 +233,22 @@ export default function ScaleProductDetailPage() {
     if (!previewWeight.trim()) return;
     await printForWeight(previewWeight.trim());
   }, [previewWeight, printForWeight]);
+
+  const resolveConflictAsMapped = useCallback(async () => {
+    if (!conflict) return;
+    await printForWeight(conflict.weight, {
+      itemNumber: conflict.itemNumber,
+      plu: conflict.mappedPlu || null,
+      productTitle: conflict.mappedTitle,
+    });
+    setConflict(null);
+  }, [conflict, printForWeight]);
+
+  const resolveConflictAsOpened = useCallback(async () => {
+    if (!conflict) return;
+    await printForWeight(conflict.weight);
+    setConflict(null);
+  }, [conflict, printForWeight]);
 
   useEffect(() => {
     scale.autoConnect();
@@ -433,6 +492,42 @@ export default function ScaleProductDetailPage() {
           </div>
         </div>
       </main>
+
+      {conflict && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <h2 className="text-sm font-semibold text-slate-200">Item {conflict.itemNumber} is mapped elsewhere</h2>
+            </div>
+            <p className="text-xs text-slate-400">
+              The scale recalled item {conflict.itemNumber}, which is mapped to a different product. Which one should this label be for?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={resolveConflictAsMapped}
+                className="w-full text-left px-3 py-2.5 rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800 transition-colors"
+              >
+                <p className="text-sm font-medium text-slate-200 truncate">{conflict.mappedTitle}</p>
+                <p className="text-xs text-slate-500">Item {conflict.itemNumber} · PLU {conflict.mappedPlu || 'N/A'}</p>
+              </button>
+              <button
+                onClick={resolveConflictAsOpened}
+                className="w-full text-left px-3 py-2.5 rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800 transition-colors"
+              >
+                <p className="text-sm font-medium text-slate-200 truncate">{displayTitle || 'Product'}</p>
+                <p className="text-xs text-slate-500">Currently open on this page · PLU {plu || 'N/A'}</p>
+              </button>
+            </div>
+            <button
+              onClick={() => setConflict(null)}
+              className="w-full h-10 flex items-center justify-center text-sm text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              Cancel — don&apos;t print
+            </button>
+          </div>
+        </div>
+      )}
 
       <PrintLabelPortal payload={printPayload} />
     </>
