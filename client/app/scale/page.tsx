@@ -32,6 +32,7 @@ import { UnmappedItemModal } from '@/components/UnmappedItemModal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel } from '@/lib/types';
+import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
 
 interface CurrentItem {
   itemNumber: string;
@@ -180,11 +181,15 @@ function ScaleMonitor({
 function LabelPreview({
   item,
   lookupLoading,
+  labelSizeKey,
 }: {
   item: CurrentItem | null;
   lookupLoading: boolean;
+  labelSizeKey: LabelSizeKey;
 }) {
   const [copied, setCopied] = useState(false);
+  const cfg = getLabelConfig(labelSizeKey);
+  const sizeLabel = LABEL_SIZE_OPTIONS.find(o => o.key === labelSizeKey)?.label ?? labelSizeKey;
 
   const previewQrPayload = item
     ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, itemWeight: item.itemWeight }, formatEst(new Date()), 'preview')
@@ -208,6 +213,9 @@ function LabelPreview({
     );
   }
 
+  const isRow = cfg.layout === 'row';
+  const maxW = isRow ? Math.round(cfg.pageW * 90) : Math.round(cfg.pageW * 80);
+
   return (
     <div className="flex flex-col gap-4">
       {!item.found && (
@@ -219,31 +227,41 @@ function LabelPreview({
         </div>
       )}
 
-      {/* 3"×2" landscape, 2" content box centered */}
-      <div className="mx-auto w-full max-w-[270px]">
+      {/* Label preview — aspect ratio and layout driven by selected size */}
+      <div className="mx-auto w-full" style={{ maxWidth: `${maxW}px` }}>
         <div
           className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700"
-          style={{ aspectRatio: '3/2' }}
+          style={{ aspectRatio: `${cfg.pageW}/${cfg.pageH}` }}
         >
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
-              <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{item.productTitle}</p>
-              <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {item.itemWeight}</p>
-              <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
-              <p className="text-[7px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>
-              <div className="flex justify-center w-full mt-0.5">
-                <QRCodeSVG
-                  value={previewQrPayload}
-                  size={52}
-                  level="M"
-                  bgColor="#ffffff"
-                  fgColor="#0f172a"
-                />
+          <div className={`absolute inset-0 flex ${isRow ? 'flex-row items-center' : 'items-center justify-center'}`}>
+            {isRow ? (
+              /* Row: text left, QR right */
+              <>
+                <div className="flex-1 min-w-0 flex flex-col gap-0.5 px-2 py-1.5">
+                  <p className="font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
+                  <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
+                  <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                  <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
+                </div>
+                <div className="flex-shrink-0 px-1.5">
+                  <QRCodeSVG value={previewQrPayload} size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+                </div>
+              </>
+            ) : (
+              /* Col-center: text top, QR bottom */
+              <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
+                <p className="font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
+                <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
+                <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
+                <div className="flex justify-center w-full mt-0.5">
+                  <QRCodeSVG value={previewQrPayload} size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
-        <p className="text-center text-[10px] text-slate-600 mt-1.5">3&quot; × 2&quot; · 2&quot; content centered · Godex DT2x</p>
+        <p className="text-center text-[10px] text-slate-600 mt-1.5">{sizeLabel} · Godex DT2x</p>
       </div>
 
       {/* Item details */}
@@ -476,7 +494,16 @@ export default function ScalePage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
-  const { printPayload, printedAt, triggerPrint, printVerbatim, reset: resetPrinted } = usePrintLabel();
+  const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
+    if (typeof window === 'undefined') return '3x2';
+    return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
+  });
+  const { printPayload, printedAt, triggerPrint, printVerbatim, reset: resetPrinted } = usePrintLabel(labelSizeKey);
+
+  const handleSizeChange = (key: LabelSizeKey) => {
+    setLabelSizeKey(key);
+    localStorage.setItem(LABEL_SIZE_STORAGE_KEY, key);
+  };
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -744,8 +771,24 @@ export default function ScalePage() {
               </span>
             )}
           </div>
+          {/* Label size selector */}
+          <div className="px-4 pb-3 flex items-center gap-1.5 flex-wrap">
+            {LABEL_SIZE_OPTIONS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => handleSizeChange(key)}
+                className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-colors ${
+                  labelSizeKey === key
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="px-4 pb-4">
-            <LabelPreview item={currentItem} lookupLoading={lookupLoading} />
+            <LabelPreview item={currentItem} lookupLoading={lookupLoading} labelSizeKey={labelSizeKey} />
 
             {currentItem && (
               <>
@@ -840,7 +883,7 @@ export default function ScalePage() {
         />
       )}
 
-      <PrintLabelPortal payload={printPayload} />
+      <PrintLabelPortal payload={printPayload} labelSizeKey={labelSizeKey} />
     </>
   );
 }
