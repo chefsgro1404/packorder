@@ -1,10 +1,10 @@
-export type LabelSizeKey = '3x2' | '2.5x2' | '2.5x1.5' | '2.5x1';
+export type LabelSizeKey = '3x2' | '2.25x2' | '2.25x1.25' | '2x1';
 
 export const LABEL_SIZE_OPTIONS: { key: LabelSizeKey; label: string }[] = [
-  { key: '3x2',     label: '3" × 2"' },
-  { key: '2.5x2',   label: '2.5" × 2"' },
-  { key: '2.5x1.5', label: '2.5" × 1.5"' },
-  { key: '2.5x1',   label: '2.5" × 1"' },
+  { key: '3x2',       label: '3" × 2"' },
+  { key: '2.25x2',    label: '2.25" × 2"' },
+  { key: '2.25x1.25', label: '2.25" × 1.25"' },
+  { key: '2x1',       label: '2" × 1"' },
 ];
 
 interface SizeCfg {
@@ -27,10 +27,10 @@ interface SizeCfg {
 // For row layouts, qrIn is kept to roughly 40-45% of contentW so the text
 // column always gets the majority of the width (avoids 1-word-per-line wrap).
 const CFGS: Record<LabelSizeKey, SizeCfg> = {
-  '3x2':     { pageW: 3,   pageH: 2,   contentW: 2.0, layout: 'col', padding: 0.15, qrIn: 0.85, titlePt: 10,  linePt: 8,   gap: 0.06, textGap: 0.03 },
-  '2.5x2':   { pageW: 2.5, pageH: 2,   contentW: 2.2, layout: 'row', padding: 0.1,  qrIn: 1.0,  titlePt: 7,   linePt: 6,   gap: 0.06, textGap: 0.025 },
-  '2.5x1.5': { pageW: 2.5, pageH: 1.5, contentW: 2.2, layout: 'row', padding: 0.08, qrIn: 0.85, titlePt: 6.5, linePt: 5.5, gap: 0.05, textGap: 0.02 },
-  '2.5x1':   { pageW: 2.5, pageH: 1,   contentW: 2.2, layout: 'row', padding: 0.06, qrIn: 0.55, titlePt: 6,   linePt: 5,   gap: 0.04, textGap: 0.015 },
+  '3x2':       { pageW: 3,    pageH: 2,    contentW: 2.0,  layout: 'col', padding: 0.15, qrIn: 0.85, titlePt: 10,  linePt: 8,   gap: 0.06, textGap: 0.03 },
+  '2.25x2':    { pageW: 2.25, pageH: 2,    contentW: 2.05, layout: 'row', padding: 0.1,  qrIn: 0.9,  titlePt: 7,   linePt: 6,   gap: 0.06, textGap: 0.025 },
+  '2.25x1.25': { pageW: 2.25, pageH: 1.25, contentW: 2.05, layout: 'row', padding: 0.07, qrIn: 0.75, titlePt: 6.5, linePt: 5.5, gap: 0.045, textGap: 0.02 },
+  '2x1':       { pageW: 2,    pageH: 1,    contentW: 1.8,  layout: 'row', padding: 0.06, qrIn: 0.55, titlePt: 6,   linePt: 5,   gap: 0.04, textGap: 0.015 },
 };
 
 export function getLabelConfig(key: LabelSizeKey): SizeCfg {
