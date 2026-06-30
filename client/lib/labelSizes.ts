@@ -24,11 +24,13 @@ interface SizeCfg {
 // Horizontal margins = (pageW - contentW) / 2.
 // Vertical centering is handled by flexbox on .print-label-inner.
 // Row layout = text left, QR right. Col layout = text top, QR bottom.
+// For row layouts, qrIn is kept to roughly 40-45% of contentW so the text
+// column always gets the majority of the width (avoids 1-word-per-line wrap).
 const CFGS: Record<LabelSizeKey, SizeCfg> = {
-  '3x2':     { pageW: 3,   pageH: 2,   contentW: 2.0, layout: 'col', padding: 0.15, qrIn: 0.85, titlePt: 10, linePt: 8,   gap: 0.06, textGap: 0.03 },
-  '2.5x2':   { pageW: 2.5, pageH: 2,   contentW: 2.0, layout: 'row', padding: 0.15, qrIn: 1.3,  titlePt: 8,  linePt: 6.5, gap: 0.08, textGap: 0.03 },
-  '2.5x1.5': { pageW: 2.5, pageH: 1.5, contentW: 2.0, layout: 'row', padding: 0.12, qrIn: 1.0,  titlePt: 7,  linePt: 6,   gap: 0.07, textGap: 0.025 },
-  '2.5x1':   { pageW: 2.5, pageH: 1,   contentW: 2.0, layout: 'row', padding: 0.1,  qrIn: 0.65, titlePt: 6,  linePt: 5,   gap: 0.05, textGap: 0.02 },
+  '3x2':     { pageW: 3,   pageH: 2,   contentW: 2.0, layout: 'col', padding: 0.15, qrIn: 0.85, titlePt: 10,  linePt: 8,   gap: 0.06, textGap: 0.03 },
+  '2.5x2':   { pageW: 2.5, pageH: 2,   contentW: 2.2, layout: 'row', padding: 0.1,  qrIn: 1.0,  titlePt: 7,   linePt: 6,   gap: 0.06, textGap: 0.025 },
+  '2.5x1.5': { pageW: 2.5, pageH: 1.5, contentW: 2.2, layout: 'row', padding: 0.08, qrIn: 0.85, titlePt: 6.5, linePt: 5.5, gap: 0.05, textGap: 0.02 },
+  '2.5x1':   { pageW: 2.5, pageH: 1,   contentW: 2.2, layout: 'row', padding: 0.06, qrIn: 0.55, titlePt: 6,   linePt: 5,   gap: 0.04, textGap: 0.015 },
 };
 
 export function getLabelConfig(key: LabelSizeKey): SizeCfg {
