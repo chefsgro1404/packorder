@@ -25,6 +25,7 @@ import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { buildQrPayload, stripGid } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
 import { ScaleProduct, ProductLookupResult } from '@/lib/types';
+import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, type LabelSizeKey } from '@/lib/labelSizes';
 
 // "0" (or "00", etc.) recalled on the scale is a reserved placeholder meaning "ignore the
 // item number — use whatever product page is currently open." Real mappings can never use it
@@ -73,7 +74,15 @@ export default function ScaleProductDetailPage() {
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
   const [conflict, setConflict] = useState<ItemConflict | null>(null);
-  const { printPayload, triggerPrint } = usePrintLabel();
+  const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
+    if (typeof window === 'undefined') return '3x2';
+    return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
+  });
+  const handleSizeChange = (key: LabelSizeKey) => {
+    setLabelSizeKey(key);
+    localStorage.setItem(LABEL_SIZE_STORAGE_KEY, key);
+  };
+  const { printPayload, triggerPrint } = usePrintLabel(labelSizeKey);
 
   useEffect(() => {
     let cancelled = false;
@@ -361,6 +370,21 @@ export default function ScaleProductDetailPage() {
               >
                 <Printer className="w-4 h-4" /> Print Label
               </button>
+              <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                {LABEL_SIZE_OPTIONS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => handleSizeChange(key)}
+                    className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-colors ${
+                      labelSizeKey === key
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -530,7 +554,7 @@ export default function ScaleProductDetailPage() {
         </div>
       )}
 
-      <PrintLabelPortal payload={printPayload} />
+      <PrintLabelPortal payload={printPayload} labelSizeKey={labelSizeKey} />
     </>
   );
 }
