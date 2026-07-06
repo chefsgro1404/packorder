@@ -31,11 +31,11 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
   }, [printRequestId]);
 
   const triggerPrint = useCallback(
-    (item: { plu: string | null; productTitle: string; itemWeight: string }, sn?: string) => {
+    (item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight: string }, sn?: string) => {
       const printedAtEst = formatEst(new Date());
       const finalSn = sn ?? generateSn();
       const qrPayload = buildQrPayload(item, printedAtEst, finalSn);
-      const payload: PrintPayload = { productTitle: item.productTitle, qrPayload, itemWeight: item.itemWeight, printedAtEst, sn: finalSn };
+      const payload: PrintPayload = { productTitle: item.productTitle, variantTitle: item.variantTitle, qrPayload, itemWeight: item.itemWeight, printedAtEst, sn: finalSn };
       setPrintPayload(payload);
       setPrintRequestId((n) => n + 1);
       setPrintedAt(new Date());

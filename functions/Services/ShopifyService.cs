@@ -700,15 +700,12 @@ public class ShopifyService
                     var trackingArray = fulfillment["trackingInfo"] as JArray ?? new JArray();
                     var firstTracking = trackingArray.FirstOrDefault(t => !string.IsNullOrEmpty(t["number"]?.ToString()));
                     if (firstTracking == null)
-                    {
-                        _logger.LogInformation("ParseFulfillmentEntities: order {OrderName} fulfillment {FulfillmentId} (status={Status}) has no tracking number, skipping",
+                        _logger.LogInformation("ParseFulfillmentEntities: order {OrderName} fulfillment {FulfillmentId} (status={Status}) has no tracking number — including anyway",
                             orderName, fulfillment["id"]?.ToString(), fulfillment["status"]?.ToString());
-                        continue;
-                    }
 
-                    var trackingNumber       = firstTracking["number"]!.ToString();
-                    var trackingCarrier      = firstTracking["company"]?.ToString();
-                    var trackingUrl          = firstTracking["url"]?.ToString();
+                    var trackingNumber  = firstTracking?["number"]?.ToString();
+                    var trackingCarrier = firstTracking?["company"]?.ToString();
+                    var trackingUrl     = firstTracking?["url"]?.ToString();
                     var fulfillmentId        = fulfillment["id"]!.ToString();
                     var numericFulfillmentId = fulfillmentId.Split('/').Last();
 

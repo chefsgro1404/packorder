@@ -12,10 +12,12 @@ export function generateSn(): string {
 }
 
 export function buildQrPayload(
-  item: { plu: string | null; productTitle: string; itemWeight: string },
+  item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight: string },
   printedAtEst: string,
   sn: string
 ): string {
   const plu = item.plu || 'N/A';
-  return `${plu} | ${item.productTitle} | ${item.itemWeight} | ${printedAtEst} | SN:${sn}`;
+  const effectiveVariant = item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : null;
+  const title = effectiveVariant ? `${item.productTitle} - ${effectiveVariant}` : item.productTitle;
+  return `${plu} | ${title} | ${item.itemWeight} | ${printedAtEst} | SN:${sn}`;
 }

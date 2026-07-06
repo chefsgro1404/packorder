@@ -18,9 +18,11 @@ export interface UnmappedItemModalProps {
   weight: string;
   onClose: () => void;
   onResolved: (chosen: ChosenVariant, mapping: { save: boolean; pricePerLb: number }) => void;
+  /** When true: hides the "save mapping" option — used for item-0 reads with no current product */
+  hideSave?: boolean;
 }
 
-export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved }: UnmappedItemModalProps) {
+export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hideSave = false }: UnmappedItemModalProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AssignProduct[]>([]);
   const [searching, setSearching] = useState(false);
@@ -68,14 +70,19 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved }: U
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-            <h2 className="text-sm font-semibold text-slate-200">Item {itemNumber} isn&apos;t mapped</h2>
+            <h2 className="text-sm font-semibold text-slate-200">
+              {hideSave ? 'No product loaded' : <>Item {itemNumber} isn&apos;t mapped</>}
+            </h2>
           </div>
           <button onClick={onClose} aria-label="Close">
             <X className="w-4 h-4 text-slate-500" />
           </button>
         </div>
         <p className="text-xs text-slate-400">
-          The scale recalled item {itemNumber} ({weight}), but it has no product mapped. Search the catalog to find it.
+          {hideSave
+            ? <>Scale weight is <span className="text-slate-300 font-medium">{weight}</span>. Search the catalog to find the product and print a label.</>
+            : <>The scale recalled item {itemNumber} ({weight}), but it has no product mapped. Search the catalog to find it.</>
+          }
         </p>
 
         {!chosenVariant && (
@@ -120,33 +127,46 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved }: U
               <p className="text-sm font-medium text-slate-200 truncate">{chosenVariant.productTitle}</p>
               <p className="text-xs text-slate-500">{chosenVariant.variantTitle || 'Default'} · PLU {chosenVariant.plu || 'N/A'}</p>
             </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
-                Price per lb ($) — optional, only used if you save this mapping
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={pricePerLb}
-                onChange={(e) => setPricePerLb(e.target.value)}
-                placeholder="0.00"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            {!hideSave && (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
+                  Price per lb ($) — optional, only used if you save this mapping
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={pricePerLb}
+                  onChange={(e) => setPricePerLb(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
             <div className="flex flex-col gap-2">
-              <button
-                onClick={() => onResolved(chosenVariant, { save: true, pricePerLb: parseFloat(pricePerLb) || 0 })}
-                className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold transition-all"
-              >
-                <Check className="w-4 h-4" /> Map Item {itemNumber} &amp; Print
-              </button>
-              <button
-                onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
-                className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all"
-              >
-                Print Only (don&apos;t save mapping)
-              </button>
+              {hideSave ? (
+                <button
+                  onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
+                  className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold transition-all"
+                >
+                  <Check className="w-4 h-4" /> Print Label
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={() => onResolved(chosenVariant, { save: true, pricePerLb: parseFloat(pricePerLb) || 0 })}
+                    className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold transition-all"
+                  >
+                    <Check className="w-4 h-4" /> Map Item {itemNumber} &amp; Print
+                  </button>
+                  <button
+                    onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
+                    className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all"
+                  >
+                    Print Only (don&apos;t save mapping)
+                  </button>
+                </>
+              )}
               <button
                 onClick={() => setChosen(null)}
                 className="w-full h-9 flex items-center justify-center text-xs text-slate-500 hover:text-slate-300 transition-colors"

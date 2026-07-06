@@ -183,13 +183,14 @@ export default function ScaleProductDetailPage() {
     async (weight: string, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
       const { sn, printedAtEst, qrPayload } = triggerPrint({
         plu: override?.plu ?? (plu || null),
-        productTitle: override?.productTitle ?? displayTitle,
+        productTitle: override?.productTitle ?? productTitle,
+        variantTitle: override ? null : variantTitle,
         itemWeight: weight,
       });
       setPrintCount((n) => n + 1);
       await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), override?.plu ?? plu, override?.productTitle ?? displayTitle, weight, qrPayload, printedAtEst, sn);
     },
-    [triggerPrint, plu, displayTitle, itemNumber, logPrintedLabel]
+    [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel]
   );
 
   // Locked-and-auto-print: any weight reading while this page is open prints a label for this
@@ -327,7 +328,7 @@ export default function ScaleProductDetailPage() {
                       <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
                       <div className="flex justify-center w-full mt-0.5">
                         <QRCodeSVG
-                          value={buildQrPayload({ plu: plu || null, productTitle: displayTitle || 'Product', itemWeight: previewWeight || '0.00 lb' }, formatEst(new Date()), 'preview')}
+                          value={buildQrPayload({ plu: plu || null, productTitle: productTitle || 'Product', variantTitle, itemWeight: previewWeight || '0.00 lb' }, formatEst(new Date()), 'preview')}
                           size={48}
                           level="M"
                           bgColor="#ffffff"

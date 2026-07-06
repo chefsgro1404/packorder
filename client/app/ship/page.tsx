@@ -227,15 +227,14 @@ export default function ShipPage() {
         return;
       }
 
-      if (!data.eligible) {
+      if (data.warning) {
         setBanner({
           type: "warning",
           message:
-            data.status === "unfulfilled"
-              ? `${data.orderName} is still unfulfilled`
+            data.warning === "unfulfilled"
+              ? `${data.orderName} is still unfulfilled — sync may be incomplete`
               : `${data.orderName} has no tracking info yet`,
         });
-        return;
       }
 
       const incoming = (data.fulfillments ?? []) as ShipmentFulfillment[];

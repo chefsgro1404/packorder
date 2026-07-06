@@ -62,6 +62,7 @@ public class ScaleFunction
                 itemNumber,
                 plu = entity.Plu,
                 productTitle = entity.ProductTitle,
+                variantTitle = entity.VariantTitle,
                 pricePerLb = entity.PricePerLb,
                 productId = entity.ProductId,
                 variantId = entity.VariantId,

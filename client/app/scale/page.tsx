@@ -40,7 +40,13 @@ interface CurrentItem {
   itemWeight: string;
   plu: string;
   productTitle: string;
+  variantTitle?: string | null;
   found: boolean;
+}
+
+function isPlaceholderItemNumber(itemNumber: string): boolean {
+  const trimmed = itemNumber.trim();
+  return trimmed === '' || /^0+$/.test(trimmed);
 }
 
 // ─── Status indicator dot ────────────────────────────────────────────────────
@@ -192,7 +198,7 @@ function LabelPreview({
   const sizeLabel = LABEL_SIZE_OPTIONS.find(o => o.key === labelSizeKey)?.label ?? labelSizeKey;
 
   const previewQrPayload = item
-    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, itemWeight: item.itemWeight }, formatEst(new Date()), 'preview')
+    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, variantTitle: item.variantTitle, itemWeight: item.itemWeight }, formatEst(new Date()), 'preview')
     : '';
 
   const handleCopy = async () => {
@@ -238,7 +244,10 @@ function LabelPreview({
               /* Row: text left, QR right */
               <>
                 <div className="flex-1 min-w-0 flex flex-col gap-0.5 px-2 py-1.5">
-                  <p className="font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
+                  <p className="font-bold text-slate-900 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
+                  {item.variantTitle && item.variantTitle !== 'Default Title' && (
+                    <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{item.variantTitle}</p>
+                  )}
                   <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
                   <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
                   <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
@@ -250,7 +259,10 @@ function LabelPreview({
             ) : (
               /* Col-center: text top, QR bottom */
               <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
-                <p className="font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
+                <p className="font-bold text-slate-900 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
+                {item.variantTitle && item.variantTitle !== 'Default Title' && (
+                  <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{item.variantTitle}</p>
+                )}
                 <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
                 <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
                 <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
@@ -553,6 +565,7 @@ export default function ScalePage() {
         ...fallback,
         plu: data.plu,
         productTitle: data.productTitle,
+        variantTitle: data.variantTitle && data.variantTitle !== 'Default Title' ? data.variantTitle : null,
         found: true,
       };
     } catch (err) {
@@ -591,6 +604,7 @@ export default function ScalePage() {
     const { sn, printedAtEst, qrPayload } = triggerPrint({
       plu: item.found ? item.plu : null,
       productTitle: item.productTitle,
+      variantTitle: item.variantTitle,
       itemWeight: item.itemWeight,
     });
     await logPrintedLabel(item, qrPayload, printedAtEst, sn);
@@ -598,6 +612,19 @@ export default function ScalePage() {
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
+      // Item 0 (or 00, 000 …) means "same product, new weight".
+      // If a product is already loaded, reuse it with the new weight.
+      // If nothing is loaded, prompt staff to search and pick a product.
+      if (isPlaceholderItemNumber(reading.itemNumber ?? '')) {
+        if (currentItem) {
+          const updated = { ...currentItem, itemWeight: reading.itemWeight };
+          setCurrentItem(updated);
+          await printItem(updated);
+        } else {
+          setUnmappedPrompt({ itemNumber: reading.itemNumber ?? '0', weight: reading.itemWeight });
+        }
+        return;
+      }
       resetPrinted();
       setLookupLoading(true);
       const item = await lookupProduct(reading);
@@ -611,7 +638,7 @@ export default function ScalePage() {
       setCurrentItem(item);
       await printItem(item);
     },
-    [lookupProduct, printItem, resetPrinted]
+    [lookupProduct, printItem, resetPrinted, currentItem]
   );
 
   const handleUnmappedResolved = useCallback(
@@ -652,6 +679,7 @@ export default function ScalePage() {
         itemWeight: unmappedPrompt.weight,
         plu: chosen.plu,
         productTitle: chosen.productTitle,
+        variantTitle: chosen.variantTitle && chosen.variantTitle !== 'Default Title' ? chosen.variantTitle : null,
         found: true,
       };
       setUnmappedPrompt(null);
@@ -878,6 +906,7 @@ export default function ScalePage() {
         <UnmappedItemModal
           itemNumber={unmappedPrompt.itemNumber}
           weight={unmappedPrompt.weight}
+          hideSave={isPlaceholderItemNumber(unmappedPrompt.itemNumber)}
           onClose={() => setUnmappedPrompt(null)}
           onResolved={handleUnmappedResolved}
         />

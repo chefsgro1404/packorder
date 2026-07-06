@@ -376,6 +376,9 @@ export default function ScaleProductsPage() {
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-200 truncate">{p.productTitle}</p>
+                      {p.variantTitle && p.variantTitle !== 'Default Title' && (
+                        <p className="text-xs text-slate-400 truncate">{p.variantTitle}</p>
+                      )}
                       <p className="text-xs text-slate-500">
                         {p.itemNumber ? `Item ${p.itemNumber} · ` : ''}PLU {p.plu} · ${p.pricePerLb.toFixed(2)}/lb
                       </p>

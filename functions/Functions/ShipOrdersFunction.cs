@@ -80,13 +80,12 @@ public class ShipOrdersFunction
             if (!found)
                 return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
 
-            if (entities.Count == 0)
-            {
-                var reason = displayStatus == "UNFULFILLED" ? "unfulfilled" : "no_tracking";
-                return await ResponseHelper.WriteSuccess(req, new { found = true, eligible = false, orderName, status = reason }, _allowedOrigins);
-            }
+            string? warning = null;
+            if (entities.Count == 0 && displayStatus == "UNFULFILLED")
+                warning = "unfulfilled";
 
-            await _tableStorage.SyncFulfillmentShipmentsAsync(entities);
+            if (entities.Count > 0)
+                await _tableStorage.SyncFulfillmentShipmentsAsync(entities);
 
             var fulfillments = new List<object>();
             foreach (var entity in entities)
@@ -95,7 +94,10 @@ public class ShipOrdersFunction
                 if (stored != null) fulfillments.Add(SerializeFulfillment(stored));
             }
 
-            return await ResponseHelper.WriteSuccess(req, new { found = true, eligible = true, orderName, fulfillments }, _allowedOrigins);
+            if (fulfillments.Count == 0 && warning == null)
+                warning = "no_tracking";
+
+            return await ResponseHelper.WriteSuccess(req, new { found = true, eligible = warning == null, warning, orderName, fulfillments }, _allowedOrigins);
         }
         catch (Exception ex)
         {
