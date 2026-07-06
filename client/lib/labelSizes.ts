@@ -52,7 +52,7 @@ function computeCfg(pageW: number, pageH: number): SizeCfg {
 }
 
 export function getLabelConfig(key: LabelSizeKey): SizeCfg {
-  const opt = LABEL_SIZE_OPTIONS.find(o => o.key === key)!;
+  const opt = LABEL_SIZE_OPTIONS.find(o => o.key === key) ?? LABEL_SIZE_OPTIONS[0];
   return computeCfg(opt.w, opt.h);
 }
 
