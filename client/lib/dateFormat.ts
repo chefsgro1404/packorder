@@ -1,4 +1,4 @@
-// Formats a Date as "yyyy-MM-dd HH:mm:ss" in America/New_York, 24-hour clock.
+// Formats a Date as "MM/dd/yyyy HH:mm EST" (or EDT) in America/New_York, 24-hour clock, no seconds.
 export function formatEst(date: Date): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
@@ -7,13 +7,13 @@ export function formatEst(date: Date): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: false,
+    timeZoneName: 'short',
   }).formatToParts(date);
 
   const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
-  // Some locales render midnight as "24" with hour12: false — normalize to "00"
   const hour = get('hour') === '24' ? '00' : get('hour');
+  const tz = get('timeZoneName'); // "EST" or "EDT"
 
-  return `${get('year')}-${get('month')}-${get('day')} ${hour}:${get('minute')}:${get('second')}`;
+  return `${get('month')}/${get('day')}/${get('year')} ${hour}:${get('minute')} ${tz}`;
 }
