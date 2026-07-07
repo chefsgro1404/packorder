@@ -245,12 +245,32 @@ public class ProductListFunction
 
         if (!string.IsNullOrEmpty(search))
         {
-            var q = search.ToLowerInvariant();
+            // Split into tokens so "rohu fish" matches "Rohu (Rui) Fish - 4 kg" even
+            // though the exact phrase isn't a substring. All tokens must match somewhere
+            // in the combined searchable text (AND logic). Results are then sorted by
+            // relevance: exact phrase match > all tokens in product title > any match.
+            var fullQ  = search.ToLowerInvariant();
+            var tokens = fullQ.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
             filtered = filtered.Where(e =>
-                (e.ProductTitle?.ToLowerInvariant().Contains(q) ?? false) ||
-                (e.VariantTitle?.ToLowerInvariant().Contains(q) ?? false) ||
-                (e.Sku?.ToLowerInvariant().Contains(q) ?? false) ||
-                (e.Barcode?.ToLowerInvariant().Contains(q) ?? false));
+            {
+                var haystack = string.Join(" ",
+                    e.ProductTitle  ?? "",
+                    e.VariantTitle  ?? "",
+                    e.Sku           ?? "",
+                    e.Barcode       ?? ""
+                ).ToLowerInvariant();
+                return tokens.All(t => haystack.Contains(t));
+            });
+
+            // Relevance sort: exact phrase in title first, then all tokens in title, then rest
+            filtered = filtered.OrderBy(e =>
+            {
+                var title = (e.ProductTitle ?? "").ToLowerInvariant();
+                if (title.Contains(fullQ)) return 0;
+                if (tokens.All(t => title.Contains(t))) return 1;
+                return 2;
+            }).ThenBy(e => e.ProductTitle, StringComparer.OrdinalIgnoreCase);
         }
 
         return filtered.ToList();
