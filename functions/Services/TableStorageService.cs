@@ -20,6 +20,7 @@ public class TableStorageService
     private readonly TableClient _printedLabels;
     private readonly TableClient _scannedLabels;
     private readonly TableClient _barcodeAudits;
+    private readonly TableClient _snCounters;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -37,6 +38,7 @@ public class TableStorageService
         _printedLabels        = tableServiceClient.GetTableClient("printedlabels");
         _scannedLabels        = tableServiceClient.GetTableClient("scannedlabels");
         _barcodeAudits        = tableServiceClient.GetTableClient("barcodeaudits");
+        _snCounters           = tableServiceClient.GetTableClient("sncounters");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -53,6 +55,7 @@ public class TableStorageService
         await _printedLabels.CreateIfNotExistsAsync();
         await _scannedLabels.CreateIfNotExistsAsync();
         await _barcodeAudits.CreateIfNotExistsAsync();
+        await _snCounters.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -967,5 +970,46 @@ public class TableStorageService
             results.Add(e);
         }
         return results.OrderByDescending(e => e.AssignedAt).ToList();
+    }
+
+    // ─── SN counters ─────────────────────────────────────────────────────────
+
+    // Atomically increments the per-product print counter and returns the new value.
+    // Uses ETag-based optimistic concurrency — safe even with multiple concurrent prints.
+    public async Task<int> GetNextSnCountAsync(string rowKey)
+    {
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            try
+            {
+                var response = await _snCounters.GetEntityAsync<SnCounterEntity>("sn", rowKey);
+                var entity = response.Value;
+                entity.Count++;
+                await _snCounters.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+                return entity.Count;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 412 || ex.Status == 409)
+            {
+                // ETag conflict — another request updated concurrently; retry
+                continue;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404)
+            {
+                try
+                {
+                    var newEntity = new SnCounterEntity { PartitionKey = "sn", RowKey = rowKey, Count = 1 };
+                    await _snCounters.AddEntityAsync(newEntity);
+                    return 1;
+                }
+                catch (RequestFailedException addEx) when (addEx.Status == 409)
+                {
+                    // Race on creation — retry the get-and-increment loop
+                    continue;
+                }
+            }
+        }
+        // All retries exhausted (extremely unlikely) — fall back to timestamp-based unique id
+        _logger.LogWarning("SN counter exhausted retries for key {RowKey}", rowKey);
+        return (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() % 900000) + 100001;
     }
 }

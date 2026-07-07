@@ -13,6 +13,9 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
   const labelSizeKeyRef = useRef(labelSizeKey);
   labelSizeKeyRef.current = labelSizeKey;
 
+  // Tracks how many times each base SN has been reprinted this session.
+  const reprintCounts = useRef(new Map<string, number>());
+
   useEffect(() => {
     if (printRequestId === 0) return;
     const id = requestAnimationFrame(() => {
@@ -55,7 +58,13 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
   );
 
   const printVerbatim = useCallback((payload: PrintPayload) => {
-    setPrintPayload(payload);
+    // Strip any prior reprint suffix to get the base SN, then increment the reprint counter.
+    const baseSn = payload.sn.replace(/-r\d+$/, '');
+    const n = (reprintCounts.current.get(baseSn) ?? 0) + 1;
+    reprintCounts.current.set(baseSn, n);
+    const reprintSn = `${baseSn}-r${String(n).padStart(3, '0')}`;
+    const newQrPayload = payload.qrPayload.replace(`SN:${payload.sn}`, `SN:${reprintSn}`);
+    setPrintPayload({ ...payload, sn: reprintSn, qrPayload: newQrPayload });
     setPrintRequestId((n) => n + 1);
     setPrintedAt(new Date());
   }, []);

@@ -766,3 +766,19 @@ public class LogPrintedLabelRequest
     [JsonProperty("printedBy")]    public string? PrintedBy { get; set; }
     [JsonProperty("sn")]           public string? Sn { get; set; }
 }
+
+public class SnCounterEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "sn";
+    public string RowKey { get; set; } = "";   // variantId numeric suffix, or "plu:{plu}"
+    public int Count { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class NextSnRequest
+{
+    [JsonProperty("variantId")] public string? VariantId { get; set; }
+    [JsonProperty("plu")]       public string? Plu { get; set; }
+    [JsonProperty("prefix")]    public string Prefix { get; set; } = "";
+}

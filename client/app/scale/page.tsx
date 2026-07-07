@@ -30,6 +30,7 @@ import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { UnmappedItemModal } from '@/components/UnmappedItemModal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
+import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel } from '@/lib/types';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
@@ -41,6 +42,7 @@ interface CurrentItem {
   plu: string;
   productTitle: string;
   variantTitle?: string | null;
+  variantId?: string | null;
   found: boolean;
 }
 
@@ -566,6 +568,7 @@ export default function ScalePage() {
         plu: data.plu,
         productTitle: data.productTitle,
         variantTitle: data.variantTitle && data.variantTitle !== 'Default Title' ? data.variantTitle : null,
+        variantId: data.variantId ?? null,
         found: true,
       };
     } catch (err) {
@@ -601,12 +604,13 @@ export default function ScalePage() {
   }, [fetchHistory]);
 
   const printItem = useCallback(async (item: CurrentItem) => {
-    const { sn, printedAtEst, qrPayload } = triggerPrint({
+    const sn = await fetchNextSn(item.variantId, item.found ? item.plu : null, item.productTitle, item.variantTitle);
+    const { printedAtEst, qrPayload } = triggerPrint({
       plu: item.found ? item.plu : null,
       productTitle: item.productTitle,
       variantTitle: item.variantTitle,
       itemWeight: item.itemWeight,
-    });
+    }, sn);
     await logPrintedLabel(item, qrPayload, printedAtEst, sn);
   }, [triggerPrint, logPrintedLabel]);
 
@@ -680,6 +684,7 @@ export default function ScalePage() {
         plu: chosen.plu,
         productTitle: chosen.productTitle,
         variantTitle: chosen.variantTitle && chosen.variantTitle !== 'Default Title' ? chosen.variantTitle : null,
+        variantId: chosen.variantId ?? null,
         found: true,
       };
       setUnmappedPrompt(null);

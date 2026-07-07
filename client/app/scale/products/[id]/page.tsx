@@ -22,6 +22,7 @@ import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { buildQrPayload } from '@/lib/scaleLabel';
+import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { ScaleProduct } from '@/lib/types';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, type LabelSizeKey } from '@/lib/labelSizes';
@@ -157,7 +158,7 @@ export default function ScaleProductDetailPage() {
     }
   }, [productId, variantId, productTitle, variantTitle, imageUrl, itemNumber, plu, pricePerLb, pinned]);
 
-  const logPrintedLabel = useCallback(async (logItemNumber: string, logPlu: string, logTitle: string, weight: string, qrPayload: string, printedAtEst: string, sn: string) => {
+  const logPrintedLabel = useCallback(async (logItemNumber: string, logPlu: string, logTitle: string, weight: string | null | undefined, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
       await fetch('/api/scale/print-log', {
         method: 'POST',
@@ -181,16 +182,20 @@ export default function ScaleProductDetailPage() {
   // mapped to the recalled item number) instead of this page's own opened product.
   const printForWeight = useCallback(
     async (weight?: string | null, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
-      const { sn, printedAtEst, qrPayload } = triggerPrint({
-        plu: override?.plu ?? (plu || null),
-        productTitle: override?.productTitle ?? productTitle,
-        variantTitle: override ? null : variantTitle,
+      const snTitle = override?.productTitle ?? productTitle;
+      const snVariant = override ? null : variantTitle;
+      const snPlu = override?.plu ?? plu;
+      const sn = await fetchNextSn(variantId || null, snPlu || null, snTitle, snVariant);
+      const { printedAtEst, qrPayload } = triggerPrint({
+        plu: snPlu || null,
+        productTitle: snTitle,
+        variantTitle: snVariant,
         itemWeight: weight || null,
-      });
+      }, sn);
       setPrintCount((n) => n + 1);
-      await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), override?.plu ?? plu, override?.productTitle ?? displayTitle, weight, qrPayload, printedAtEst, sn);
+      await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), snPlu, override?.productTitle ?? displayTitle, weight, qrPayload, printedAtEst, sn);
     },
-    [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel]
+    [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel, variantId]
   );
 
   // Item number is always ignored on this page — the product is already chosen by opening this URL.

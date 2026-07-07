@@ -465,6 +465,57 @@ public class ScaleFunction
         }
     }
 
+    [Function("ScaleNextSn")]
+    public async Task<HttpResponseData> NextSn(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "scale/next-sn")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body = await req.ReadAsStringAsync() ?? "";
+            var request = JsonConvert.DeserializeObject<NextSnRequest>(body)
+                ?? throw new InvalidOperationException("Invalid request body");
+
+            if (string.IsNullOrWhiteSpace(request.Prefix))
+                return await ResponseHelper.WriteError(req, "prefix is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            // Build a stable counter key: prefer variantId (numeric suffix only), fall back to PLU
+            string counterKey;
+            if (!string.IsNullOrWhiteSpace(request.VariantId))
+            {
+                var vid = request.VariantId.Trim();
+                // Strip "gid://shopify/ProductVariant/" GID prefix if present
+                var lastSlash = vid.LastIndexOf('/');
+                counterKey = lastSlash >= 0 ? vid[(lastSlash + 1)..] : vid;
+            }
+            else if (!string.IsNullOrWhiteSpace(request.Plu))
+            {
+                counterKey = $"plu:{request.Plu.Trim()}";
+            }
+            else
+            {
+                return await ResponseHelper.WriteError(req, "variantId or plu is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            }
+
+            var count = await _tableStorage.GetNextSnCountAsync(counterKey);
+            var sn = $"{request.Prefix}-{100000 + count}";
+
+            return await ResponseHelper.WriteSuccess(req, new { sn, count }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "NextSn failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     private static Dictionary<string, string> ParseQueryString(string query)
     {
         return query.TrimStart('?')
