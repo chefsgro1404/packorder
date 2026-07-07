@@ -7,7 +7,7 @@ export interface PrintPayload {
   productTitle: string;
   variantTitle?: string | null;
   qrPayload: string;
-  itemWeight: string;
+  itemWeight?: string | null;
   printedAtEst: string;
   sn: string;
 }
@@ -31,7 +31,7 @@ export function PrintLabelPortal({
               {payload.variantTitle && payload.variantTitle !== 'Default Title' && (
                 <p className="print-label-variant">{payload.variantTitle}</p>
               )}
-              <p className="print-label-line"><span className="print-label-field">Weight:</span> {payload.itemWeight}</p>
+              {payload.itemWeight && <p className="print-label-line"><span className="print-label-field">Weight:</span> {payload.itemWeight}</p>}
               <p className="print-label-line"><span className="print-label-field">Packing Date:</span> {payload.printedAtEst}</p>
               <p className="print-label-line print-label-sn"><span className="print-label-field">SN:</span> {payload.sn}</p>
             </div>

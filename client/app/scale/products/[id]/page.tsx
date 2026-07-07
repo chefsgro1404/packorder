@@ -59,6 +59,7 @@ export default function ScaleProductDetailPage() {
   const [pricePerLb, setPricePerLb] = useState('');
   const [pinned, setPinned] = useState(false);
 
+  const [noWeight, setNoWeight] = useState(false);
   const [printCount, setPrintCount] = useState(0);
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
@@ -92,6 +93,7 @@ export default function ScaleProductDetailPage() {
           setPlu(saved.plu ?? '');
           setPricePerLb(saved.pricePerLb != null ? String(saved.pricePerLb) : '');
           setPinned(!!saved.pinned);
+          setNoWeight(!!saved.noWeight);
           return;
         }
 
@@ -141,6 +143,7 @@ export default function ScaleProductDetailPage() {
           plu: plu.trim(),
           pricePerLb: parseFloat(pricePerLb) || 0,
           pinned: overridePinned ?? pinned,
+          noWeight,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -177,12 +180,12 @@ export default function ScaleProductDetailPage() {
   // override lets a conflict resolution print a *different* product's PLU/title (the one
   // mapped to the recalled item number) instead of this page's own opened product.
   const printForWeight = useCallback(
-    async (weight: string, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
+    async (weight?: string | null, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
       const { sn, printedAtEst, qrPayload } = triggerPrint({
         plu: override?.plu ?? (plu || null),
         productTitle: override?.productTitle ?? productTitle,
         variantTitle: override ? null : variantTitle,
-        itemWeight: weight,
+        itemWeight: weight || null,
       });
       setPrintCount((n) => n + 1);
       await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), override?.plu ?? plu, override?.productTitle ?? displayTitle, weight, qrPayload, printedAtEst, sn);
@@ -191,11 +194,13 @@ export default function ScaleProductDetailPage() {
   );
 
   // Item number is always ignored on this page — the product is already chosen by opening this URL.
+  // When noWeight is on, scale signals are ignored — staff prints manually via the button.
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
+      if (noWeight) return;
       await printForWeight(reading.itemWeight);
     },
-    [printForWeight]
+    [noWeight, printForWeight]
   );
 
   const scale = useScale(handleReading);
@@ -205,9 +210,9 @@ export default function ScaleProductDetailPage() {
   // Uses the last weight the scale reported this session, or a manually typed one.
   const previewWeight = scale.lastReading?.itemWeight || manualWeight;
   const handleManualPrint = useCallback(async () => {
-    if (!previewWeight.trim()) return;
-    await printForWeight(previewWeight.trim());
-  }, [previewWeight, printForWeight]);
+    if (!noWeight && !previewWeight.trim()) return;
+    await printForWeight(noWeight ? null : previewWeight.trim());
+  }, [noWeight, previewWeight, printForWeight]);
 
 
   useEffect(() => {
@@ -266,10 +271,27 @@ export default function ScaleProductDetailPage() {
           {/* Lock banner */}
           <div className="flex items-center gap-2 bg-blue-950/40 border border-blue-900 rounded-xl px-3 py-2.5">
             <Lock className="w-4 h-4 text-blue-400 flex-shrink-0" />
-            <p className="text-xs text-blue-300">
-              This product is locked in. Any weight signal from the scale prints a label for it immediately — no confirmation needed.
+            <p className="text-xs text-blue-300 flex-1">
+              {noWeight
+                ? 'No-weight mode — label prints without weight. Click Print Label to print.'
+                : 'This product is locked in. Any weight signal from the scale prints a label for it immediately — no confirmation needed.'}
             </p>
           </div>
+
+          {/* No-weight toggle */}
+          <button
+            onClick={() => setNoWeight((v) => !v)}
+            className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+              noWeight
+                ? 'bg-amber-950/40 border-amber-800 text-amber-300'
+                : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <span className={`w-8 h-4 rounded-full relative transition-colors ${noWeight ? 'bg-amber-500' : 'bg-slate-700'}`}>
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${noWeight ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </span>
+            No-weight product (seeds, cans, etc.)
+          </button>
 
           {/* Label preview — lets you see and print without waiting on a scale signal */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -283,7 +305,7 @@ export default function ScaleProductDetailPage() {
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
                       <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{displayTitle || 'Product'}</p>
-                      <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {previewWeight || '—'}</p>
+                      {!noWeight && <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {previewWeight || '—'}</p>}
                       <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
                       <div className="flex justify-center w-full mt-0.5">
                         <QRCodeSVG
@@ -299,23 +321,25 @@ export default function ScaleProductDetailPage() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">Weight</label>
-                <input
-                  type="text"
-                  value={manualWeight}
-                  onChange={(e) => setManualWeight(e.target.value)}
-                  placeholder={scale.lastReading?.itemWeight ? `Last reading: ${scale.lastReading.itemWeight}` : 'e.g. 1.23 lb'}
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <p className="text-[11px] text-slate-600 mt-1">
-                  Auto-fills from the scale's last reading. Type a weight here to preview/print without waiting on the scale.
-                </p>
-              </div>
+              {!noWeight && (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">Weight</label>
+                  <input
+                    type="text"
+                    value={manualWeight}
+                    onChange={(e) => setManualWeight(e.target.value)}
+                    placeholder={scale.lastReading?.itemWeight ? `Last reading: ${scale.lastReading.itemWeight}` : 'e.g. 1.23 lb'}
+                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    Auto-fills from the scale's last reading. Type a weight here to preview/print without waiting on the scale.
+                  </p>
+                </div>
+              )}
 
               <button
                 onClick={handleManualPrint}
-                disabled={!previewWeight.trim()}
+                disabled={!noWeight && !previewWeight.trim()}
                 className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl text-sm font-bold transition-all"
               >
                 <Printer className="w-4 h-4" /> Print Label
@@ -354,7 +378,7 @@ export default function ScaleProductDetailPage() {
                 )}
               </div>
               <p className="text-sm font-semibold text-slate-200">
-                {scaleStatus === 'ok' ? 'Waiting for weight…' : scaleStatus === 'busy' ? 'Receiving signal…' : 'Scale not connected'}
+                {noWeight ? 'No-weight mode — use Print Label above' : scaleStatus === 'ok' ? 'Waiting for weight…' : scaleStatus === 'busy' ? 'Receiving signal…' : 'Scale not connected'}
               </p>
               {printCount > 0 && (
                 <p className="text-xs text-emerald-400 flex items-center gap-1">

@@ -58,11 +58,21 @@ interface QrLabel {
   weightGrams: number | null;
 }
 
-// ─── Scale & Print QR payload: "<PLU> | <Product Title> | <Item Weight> | <Printed At> | SN:<sn>" ──
+// ─── Scale & Print QR payload ────────────────────────────────────────────────
+// With weight (5 parts):    "<PLU> | <Title> | <Weight> | <Printed At> | SN:<sn>"
+// No-weight products (4 parts): "<PLU> | <Title> | <Printed At> | SN:<sn>"
 function parseQrLabel(value: string): QrLabel | null {
   const parts = value.split("|").map((p) => p.trim());
-  if (parts.length !== 5) return null;
-  const [plu, productTitle, itemWeight, printedAt, snPart] = parts;
+  if (parts.length !== 5 && parts.length !== 4) return null;
+
+  let plu: string, productTitle: string, itemWeight: string, printedAt: string, snPart: string;
+  if (parts.length === 5) {
+    [plu, productTitle, itemWeight, printedAt, snPart] = parts;
+  } else {
+    [plu, productTitle, printedAt, snPart] = parts;
+    itemWeight = "";
+  }
+
   const snMatch = snPart.match(/^SN:(.+)$/i);
   if (!snMatch || !plu || !productTitle) return null;
 

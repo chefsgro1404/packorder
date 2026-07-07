@@ -66,6 +66,7 @@ public class ScaleFunction
                 pricePerLb = entity.PricePerLb,
                 productId = entity.ProductId,
                 variantId = entity.VariantId,
+                noWeight = entity.NoWeight,
             }, _allowedOrigins);
         }
         catch (Exception ex)
@@ -111,6 +112,7 @@ public class ScaleFunction
                         productId = e.ProductId,
                         variantId = e.VariantId,
                         pinned = e.Pinned,
+                        noWeight = e.NoWeight,
                     }).ToList();
                 return await ResponseHelper.WriteSuccess(req, new { products, total = products.Count }, _allowedOrigins);
             }
@@ -281,6 +283,7 @@ public class ScaleFunction
                     plu = entity.Plu,
                     pricePerLb = entity.PricePerLb,
                     pinned = entity.Pinned,
+                    noWeight = entity.NoWeight,
                 }, _allowedOrigins);
             }
 
@@ -330,6 +333,7 @@ public class ScaleFunction
                 Plu = newPlu,
                 PricePerLb = request.PricePerLb,
                 Pinned = request.Pinned,
+                NoWeight = request.NoWeight,
             };
 
             var (ok, conflictMessage) = await _tableStorage.UpsertScaleProductAsync(entityToSave);
@@ -353,6 +357,7 @@ public class ScaleFunction
                 plu = entityToSave.Plu,
                 pricePerLb = entityToSave.PricePerLb,
                 pinned = entityToSave.Pinned,
+                noWeight = entityToSave.NoWeight,
             }, _allowedOrigins);
         }
         catch (Exception ex)

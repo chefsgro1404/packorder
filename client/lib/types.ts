@@ -328,6 +328,7 @@ export interface ScaleProduct {
   plu?: string;
   pricePerLb?: number;
   pinned?: boolean;
+  noWeight?: boolean;
 }
 
 export interface PrintedLabel {

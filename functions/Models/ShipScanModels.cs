@@ -710,6 +710,7 @@ public class ProductLookupEntity : ITableEntity
     public string? VariantTitle { get; set; }
     public string? ImageUrl { get; set; }
     public bool Pinned { get; set; }
+    public bool NoWeight { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -735,6 +736,7 @@ public class UpsertScaleProductRequest
     [JsonProperty("plu")]           public string Plu { get; set; } = "";
     [JsonProperty("pricePerLb")]    public double PricePerLb { get; set; }
     [JsonProperty("pinned")]        public bool Pinned { get; set; }
+    [JsonProperty("noWeight")]      public bool NoWeight { get; set; }
 }
 
 public class PrintedLabelEntity : ITableEntity

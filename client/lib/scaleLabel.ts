@@ -12,12 +12,14 @@ export function generateSn(): string {
 }
 
 export function buildQrPayload(
-  item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight: string },
+  item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight?: string | null },
   printedAtEst: string,
   sn: string
 ): string {
   const plu = item.plu || 'N/A';
   const effectiveVariant = item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : null;
   const title = effectiveVariant ? `${item.productTitle} - ${effectiveVariant}` : item.productTitle;
+  // No-weight products omit the weight segment — 4-part payload instead of 5.
+  if (!item.itemWeight) return `${plu} | ${title} | ${printedAtEst} | SN:${sn}`;
   return `${plu} | ${title} | ${item.itemWeight} | ${printedAtEst} | SN:${sn}`;
 }

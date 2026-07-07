@@ -41,7 +41,7 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
   }, [printRequestId]);
 
   const triggerPrint = useCallback(
-    (item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight: string }, sn?: string) => {
+    (item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight?: string | null }, sn?: string) => {
       const printedAtEst = formatEst(new Date());
       const finalSn = sn ?? generateSn();
       const qrPayload = buildQrPayload(item, printedAtEst, finalSn);
