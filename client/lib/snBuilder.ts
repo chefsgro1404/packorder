@@ -76,7 +76,7 @@ const VARIANT_CODES: [RegExp, string][] = [
   [/with\s+skin/i, 'ws'],
   [/\bwhole\b/i, 'whole'],
   [/cleaned\s+and\s+cut\s+in\s+4|cut\s+in\s+4\s+pieces?/i, '4pc'],
-  [/larger\s+bir[iy]ani|bir[iy]ani\s+(?:cut|piece)/i, 'bir'],
+  [/larger\s+biri?yani|biri?yani\s+(?:cut|pieces?)/i, 'bir'],
   [/small\s+regular\s+piece|regular\s+(?:cut|piece)|standard\s+curry\s+cut/i, 'reg'],
   [/medium[\s-]+size\s+piece|medium\s+piece/i, 'med'],
   [/tehari\s+cut|\btehari\b/i, 'tehari'],
