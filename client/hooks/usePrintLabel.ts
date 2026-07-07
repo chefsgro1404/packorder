@@ -18,14 +18,24 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
     const id = requestAnimationFrame(() => {
       const el = document.getElementById('print-label');
       if (!el) return;
+
+      // Try a dedicated popup window first — cleaner experience, auto-closes after print.
+      // This only works when called from a direct user gesture (click/keydown). Scale
+      // auto-print comes from a Web Serial data callback, which browsers treat as
+      // non-user-gesture, so window.open is silently blocked and returns null.
+      // In that case fall back to window.print() on the main window; the @media print
+      // CSS from PrintLabelPortal already hides the app and shows only #print-label.
       const win = window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`);
-      if (!win) return;
-      const css = getLabelWindowCSS(labelSizeKeyRef.current);
-      win.document.write(`<!DOCTYPE html><html><head><style>${css}</style></head><body>${el.innerHTML}</body></html>`);
-      win.document.close();
-      win.focus();
-      win.onafterprint = () => win.close();
-      win.print();
+      if (win) {
+        const css = getLabelWindowCSS(labelSizeKeyRef.current);
+        win.document.write(`<!DOCTYPE html><html><head><style>${css}</style></head><body>${el.innerHTML}</body></html>`);
+        win.document.close();
+        win.focus();
+        win.onafterprint = () => win.close();
+        win.print();
+      } else {
+        window.print();
+      }
     });
     return () => cancelAnimationFrame(id);
   }, [printRequestId]);
