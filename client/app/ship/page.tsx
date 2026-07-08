@@ -58,6 +58,15 @@ interface QrLabel {
   weightGrams: number | null;
 }
 
+// Products that should be silently skipped during packing (e.g. fee line items)
+const IGNORED_PRODUCT_TITLES = new Set(["packaging fee"]);
+const isIgnoredItem = (li: ShipmentLineItem) =>
+  IGNORED_PRODUCT_TITLES.has(li.productTitle.trim().toLowerCase());
+
+// Products with no barcode/sku cannot be scanned — require a manual confirm instead
+const isUnscannable = (li: ShipmentLineItem) =>
+  !li.sku?.trim() && !li.barcode?.trim() && !li.isExtra;
+
 // ─── Scale & Print QR payload ────────────────────────────────────────────────
 // With weight (5 parts):    "<PLU> | <Title> | <Weight> | <Printed At> | SN:<sn>"
 // No-weight products (4 parts): "<PLU> | <Title> | <Printed At> | SN:<sn>"
@@ -661,8 +670,9 @@ export default function ShipPage() {
     new Date(iso).toLocaleDateString("en-CA", { month: "short", day: "numeric" });
 
   const getTotals = (f: ShipmentFulfillment) => {
-    const expected = f.lineItems.reduce((s, li) => s + li.quantityExpected, 0);
-    const shipped = f.lineItems.reduce((s, li) => s + li.quantityShipped, 0);
+    const items = f.lineItems.filter(li => !isIgnoredItem(li));
+    const expected = items.reduce((s, li) => s + li.quantityExpected, 0);
+    const shipped = items.reduce((s, li) => s + li.quantityShipped, 0);
     return { expected, shipped };
   };
 
@@ -959,12 +969,14 @@ export default function ShipPage() {
     const pct = expected > 0 ? Math.round((shipped / expected) * 100) : 0;
     const allDone = shipped >= expected;
 
-    const sortedItems = [...selectedFulfillment.lineItems].sort((a, b) => {
-      const aDone = a.quantityShipped >= a.quantityExpected;
-      const bDone = b.quantityShipped >= b.quantityExpected;
-      if (aDone === bDone) return 0;
-      return aDone ? 1 : -1;
-    });
+    const sortedItems = [...selectedFulfillment.lineItems]
+      .filter(li => !isIgnoredItem(li))
+      .sort((a, b) => {
+        const aDone = a.quantityShipped >= a.quantityExpected;
+        const bDone = b.quantityShipped >= b.quantityExpected;
+        if (aDone === bDone) return 0;
+        return aDone ? 1 : -1;
+      });
 
     return (
       <main className="min-h-screen flex flex-col bg-slate-950">
@@ -1135,6 +1147,11 @@ export default function ShipPage() {
                           Extra
                         </span>
                       )}
+                      {isUnscannable(li) && !done && (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 border border-slate-600 text-slate-500">
+                          No barcode
+                        </span>
+                      )}
                     </div>
                     {li.isExtra && li.addedReason && (
                       <p className="text-xs text-amber-400/80 mt-1 truncate">
@@ -1150,6 +1167,14 @@ export default function ShipPage() {
                         title="Remove one"
                       >
                         <Minus className="w-4 h-4" />
+                      </button>
+                    )}
+                    {!done && isUnscannable(li) && (
+                      <button
+                        onClick={() => performScan(li, null)}
+                        className="px-3 py-1.5 bg-green-700 hover:bg-green-600 active:bg-green-800 text-white text-xs font-semibold rounded-lg transition-colors"
+                      >
+                        Packed?
                       </button>
                     )}
                     {done && <CheckCircle2 className="w-5 h-5 text-green-400" />}

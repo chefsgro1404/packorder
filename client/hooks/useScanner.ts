@@ -5,7 +5,7 @@ import { useCallback, useRef } from "react";
 export function useScanner() {
   const lastScanRef = useRef<string | null>(null);
   const lastScanTimeRef = useRef<number>(0);
-  const DEBOUNCE_MS = 1500;
+  const DEBOUNCE_MS = 800;
 
   const handleScan = useCallback(
     (value: string, onScan: (v: string) => void) => {

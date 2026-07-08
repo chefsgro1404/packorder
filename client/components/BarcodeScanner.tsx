@@ -52,8 +52,9 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
   const startNative = useCallback(async () => {
     if (!containerRef.current) return;
 
+    // 640×480 is enough resolution for QR codes and decodes ~4× faster than 1280×720
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
     });
     nativeStreamRef.current = stream;
 
@@ -73,22 +74,25 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
       formats: ["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "code_39", "qr_code", "data_matrix"],
     });
 
+    // No artificial delay — let BarcodeDetector run as fast as the device allows
     scanningRef.current = true;
-    (async () => {
+    const loop = async () => {
       while (scanningRef.current) {
         try {
           if (nativeVideoRef.current && nativeVideoRef.current.readyState >= 2) {
             const results = await detector.detect(nativeVideoRef.current);
             if (results.length > 0 && scanningRef.current) {
               setFlash(true);
-              setTimeout(() => setFlash(false), 300);
+              setTimeout(() => setFlash(false), 200);
               onScanRef.current(results[0].rawValue, captureFrame());
             }
           }
         } catch { /* per-frame errors are normal */ }
-        await new Promise<void>(r => setTimeout(r, 100));
+        // Yield to keep the UI responsive without adding a fixed sleep
+        await new Promise<void>(r => requestAnimationFrame(() => r()));
       }
-    })();
+    };
+    loop();
   }, [captureFrame]);
 
   // ── ZXing fallback with TRY_HARDER — better real-world 1D scanning ────────
@@ -119,7 +123,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
     hints.set(DecodeHintType.TRY_HARDER, true);
 
     const codeReader = new BrowserMultiFormatReader(hints, {
-      delayBetweenScanAttempts: 100,
+      delayBetweenScanAttempts: 0,  // scan every frame — resolution drop makes this safe
     });
 
     const video = document.createElement("video");
@@ -129,7 +133,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
     nativeVideoRef.current = video;
 
     const controls = await codeReader.decodeFromConstraints(
-      { video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } },
+      { video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } } },
       video,
       (result) => {
         if (!result) return;
@@ -224,37 +228,38 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
           <div
             id="barcode-scanner-container"
             ref={containerRef}
-            className="scanner-container w-full h-64 bg-slate-900"
+            className="scanner-container w-full h-72 bg-slate-900"
           />
           <div className="absolute inset-0 pointer-events-none">
+            {/* Full-area flash on scan */}
             <div
-              className={`absolute inset-0 transition-colors duration-150 ${
-                flash ? "bg-green-500/20" : "bg-transparent"
+              className={`absolute inset-0 transition-colors duration-100 rounded-2xl ${
+                flash ? "bg-green-500/30" : "bg-transparent"
               }`}
             />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="relative w-56 h-56">
-                <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-blue-400 rounded-tl-lg" />
-                <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-blue-400 rounded-tr-lg" />
-                <div className="absolute bottom-0 left-0 w-8 h-8 border-b-4 border-l-4 border-blue-400 rounded-bl-lg" />
-                <div className="absolute bottom-0 right-0 w-8 h-8 border-b-4 border-r-4 border-blue-400 rounded-br-lg" />
-                <div className="absolute inset-0 border border-blue-400/20 rounded-lg" />
-              </div>
-            </div>
+            {/* Thin border around the whole area — entire view is the scan zone */}
+            <div className="absolute inset-2 border-2 border-blue-400/50 rounded-xl" />
+            {/* Corner accents */}
+            <div className="absolute top-2 left-2 w-6 h-6 border-t-3 border-l-3 border-blue-400 rounded-tl-lg" />
+            <div className="absolute top-2 right-2 w-6 h-6 border-t-3 border-r-3 border-blue-400 rounded-tr-lg" />
+            <div className="absolute bottom-2 left-2 w-6 h-6 border-b-3 border-l-3 border-blue-400 rounded-bl-lg" />
+            <div className="absolute bottom-2 right-2 w-6 h-6 border-b-3 border-r-3 border-blue-400 rounded-br-lg" />
           </div>
-          {active && (
-            <div className="absolute bottom-3 left-0 right-0 flex justify-center">
+          {/* Status bar at the bottom */}
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-slate-900/90 to-transparent px-3 py-2 flex items-center justify-between">
+            <span className="text-xs text-slate-300">Point camera at any code — no need to center it</span>
+            {active && (
               <div className="flex gap-1">
                 {[0, 1, 2].map((i) => (
                   <div
                     key={i}
-                    className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-bounce"
+                    className="w-1 h-1 rounded-full bg-blue-400 animate-bounce"
                     style={{ animationDelay: `${i * 150}ms` }}
                   />
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
     </div>
