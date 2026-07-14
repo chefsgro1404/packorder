@@ -127,7 +127,7 @@ export default function ScaleProductDetailPage() {
 
   const displayTitle = variantTitle ? `${productTitle} - ${variantTitle}` : productTitle;
 
-  const handleSave = useCallback(async (overridePinned?: boolean) => {
+  const handleSave = useCallback(async (overridePinned?: boolean, overrideNoWeight?: boolean) => {
     setSaving(true);
     setError(null);
     try {
@@ -144,19 +144,20 @@ export default function ScaleProductDetailPage() {
           plu: plu.trim(),
           pricePerLb: parseFloat(pricePerLb) || 0,
           pinned: overridePinned ?? pinned,
-          noWeight,
+          noWeight: overrideNoWeight ?? noWeight,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Save failed');
       if (overridePinned !== undefined) setPinned(overridePinned);
+      if (overrideNoWeight !== undefined) setNoWeight(overrideNoWeight);
       setSavedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
       setSaving(false);
     }
-  }, [productId, variantId, productTitle, variantTitle, imageUrl, itemNumber, plu, pricePerLb, pinned]);
+  }, [productId, variantId, productTitle, variantTitle, imageUrl, itemNumber, plu, pricePerLb, pinned, noWeight]);
 
   const logPrintedLabel = useCallback(async (logItemNumber: string, logPlu: string, logTitle: string, weight: string | null | undefined, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
@@ -283,17 +284,17 @@ export default function ScaleProductDetailPage() {
             </p>
           </div>
 
-          {/* No-weight toggle */}
+          {/* No-weight toggle — auto-saves on change */}
           <button
-            onClick={() => setNoWeight((v) => !v)}
+            onClick={() => { const next = !noWeight; handleSave(undefined, next); }}
             className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
               noWeight
                 ? 'bg-amber-950/40 border-amber-800 text-amber-300'
                 : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}
           >
-            <span className={`w-8 h-4 rounded-full relative transition-colors ${noWeight ? 'bg-amber-500' : 'bg-slate-700'}`}>
-              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-transform ${noWeight ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${noWeight ? 'bg-amber-500' : 'bg-slate-700'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${noWeight ? 'translate-x-5' : 'translate-x-0'}`} />
             </span>
             No-weight product (seeds, cans, etc.)
           </button>
@@ -312,6 +313,7 @@ export default function ScaleProductDetailPage() {
                       <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{displayTitle || 'Product'}</p>
                       {!noWeight && <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {previewWeight || '—'}</p>}
                       <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                      <p className="text-[7px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>
                       <div className="flex justify-center w-full mt-0.5">
                         <QRCodeSVG
                           value={buildQrPayload({ plu: plu || null, productTitle: productTitle || 'Product', variantTitle, itemWeight: previewWeight || '0.00 lb' }, formatEst(new Date()), 'preview')}
