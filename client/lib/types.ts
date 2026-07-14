@@ -223,6 +223,7 @@ export interface ShipmentLineItem {
   name: string;
   quantityExpected: number;
   quantityShipped: number;
+  productId: string | null;
   variantId: string | null;
   sku: string | null;
   barcode: string | null;

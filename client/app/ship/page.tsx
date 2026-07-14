@@ -58,10 +58,15 @@ interface QrLabel {
   weightGrams: number | null;
 }
 
-// Products that should be silently skipped during packing (e.g. fee line items)
-const IGNORED_PRODUCT_TITLES = new Set(["packaging fee"]);
-const isIgnoredItem = (li: ShipmentLineItem) =>
-  IGNORED_PRODUCT_TITLES.has(li.productTitle.trim().toLowerCase());
+// Products that should be silently skipped during packing (e.g. fee line items).
+const IGNORED_PRODUCT_IDS = new Set(["10081278787875"]);
+const IGNORED_TITLE_FRAGMENTS = ["packaging and handling", "packaging fee"];
+const isIgnoredItem = (li: ShipmentLineItem) => {
+  const numeric = li.productId?.includes("/") ? li.productId.split("/").pop() : li.productId;
+  if (numeric && IGNORED_PRODUCT_IDS.has(numeric)) return true;
+  const title = li.productTitle.trim().toLowerCase();
+  return IGNORED_TITLE_FRAGMENTS.some(f => title.includes(f));
+};
 
 // Products with no barcode/sku cannot be scanned — require a manual confirm instead
 const isUnscannable = (li: ShipmentLineItem) =>
@@ -421,6 +426,7 @@ export default function ShipPage() {
         name: data.productTitle,
         quantityExpected: data.quantityExpected,
         quantityShipped: data.quantityShipped,
+        productId: null,
         variantId: null,
         sku: data.sku ?? null,
         barcode: data.barcode ?? barcodeValue,

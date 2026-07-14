@@ -591,6 +591,7 @@ public class ShipmentLineItemCache
     [JsonProperty("name")]                  public string Name { get; set; } = "";
     [JsonProperty("quantityExpected")]      public int QuantityExpected { get; set; }
     [JsonProperty("quantityShipped")]       public int QuantityShipped { get; set; }
+    [JsonProperty("productId")]             public string? ProductId { get; set; }
     [JsonProperty("variantId")]             public string? VariantId { get; set; }
     [JsonProperty("sku")]                   public string? Sku { get; set; }
     [JsonProperty("barcode")]               public string? Barcode { get; set; }
