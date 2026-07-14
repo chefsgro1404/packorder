@@ -566,6 +566,18 @@ public class ShopifyService
         id name displayFulfillmentStatus tags createdAt
         customer { displayName email }
         shippingAddress { name address1 city provinceCode zip country }
+        lineItems(first: 30) {
+          edges {
+            node {
+              id name sku quantity
+              originalTotalSet { shopMoney { amount } }
+              variant {
+                id barcode title
+                product { title featuredImage { url } }
+              }
+            }
+          }
+        }
         fulfillments {
           id status createdAt
           trackingInfo(first: 5) { number url company }
@@ -653,20 +665,107 @@ public class ShopifyService
 
     /// <summary>
     /// Looks up a single order by name or tag for the Ship Mode search bar. Returns whether the
-    /// order exists, its display fulfillment status, and any eligible (non-POS, tracked) fulfillment shipments.
+    /// order exists, its display fulfillment status, and any eligible fulfillment shipments.
+    /// For unfulfilled orders a synthetic entry is built from the order's own line items so
+    /// the packer can still select and pre-scan the order.
     /// </summary>
-    public async Task<(bool Found, string? OrderName, string? DisplayFulfillmentStatus, List<FulfillmentShipmentEntity> Entities)>
+    public async Task<(bool Found, string? OrderName, string? DisplayFulfillmentStatus, bool IsUnfulfilled, List<FulfillmentShipmentEntity> Entities)>
         GetShipOrderByRefAsync(string orderRef)
     {
         var data = await GraphQlAsync(GetShipOrderByRefQuery, new { query = $"(name:{orderRef} OR tag:{orderRef}) -source_name:pos" });
         var edges = data["orders"]?["edges"] as JArray;
         if (edges == null || edges.Count == 0)
-            return (false, null, null, new List<FulfillmentShipmentEntity>());
+            return (false, null, null, false, new List<FulfillmentShipmentEntity>());
 
         var node = edges[0]["node"]!;
+        var orderId = node["id"]!.ToString();
         var orderName = node["name"]?.ToString();
         var displayStatus = node["displayFulfillmentStatus"]?.ToString();
-        return (true, orderName, displayStatus, ParseFulfillmentEntities(edges));
+        var entities = ParseFulfillmentEntities(edges);
+
+        bool isUnfulfilled = false;
+        if (entities.Count == 0 && displayStatus == "UNFULFILLED")
+        {
+            var synthetic = BuildSyntheticFulfillmentEntity(node, orderId, orderName ?? "");
+            if (synthetic != null)
+            {
+                entities.Add(synthetic);
+                isUnfulfilled = true;
+            }
+        }
+
+        return (true, orderName, displayStatus, isUnfulfilled, entities);
+    }
+
+    private FulfillmentShipmentEntity? BuildSyntheticFulfillmentEntity(JToken orderNode, string orderId, string orderName)
+    {
+        var lineItemEdges = orderNode["lineItems"]?["edges"] as JArray ?? new JArray();
+        if (lineItemEdges.Count == 0) return null;
+
+        var tags = orderNode["tags"]?.ToObject<List<string>>() ?? new List<string>();
+        var customer = orderNode["customer"];
+        var customerName  = customer != null && customer.Type != JTokenType.Null ? customer["displayName"]?.ToString() : null;
+        var customerEmail = customer != null && customer.Type != JTokenType.Null ? customer["email"]?.ToString() : null;
+        var shippingAddrToken = orderNode["shippingAddress"];
+        var shippingAddressJson = shippingAddrToken != null && shippingAddrToken.Type != JTokenType.Null
+            ? shippingAddrToken.ToString(Formatting.None) : null;
+        var numericOrderId = orderId.Split('/').Last();
+
+        var lineItems = new List<ShipmentLineItemCache>();
+        foreach (var edge in lineItemEdges)
+        {
+            var li = edge["node"]!;
+            var variantToken = li["variant"];
+            var variant = variantToken != null && variantToken.Type != JTokenType.Null ? variantToken : null;
+            var productToken = variant?["product"];
+            var product = productToken != null && productToken.Type != JTokenType.Null ? productToken : null;
+            var featImgToken = product?["featuredImage"];
+            var imageUrl = featImgToken != null && featImgToken.Type != JTokenType.Null ? featImgToken["url"]?.ToString() : null;
+            var rawVarTitle = variant?["title"]?.ToString();
+            var variantTitle = rawVarTitle == "Default Title" ? null : rawVarTitle;
+            var productTitle = product?["title"]?.ToString() ?? li["name"]?.ToString() ?? "";
+            var price = li["originalTotalSet"]?["shopMoney"]?["amount"]?.ToString() ?? "0.00";
+
+            lineItems.Add(new ShipmentLineItemCache
+            {
+                FulfillmentLineItemId = li["id"]!.ToString(),
+                LineItemId   = li["id"]!.ToString(),
+                Name         = li["name"]?.ToString() ?? "",
+                QuantityExpected = li["quantity"]?.Value<int>() ?? 0,
+                QuantityShipped  = 0,
+                VariantId    = variant?["id"]?.ToString(),
+                Sku          = li["sku"]?.ToString(),
+                Barcode      = variant?["barcode"]?.ToString(),
+                ProductTitle = productTitle,
+                VariantTitle = variantTitle,
+                ImageUrl     = imageUrl,
+                Price        = price,
+            });
+        }
+
+        if (lineItems.Count == 0) return null;
+
+        var syntheticId = $"order-{numericOrderId}";
+        return new FulfillmentShipmentEntity
+        {
+            PartitionKey             = "ship",
+            RowKey                   = syntheticId,
+            OrderId                  = orderId,
+            OrderName                = orderName,
+            OrderTags                = JsonConvert.SerializeObject(tags),
+            OrderCreatedAt           = orderNode["createdAt"]?.ToString() ?? "",
+            CustomerName             = customerName,
+            CustomerEmail            = customerEmail,
+            ShippingAddressJson      = shippingAddressJson,
+            FulfillmentId            = syntheticId,
+            TrackingNumber           = "",
+            TrackingCarrier          = null,
+            TrackingUrl              = null,
+            ShopifyFulfillmentStatus = "UNFULFILLED",
+            Status                   = "pending",
+            LineItemsJson            = JsonConvert.SerializeObject(lineItems),
+            FulfillmentCreatedAt     = DateTimeOffset.UtcNow,
+        };
     }
 
     private List<FulfillmentShipmentEntity> ParseFulfillmentEntities(JArray edges)

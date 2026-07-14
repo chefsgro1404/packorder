@@ -246,16 +246,6 @@ export default function ShipPage() {
         return;
       }
 
-      if (data.warning) {
-        setBanner({
-          type: "warning",
-          message:
-            data.warning === "unfulfilled"
-              ? `${data.orderName} is still unfulfilled — sync may be incomplete`
-              : `${data.orderName} has no tracking info yet`,
-        });
-      }
-
       const incoming = (data.fulfillments ?? []) as ShipmentFulfillment[];
       setFulfillments((prev) => {
         const merged = [...prev];
@@ -266,7 +256,14 @@ export default function ShipPage() {
         }
         return merged;
       });
-      setBanner({ type: "success", message: `Found ${data.orderName}` });
+      setBanner({
+        type: data.warning ? "warning" : "success",
+        message: data.warning === "unfulfilled"
+          ? `${data.orderName} — not yet fulfilled in Shopify, showing expected items`
+          : data.warning
+          ? `${data.orderName} — no tracking info yet, order added`
+          : `Found ${data.orderName}`,
+      });
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Lookup failed" });
     } finally {

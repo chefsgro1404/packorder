@@ -76,28 +76,31 @@ public class ShipOrdersFunction
 
         try
         {
-            var (found, orderName, displayStatus, entities) = await _shopify.GetShipOrderByRefAsync(orderRef);
+            var (found, orderName, displayStatus, isUnfulfilled, entities) = await _shopify.GetShipOrderByRefAsync(orderRef);
             if (!found)
                 return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
 
-            string? warning = null;
-            if (entities.Count == 0 && displayStatus == "UNFULFILLED")
-                warning = "unfulfilled";
-
+            // Persist to storage so scan progress is tracked (fire-and-forget if it fails — we return the
+            // Shopify data directly below, so a storage hiccup never blocks a manual search result).
             if (entities.Count > 0)
-                await _tableStorage.SyncFulfillmentShipmentsAsync(entities);
+            {
+                try { await _tableStorage.SyncFulfillmentShipmentsAsync(entities); }
+                catch (Exception ex) { _logger.LogWarning(ex, "Ship order lookup: storage sync failed for {OrderName}, returning live data", orderName); }
+            }
 
+            // Build the response from storage when available (preserves scan progress), falling back
+            // to the freshly-fetched Shopify entity so a manual search always returns something.
             var fulfillments = new List<object>();
             foreach (var entity in entities)
             {
                 var stored = await _tableStorage.GetFulfillmentShipmentAsync(entity.RowKey);
-                if (stored != null) fulfillments.Add(SerializeFulfillment(stored));
+                fulfillments.Add(SerializeFulfillment(stored ?? entity));
             }
 
-            if (fulfillments.Count == 0 && warning == null)
-                warning = "no_tracking";
+            // Warning is informational only — the order is always selectable from a manual search.
+            string? warning = isUnfulfilled ? "unfulfilled" : fulfillments.Count == 0 ? "no_tracking" : null;
 
-            return await ResponseHelper.WriteSuccess(req, new { found = true, eligible = warning == null, warning, orderName, fulfillments }, _allowedOrigins);
+            return await ResponseHelper.WriteSuccess(req, new { found = true, warning, orderName, fulfillments }, _allowedOrigins);
         }
         catch (Exception ex)
         {
