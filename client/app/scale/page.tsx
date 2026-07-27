@@ -30,6 +30,7 @@ import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { UnmappedItemModal } from '@/components/UnmappedItemModal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
+import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel } from '@/lib/types';
@@ -200,7 +201,7 @@ function LabelPreview({
   const sizeLabel = LABEL_SIZE_OPTIONS.find(o => o.key === labelSizeKey)?.label ?? labelSizeKey;
 
   const previewQrPayload = item
-    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, variantTitle: item.variantTitle, itemWeight: item.itemWeight }, formatEst(new Date()), 'preview')
+    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, variantTitle: item.variantTitle, itemWeight: item.itemWeight }, 'preview')
     : '';
 
   const handleCopy = async () => {
@@ -251,7 +252,7 @@ function LabelPreview({
                     <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{item.variantTitle}</p>
                   )}
                   <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
-                  <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                  {/* <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
                   <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
                 </div>
                 <div className="flex-shrink-0 px-1.5">
@@ -266,7 +267,7 @@ function LabelPreview({
                   <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{item.variantTitle}</p>
                 )}
                 <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
-                <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                {/* <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
                 <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
                 <div className="flex justify-center w-full mt-0.5">
                   <QRCodeSVG value={previewQrPayload} size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
@@ -512,7 +513,7 @@ export default function ScalePage() {
     if (typeof window === 'undefined') return '3x2';
     return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
   });
-  const { printPayload, printedAt, triggerPrint, printVerbatim, reset: resetPrinted } = usePrintLabel(labelSizeKey);
+  const { printPayload, printedAt, triggerPrint, printVerbatim, buildReprintSn, reset: resetPrinted } = usePrintLabel(labelSizeKey);
 
   const handleSizeChange = (key: LabelSizeKey) => {
     setLabelSizeKey(key);
@@ -605,13 +606,20 @@ export default function ScalePage() {
 
   const printItem = useCallback(async (item: CurrentItem) => {
     const sn = await fetchNextSn(item.variantId, item.found ? item.plu : null, item.productTitle, item.variantTitle);
-    const { printedAtEst, qrPayload } = triggerPrint({
+    const plainPayload = buildQrPayload({
       plu: item.found ? item.plu : null,
       productTitle: item.productTitle,
       variantTitle: item.variantTitle,
       itemWeight: item.itemWeight,
     }, sn);
-    await logPrintedLabel(item, qrPayload, printedAtEst, sn);
+    const encryptedPayload = await encryptQrPayload(plainPayload);
+    const printedAtEst = triggerPrint({
+      plu: item.found ? item.plu : null,
+      productTitle: item.productTitle,
+      variantTitle: item.variantTitle,
+      itemWeight: item.itemWeight,
+    }, sn, encryptedPayload).printedAtEst;
+    await logPrintedLabel(item, encryptedPayload, printedAtEst, sn);
   }, [triggerPrint, logPrintedLabel]);
 
   const handleReading = useCallback(
@@ -712,9 +720,22 @@ export default function ScalePage() {
 
   const handleReprint = async (record: PrintedLabel) => {
     console.log('[scale] reprinting:', record.productTitle, record.printedAtEst);
+    const baseSn = record.sn ?? generateSn();
+    const reprintSn = buildReprintSn(baseSn);
     const printedAtEst = formatEst(new Date());
-    const sn = record.sn ?? generateSn();
-    printVerbatim({ productTitle: record.productTitle, qrPayload: record.qrPayload, itemWeight: record.itemWeight, printedAtEst, sn });
+
+    // For encrypted labels: decrypt → swap SN in plaintext → re-encrypt with new SN.
+    // For old unencrypted labels: plain string replace (backward compat).
+    let newQrPayload: string;
+    if (isEncryptedQr(record.qrPayload)) {
+      const plaintext = await decryptQrPayload(record.qrPayload);
+      const updatedPlaintext = plaintext.replace(`SN:${baseSn}`, `SN:${reprintSn}`);
+      newQrPayload = await encryptQrPayload(updatedPlaintext);
+    } else {
+      newQrPayload = record.qrPayload.replace(`SN:${baseSn}`, `SN:${reprintSn}`);
+    }
+
+    printVerbatim({ productTitle: record.productTitle, variantTitle: null, qrPayload: newQrPayload, itemWeight: record.itemWeight, printedAtEst, sn: reprintSn });
     await logPrintedLabel(
       {
         itemNumber: record.itemNumber,
@@ -724,9 +745,9 @@ export default function ScalePage() {
         productTitle: record.productTitle,
         found: true,
       },
-      record.qrPayload,
+      newQrPayload,
       printedAtEst,
-      sn
+      reprintSn
     );
   };
 

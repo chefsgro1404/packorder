@@ -40,6 +40,7 @@ var host = new HostBuilder()
         services.AddSingleton<AuthService>();
         services.AddSingleton<ShopifyService>();
         services.AddSingleton<AuthHelper>();
+        services.AddSingleton<QrEncryptionService>();
         services.AddHttpClient();
 
         var allowedOrigins = (config["AllowedOrigins"] ?? "http://localhost:3000")

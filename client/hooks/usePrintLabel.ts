@@ -43,11 +43,18 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
     return () => cancelAnimationFrame(id);
   }, [printRequestId]);
 
+  // Callers pass a pre-encrypted qrPayload; this hook just renders it.
+  // If prebuiltQrPayload is omitted the plaintext payload is built here as a fallback
+  // (used only when the caller cannot do async encryption, e.g. preview).
   const triggerPrint = useCallback(
-    (item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight?: string | null }, sn?: string) => {
+    (
+      item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight?: string | null },
+      sn?: string,
+      prebuiltQrPayload?: string
+    ) => {
       const printedAtEst = formatEst(new Date());
       const finalSn = sn ?? generateSn();
-      const qrPayload = buildQrPayload(item, printedAtEst, finalSn);
+      const qrPayload = prebuiltQrPayload ?? buildQrPayload(item, finalSn);
       const payload: PrintPayload = { productTitle: item.productTitle, variantTitle: item.variantTitle, qrPayload, itemWeight: item.itemWeight, printedAtEst, sn: finalSn };
       setPrintPayload(payload);
       setPrintRequestId((n) => n + 1);
@@ -57,19 +64,25 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
     []
   );
 
-  const printVerbatim = useCallback((payload: PrintPayload) => {
-    // Strip any prior reprint suffix to get the base SN, then increment the reprint counter.
-    const baseSn = payload.sn.replace(/-r\d+$/, '');
+  // Computes the next reprint SN (incrementing the session counter) WITHOUT triggering
+  // a print. Callers use this to know the SN before encrypting the new payload, then
+  // pass the result to printVerbatim.
+  const buildReprintSn = useCallback((sn: string) => {
+    const baseSn = sn.replace(/-r\d+$/, '');
     const n = (reprintCounts.current.get(baseSn) ?? 0) + 1;
     reprintCounts.current.set(baseSn, n);
-    const reprintSn = `${baseSn}-r${String(n).padStart(3, '0')}`;
-    const newQrPayload = payload.qrPayload.replace(`SN:${payload.sn}`, `SN:${reprintSn}`);
-    setPrintPayload({ ...payload, sn: reprintSn, qrPayload: newQrPayload });
+    return `${baseSn}-r${String(n).padStart(3, '0')}`;
+  }, []);
+
+  // Renders a fully-assembled payload directly. Callers are responsible for building
+  // the reprint SN (via buildReprintSn) and re-encrypting the QR payload before calling.
+  const printVerbatim = useCallback((payload: PrintPayload) => {
+    setPrintPayload(payload);
     setPrintRequestId((n) => n + 1);
     setPrintedAt(new Date());
   }, []);
 
   const reset = useCallback(() => setPrintedAt(null), []);
 
-  return { printPayload, printedAt, triggerPrint, printVerbatim, reset };
+  return { printPayload, printedAt, triggerPrint, printVerbatim, buildReprintSn, reset };
 }

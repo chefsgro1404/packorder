@@ -6,6 +6,7 @@ import { BarcodeScanner } from "@/components/BarcodeScanner";
 import { StatusBanner } from "@/components/StatusBanner";
 import { useScanner } from "@/hooks/useScanner";
 import { ShipmentFulfillment, ShipmentLineItem, ShipmentScanRecord } from "@/lib/types";
+import { isEncryptedQr, decryptQrPayload } from "@/lib/qrEncryption";
 import {
   ArrowLeft,
   RefreshCw,
@@ -72,30 +73,56 @@ const isIgnoredItem = (li: ShipmentLineItem) => {
 const isUnscannable = (li: ShipmentLineItem) =>
   !li.sku?.trim() && !li.barcode?.trim() && !li.isExtra;
 
-// ─── Scale & Print QR payload ────────────────────────────────────────────────
-// With weight (5 parts):    "<PLU> | <Title> | <Weight> | <Printed At> | SN:<sn>"
-// No-weight products (4 parts): "<PLU> | <Title> | <Printed At> | SN:<sn>"
+// ─── Scale & Print QR payload ─────────────────────────────────────────────────
+// Handles all label generations (old and new) after the raw value has been
+// decrypted (if encrypted). Three formats are supported:
+//
+//   OLD (unencrypted, still in the wild):
+//     5-part: PLU | Title | Weight | Printed At | SN:xxx   (with weight)
+//     4-part: PLU | Title | Printed At | SN:xxx            (no weight, 3rd is a date string)
+//
+//   NEW (encrypted then decrypted, packing date removed):
+//     4-part: PLU | Title | Weight | SN:xxx                (with weight)
+//     3-part: PLU | Title | SN:xxx                         (no weight)
+//
+// 4-part ambiguity (old no-weight vs new with-weight) is resolved by checking
+// whether the 3rd field matches a weight pattern.
 function parseQrLabel(value: string): QrLabel | null {
   const parts = value.split("|").map((p) => p.trim());
-  if (parts.length !== 5 && parts.length !== 4) return null;
+  if (parts.length < 3 || parts.length > 5) return null;
 
-  let plu: string, productTitle: string, itemWeight: string, printedAt: string, snPart: string;
-  if (parts.length === 5) {
-    [plu, productTitle, itemWeight, printedAt, snPart] = parts;
-  } else {
-    [plu, productTitle, printedAt, snPart] = parts;
-    itemWeight = "";
-  }
-
+  const snPart = parts[parts.length - 1];
   const snMatch = snPart.match(/^SN:(.+)$/i);
-  if (!snMatch || !plu || !productTitle) return null;
+  if (!snMatch) return null;
+
+  const plu = parts[0];
+  const productTitle = parts[1];
+  if (!plu || !productTitle) return null;
+
+  let itemWeight = "";
+  let printedAt = "";
+
+  if (parts.length === 5) {
+    // Old with-weight: PLU | Title | Weight | Date | SN
+    itemWeight = parts[2];
+    printedAt  = parts[3];
+  } else if (parts.length === 4) {
+    // Ambiguous: old no-weight (3rd = date) vs new with-weight (3rd = weight)
+    const third = parts[2];
+    if (/\d+\.?\d*\s*(kg|g|lb)\b/i.test(third)) {
+      itemWeight = third; // new format — weight, no date
+    } else {
+      printedAt = third;  // old format — date, no weight
+    }
+  }
+  // 3-part new no-weight: PLU | Title | SN — nothing extra to assign
 
   let weightGrams: number | null = null;
   const weightMatch = itemWeight.match(/(\d+\.?\d*)\s*(kg|g|lb)\b/i);
   if (weightMatch) {
-    const value = parseFloat(weightMatch[1]);
+    const val  = parseFloat(weightMatch[1]);
     const unit = weightMatch[2].toLowerCase();
-    weightGrams = unit === "kg" ? value * 1000 : unit === "lb" ? value * 453.592 : value;
+    weightGrams = unit === "kg" ? val * 1000 : unit === "lb" ? val * 453.592 : val;
   }
 
   return { plu, productTitle, itemWeight, printedAt, sn: snMatch[1], weightGrams };
@@ -450,11 +477,23 @@ export default function ShipPage() {
   }, [selectedFulfillment, staffName, playBeep, applyLineItemUpdate]);
 
   // ─── Barcode (or printed QR label) detected ────────────────────────────────────
-  const handleBarcodeDetected = useCallback((value: string) => {
+  const handleBarcodeDetected = useCallback(async (value: string) => {
     if (!selectedFulfillment || scanStep !== "idle") return;
     setBanner(null);
 
-    const qr = parseQrLabel(value);
+    // Encrypted QR labels are decrypted server-side before parsing.
+    // Old unencrypted labels pass through unchanged.
+    let rawValue = value;
+    if (isEncryptedQr(value)) {
+      try {
+        rawValue = await decryptQrPayload(value);
+      } catch {
+        setBanner({ type: "error", message: "QR code could not be decrypted — label may be from a different environment" });
+        return;
+      }
+    }
+
+    const qr = parseQrLabel(rawValue);
     const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 
     const item = selectedFulfillment.lineItems.find((li) => {

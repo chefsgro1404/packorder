@@ -22,6 +22,7 @@ import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal } from '@/components/PrintLabelPortal';
 import { buildQrPayload } from '@/lib/scaleLabel';
+import { encryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { ScaleProduct } from '@/lib/types';
@@ -187,14 +188,21 @@ export default function ScaleProductDetailPage() {
       const snVariant = override ? null : variantTitle;
       const snPlu = override?.plu ?? plu;
       const sn = await fetchNextSn(variantId || null, snPlu || null, snTitle, snVariant);
-      const { printedAtEst, qrPayload } = triggerPrint({
+      const plainPayload = buildQrPayload({
         plu: snPlu || null,
         productTitle: snTitle,
         variantTitle: snVariant,
         itemWeight: weight || null,
       }, sn);
+      const encryptedPayload = await encryptQrPayload(plainPayload);
+      const { printedAtEst } = triggerPrint({
+        plu: snPlu || null,
+        productTitle: snTitle,
+        variantTitle: snVariant,
+        itemWeight: weight || null,
+      }, sn, encryptedPayload);
       setPrintCount((n) => n + 1);
-      await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), snPlu, override?.productTitle ?? displayTitle, weight, qrPayload, printedAtEst, sn);
+      await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), snPlu, override?.productTitle ?? displayTitle, weight, encryptedPayload, printedAtEst, sn);
     },
     [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel, variantId]
   );
@@ -312,11 +320,11 @@ export default function ScaleProductDetailPage() {
                     <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
                       <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{displayTitle || 'Product'}</p>
                       {!noWeight && <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {previewWeight || '—'}</p>}
-                      <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p>
+                      {/* <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
                       <p className="text-[7px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>
                       <div className="flex justify-center w-full mt-0.5">
                         <QRCodeSVG
-                          value={buildQrPayload({ plu: plu || null, productTitle: productTitle || 'Product', variantTitle, itemWeight: previewWeight || '0.00 lb' }, formatEst(new Date()), 'preview')}
+                          value={buildQrPayload({ plu: plu || null, productTitle: productTitle || 'Product', variantTitle, itemWeight: previewWeight || '0.00 lb' }, 'preview')}
                           size={48}
                           level="M"
                           bgColor="#ffffff"
