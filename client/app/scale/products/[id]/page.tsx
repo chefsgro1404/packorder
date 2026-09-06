@@ -194,7 +194,13 @@ export default function ScaleProductDetailPage() {
         variantTitle: snVariant,
         itemWeight: weight || null,
       }, sn);
-      const encryptedPayload = await encryptQrPayload(plainPayload);
+      let encryptedPayload: string;
+      try {
+        encryptedPayload = await encryptQrPayload(plainPayload);
+      } catch {
+        setError('Encryption failed — label not printed. Check your connection and try again.');
+        return;
+      }
       const { printedAtEst } = triggerPrint({
         plu: snPlu || null,
         productTitle: snTitle,
@@ -324,7 +330,7 @@ export default function ScaleProductDetailPage() {
                       <p className="text-[7px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>
                       <div className="flex justify-center w-full mt-0.5">
                         <QRCodeSVG
-                          value={buildQrPayload({ plu: plu || null, productTitle: productTitle || 'Product', variantTitle, itemWeight: previewWeight || '0.00 lb' }, 'preview')}
+                          value="PREVIEW"
                           size={48}
                           level="M"
                           bgColor="#ffffff"

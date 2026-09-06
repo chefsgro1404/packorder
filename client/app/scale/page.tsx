@@ -256,7 +256,7 @@ function LabelPreview({
                   <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
                 </div>
                 <div className="flex-shrink-0 px-1.5">
-                  <QRCodeSVG value={previewQrPayload} size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+                  <QRCodeSVG value="PREVIEW" size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
                 </div>
               </>
             ) : (
@@ -270,7 +270,7 @@ function LabelPreview({
                 {/* <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
                 <p className="text-slate-500 leading-tight font-mono" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold not-italic">SN:</span> preview</p>
                 <div className="flex justify-center w-full mt-0.5">
-                  <QRCodeSVG value={previewQrPayload} size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+                  <QRCodeSVG value="PREVIEW" size={Math.round(cfg.qrIn * 60)} level="M" bgColor="#ffffff" fgColor="#0f172a" />
                 </div>
               </div>
             )}
@@ -296,7 +296,7 @@ function LabelPreview({
       {/* QR payload row */}
       <div className="flex items-center justify-between gap-2 bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">QR Payload (preview)</p>
+          <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">QR Payload — unencrypted format (printed QR will be encrypted)</p>
           <p className="text-xs font-mono text-slate-300 truncate mt-0.5">{previewQrPayload}</p>
         </div>
         <button
@@ -509,6 +509,7 @@ export default function ScalePage() {
   const [lookupLoading, setLookupLoading] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
   const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
+  const [printError, setPrintError] = useState<string | null>(null);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
     if (typeof window === 'undefined') return '3x2';
     return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
@@ -605,6 +606,7 @@ export default function ScalePage() {
   }, [fetchHistory]);
 
   const printItem = useCallback(async (item: CurrentItem) => {
+    setPrintError(null);
     const sn = await fetchNextSn(item.variantId, item.found ? item.plu : null, item.productTitle, item.variantTitle);
     const plainPayload = buildQrPayload({
       plu: item.found ? item.plu : null,
@@ -612,7 +614,13 @@ export default function ScalePage() {
       variantTitle: item.variantTitle,
       itemWeight: item.itemWeight,
     }, sn);
-    const encryptedPayload = await encryptQrPayload(plainPayload);
+    let encryptedPayload: string;
+    try {
+      encryptedPayload = await encryptQrPayload(plainPayload);
+    } catch {
+      setPrintError('Encryption failed — label not printed. Check your connection and try again.');
+      return;
+    }
     const printedAtEst = triggerPrint({
       plu: item.found ? item.plu : null,
       productTitle: item.productTitle,
@@ -726,11 +734,17 @@ export default function ScalePage() {
 
     // For encrypted labels: decrypt → swap SN in plaintext → re-encrypt with new SN.
     // For old unencrypted labels: plain string replace (backward compat).
+    setPrintError(null);
     let newQrPayload: string;
     if (isEncryptedQr(record.qrPayload)) {
-      const plaintext = await decryptQrPayload(record.qrPayload);
-      const updatedPlaintext = plaintext.replace(`SN:${baseSn}`, `SN:${reprintSn}`);
-      newQrPayload = await encryptQrPayload(updatedPlaintext);
+      try {
+        const plaintext = await decryptQrPayload(record.qrPayload);
+        const updatedPlaintext = plaintext.replace(`SN:${baseSn}`, `SN:${reprintSn}`);
+        newQrPayload = await encryptQrPayload(updatedPlaintext);
+      } catch {
+        setPrintError('Encryption failed during reprint — label not printed. Try again.');
+        return;
+      }
     } else {
       newQrPayload = record.qrPayload.replace(`SN:${baseSn}`, `SN:${reprintSn}`);
     }
@@ -849,6 +863,12 @@ export default function ScalePage() {
                 <div className="border-t border-slate-800 my-4" />
 
                 {/* Feedback banners */}
+                {printError && (
+                  <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5 mb-3">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <p className="text-sm text-rose-300 font-medium">{printError}</p>
+                  </div>
+                )}
                 {printedAt && (
                   <div className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-900 rounded-xl px-3 py-2.5 mb-3">
                     <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
