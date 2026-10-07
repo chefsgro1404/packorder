@@ -21,6 +21,7 @@ public class TableStorageService
     private readonly TableClient _scannedLabels;
     private readonly TableClient _barcodeAudits;
     private readonly TableClient _snCounters;
+    private readonly TableClient _textMappings;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -39,6 +40,7 @@ public class TableStorageService
         _scannedLabels        = tableServiceClient.GetTableClient("scannedlabels");
         _barcodeAudits        = tableServiceClient.GetTableClient("barcodeaudits");
         _snCounters           = tableServiceClient.GetTableClient("sncounters");
+        _textMappings         = tableServiceClient.GetTableClient("textmappings");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -56,6 +58,7 @@ public class TableStorageService
         await _scannedLabels.CreateIfNotExistsAsync();
         await _barcodeAudits.CreateIfNotExistsAsync();
         await _snCounters.CreateIfNotExistsAsync();
+        await _textMappings.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1011,5 +1014,63 @@ public class TableStorageService
         // All retries exhausted (extremely unlikely) — fall back to timestamp-based unique id
         _logger.LogWarning("SN counter exhausted retries for key {RowKey}", rowKey);
         return (int)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() % 900000) + 100001;
+    }
+
+    // ─── Auto-sync config ────────────────────────────────────────────────────
+
+    public async Task<AutoSyncConfigEntity?> GetAutoSyncConfigAsync()
+    {
+        try
+        {
+            var response = await _syncSettings.GetEntityAsync<AutoSyncConfigEntity>("settings", "autosync");
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task SetAutoSyncConfigAsync(bool enabled, string vendors, string tags)
+    {
+        var entity = new AutoSyncConfigEntity
+        {
+            PartitionKey    = "settings",
+            RowKey          = "autosync",
+            AutoSyncEnabled = enabled,
+            Vendors         = vendors,
+            Tags            = tags,
+        };
+        await _syncSettings.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    // ─── Text mappings ───────────────────────────────────────────────────────
+
+    public async Task<List<TextMappingEntity>> ListTextMappingsAsync()
+    {
+        var results = new List<TextMappingEntity>();
+        await foreach (var entity in _textMappings.QueryAsync<TextMappingEntity>(
+            filter: "PartitionKey eq 'mapping'"))
+            results.Add(entity);
+        return results.OrderBy(e => e.Phrase).ToList();
+    }
+
+    public async Task UpsertTextMappingAsync(TextMappingEntity entity)
+    {
+        await _textMappings.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    public async Task<bool> DeleteTextMappingAsync(string phrase)
+    {
+        var rowKey = TextMappingEntity.NormalizeKey(phrase);
+        try
+        {
+            await _textMappings.DeleteEntityAsync("mapping", rowKey);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return false;
+        }
     }
 }

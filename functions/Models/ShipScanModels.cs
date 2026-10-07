@@ -783,3 +783,54 @@ public class NextSnRequest
     [JsonProperty("plu")]       public string? Plu { get; set; }
     [JsonProperty("prefix")]    public string Prefix { get; set; } = "";
 }
+
+// ─── Auto-sync config (syncsettings table, RowKey = "autosync") ───────────────
+
+public class AutoSyncConfigEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "settings";
+    public string RowKey { get; set; } = "autosync";
+    public bool AutoSyncEnabled { get; set; }
+    public string Vendors { get; set; } = "";
+    public string Tags { get; set; } = "";
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class AutoSyncConfigRequest
+{
+    [JsonProperty("autoSyncEnabled")] public bool AutoSyncEnabled { get; set; }
+    [JsonProperty("vendors")]         public List<string>? Vendors { get; set; }
+    [JsonProperty("tags")]            public List<string>? Tags { get; set; }
+}
+
+// ─── Variant title text mappings (textmappings table) ────────────────────────
+
+public class TextMappingEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "mapping";
+    public string RowKey { get; set; } = "";      // normalized phrase (lowercase, spaces→_, stripped)
+    public string Phrase { get; set; } = "";       // original phrase as entered
+    public string Abbreviation { get; set; } = "";
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+
+    public static string NormalizeKey(string phrase)
+    {
+        var raw = phrase.Trim().ToLowerInvariant()
+            .Replace(' ', '_').Replace(',', '_').Replace('.', '_')
+            .Replace('/', '_').Replace('\\', '_').Replace('#', '_').Replace('?', '_');
+        return string.Concat(raw.Where(c => char.IsLetterOrDigit(c) || c == '_'));
+    }
+}
+
+public class TextMappingRequest
+{
+    [JsonProperty("phrase")]       public string Phrase { get; set; } = "";
+    [JsonProperty("abbreviation")] public string Abbreviation { get; set; } = "";
+}
+
+public class TextMappingDeleteRequest
+{
+    [JsonProperty("phrase")] public string Phrase { get; set; } = "";
+}

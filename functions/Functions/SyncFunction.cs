@@ -27,6 +27,52 @@ public class SyncFunction
         _allowedOrigins = allowedOrigins;
     }
 
+    [Function("SyncSettings")]
+    public async Task<HttpResponseData> Settings(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "put", "options", Route = "sync/settings")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                var autoConfig = await _tableStorage.GetAutoSyncConfigAsync();
+                var lastSync   = await _tableStorage.GetLastSyncAsync();
+                return await ResponseHelper.WriteSuccess(req, new
+                {
+                    autoSyncEnabled  = autoConfig?.AutoSyncEnabled ?? false,
+                    autoSyncVendors  = autoConfig?.Vendors ?? "",
+                    autoSyncTags     = autoConfig?.Tags ?? "",
+                    lastSyncedAt     = lastSync?.LastSyncedAt.ToString("o"),
+                    lastSyncVendors  = lastSync?.Vendors ?? "",
+                    lastSyncTags     = lastSync?.Tags ?? "",
+                }, _allowedOrigins);
+            }
+
+            // PUT — save auto-sync config
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<AutoSyncConfigRequest>(body) ?? new AutoSyncConfigRequest();
+            var vendors = string.Join(",", (request.Vendors ?? new()).Where(v => !string.IsNullOrWhiteSpace(v)));
+            var tags    = string.Join(",", (request.Tags    ?? new()).Where(t => !string.IsNullOrWhiteSpace(t)));
+            await _tableStorage.SetAutoSyncConfigAsync(request.AutoSyncEnabled, vendors, tags);
+            _logger.LogInformation("Auto-sync config saved: enabled={Enabled}, vendors={Vendors}, tags={Tags}",
+                request.AutoSyncEnabled, vendors, tags);
+            return await ResponseHelper.WriteSuccess(req, new { ok = true }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sync settings operation failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     [Function("SyncProducts")]
     public async Task<HttpResponseData> Sync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "sync")]
