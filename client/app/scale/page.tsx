@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
@@ -23,6 +23,7 @@ import {
   History,
   ListFilter,
   Bug,
+  Settings,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -33,7 +34,8 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel } from '@/lib/types';
+import { PrintedLabel, TextMapping } from '@/lib/types';
+import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
 
 interface CurrentItem {
@@ -191,17 +193,22 @@ function LabelPreview({
   item,
   lookupLoading,
   labelSizeKey,
+  textMappings,
 }: {
   item: CurrentItem | null;
   lookupLoading: boolean;
   labelSizeKey: LabelSizeKey;
+  textMappings: TextMapping[];
 }) {
   const [copied, setCopied] = useState(false);
   const cfg = getLabelConfig(labelSizeKey);
   const sizeLabel = LABEL_SIZE_OPTIONS.find(o => o.key === labelSizeKey)?.label ?? labelSizeKey;
 
+  const mappedProductTitle = item ? applyMappings(item.productTitle, textMappings) : '';
+  const mappedVariantTitle = item?.variantTitle ? applyMappings(item.variantTitle, textMappings) : item?.variantTitle;
+
   const previewQrPayload = item
-    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: item.productTitle, variantTitle: item.variantTitle, itemWeight: item.itemWeight }, 'preview')
+    ? buildQrPayload({ plu: item.found ? item.plu : null, productTitle: mappedProductTitle, variantTitle: mappedVariantTitle, itemWeight: item.itemWeight }, 'preview')
     : '';
 
   const handleCopy = async () => {
@@ -247,9 +254,9 @@ function LabelPreview({
               /* Row: text left, QR right */
               <>
                 <div className="flex-1 min-w-0 flex flex-col gap-0.5 px-2 py-1.5">
-                  <p className="font-bold text-slate-900 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
-                  {item.variantTitle && item.variantTitle !== 'Default Title' && (
-                    <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{item.variantTitle}</p>
+                  <p className="font-bold text-slate-900 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{mappedProductTitle}</p>
+                  {mappedVariantTitle && mappedVariantTitle !== 'Default Title' && (
+                    <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{mappedVariantTitle}</p>
                   )}
                   <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
                   {/* <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
@@ -262,9 +269,9 @@ function LabelPreview({
             ) : (
               /* Col-center: text top, QR bottom */
               <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
-                <p className="font-bold text-slate-900 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{item.productTitle}</p>
-                {item.variantTitle && item.variantTitle !== 'Default Title' && (
-                  <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{item.variantTitle}</p>
+                <p className="font-bold text-slate-900 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.titlePt * 0.72}px` }}>{mappedProductTitle}</p>
+                {mappedVariantTitle && mappedVariantTitle !== 'Default Title' && (
+                  <p className="font-semibold text-slate-600 leading-tight line-clamp-2 break-words w-full" style={{ fontSize: `${cfg.linePt * 0.72}px` }}>{mappedVariantTitle}</p>
                 )}
                 <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Weight:</span> {item.itemWeight}</p>
                 {/* <p className="text-slate-700 leading-tight" style={{ fontSize: `${cfg.linePt * 0.72}px` }}><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
@@ -510,6 +517,8 @@ export default function ScalePage() {
   const [debugOpen, setDebugOpen] = useState(false);
   const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
+  const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
+  const isPrinting = useRef(false);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
     if (typeof window === 'undefined') return '3x2';
     return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
@@ -606,29 +615,37 @@ export default function ScalePage() {
   }, [fetchHistory]);
 
   const printItem = useCallback(async (item: CurrentItem) => {
+    if (isPrinting.current) return;
+    isPrinting.current = true;
     setPrintError(null);
-    const sn = await fetchNextSn(item.variantId, item.found ? item.plu : null, item.productTitle, item.variantTitle);
-    const plainPayload = buildQrPayload({
-      plu: item.found ? item.plu : null,
-      productTitle: item.productTitle,
-      variantTitle: item.variantTitle,
-      itemWeight: item.itemWeight,
-    }, sn);
-    let encryptedPayload: string;
     try {
-      encryptedPayload = await encryptQrPayload(plainPayload);
-    } catch {
-      setPrintError('Encryption failed — label not printed. Check your connection and try again.');
-      return;
+      const mappedTitle   = applyMappings(item.productTitle, textMappings);
+      const mappedVariant = item.variantTitle ? applyMappings(item.variantTitle, textMappings) : item.variantTitle;
+      const sn = await fetchNextSn(item.variantId, item.found ? item.plu : null, mappedTitle, mappedVariant);
+      const plainPayload = buildQrPayload({
+        plu: item.found ? item.plu : null,
+        productTitle: mappedTitle,
+        variantTitle: mappedVariant,
+        itemWeight: item.itemWeight,
+      }, sn);
+      let encryptedPayload: string;
+      try {
+        encryptedPayload = await encryptQrPayload(plainPayload);
+      } catch {
+        setPrintError('Encryption failed — label not printed. Check your connection and try again.');
+        return;
+      }
+      const printedAtEst = triggerPrint({
+        plu: item.found ? item.plu : null,
+        productTitle: mappedTitle,
+        variantTitle: mappedVariant,
+        itemWeight: item.itemWeight,
+      }, sn, encryptedPayload).printedAtEst;
+      await logPrintedLabel(item, encryptedPayload, printedAtEst, sn);
+    } finally {
+      isPrinting.current = false;
     }
-    const printedAtEst = triggerPrint({
-      plu: item.found ? item.plu : null,
-      productTitle: item.productTitle,
-      variantTitle: item.variantTitle,
-      itemWeight: item.itemWeight,
-    }, sn, encryptedPayload).printedAtEst;
-    await logPrintedLabel(item, encryptedPayload, printedAtEst, sn);
-  }, [triggerPrint, logPrintedLabel]);
+  }, [triggerPrint, logPrintedLabel, textMappings]);
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
@@ -715,6 +732,10 @@ export default function ScalePage() {
   useEffect(() => {
     scale.autoConnect();
     fetchHistory();
+    fetch('/api/scale/text-mappings')
+      .then(r => r.json())
+      .then(d => setTextMappings(d.mappings ?? []))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -789,12 +810,19 @@ export default function ScalePage() {
           <h1 className="text-base font-bold text-slate-100 leading-tight">Scale &amp; Print</h1>
           <p className="text-xs text-slate-500 leading-tight">Scale-to-printer label generation</p>
         </div>
-        {/* Live status chips */}
+        {/* Live status chips + settings */}
         <div className="flex items-center gap-1.5">
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
             <StatusDot status={scaleStatus} />
             <span className="text-xs text-slate-400 font-medium">Scale</span>
           </div>
+          <button
+            onClick={() => router.push('/scale/settings')}
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors"
+            aria-label="Scale settings"
+          >
+            <Settings className="w-4 h-4 text-slate-400" />
+          </button>
         </div>
       </div>
 
@@ -856,7 +884,7 @@ export default function ScalePage() {
             ))}
           </div>
           <div className="px-4 pb-4">
-            <LabelPreview item={currentItem} lookupLoading={lookupLoading} labelSizeKey={labelSizeKey} />
+            <LabelPreview item={currentItem} lookupLoading={lookupLoading} labelSizeKey={labelSizeKey} textMappings={textMappings} />
 
             {currentItem && (
               <>

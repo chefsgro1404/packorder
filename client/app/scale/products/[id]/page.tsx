@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { QRCodeSVG } from 'qrcode.react';
 import {
@@ -17,6 +17,7 @@ import {
   ChevronDown,
   ChevronUp,
   Bug,
+  Settings,
 } from 'lucide-react';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
@@ -25,7 +26,8 @@ import { buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { ScaleProduct } from '@/lib/types';
+import { ScaleProduct, TextMapping } from '@/lib/types';
+import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, type LabelSizeKey } from '@/lib/labelSizes';
 
 interface ItemConflict {
@@ -65,6 +67,8 @@ export default function ScaleProductDetailPage() {
   const [printCount, setPrintCount] = useState(0);
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
+  const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
+  const isPrinting = useRef(false);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
     if (typeof window === 'undefined') return '3x2';
     return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
@@ -127,6 +131,7 @@ export default function ScaleProductDetailPage() {
   }, [routeVariantId]);
 
   const displayTitle = variantTitle ? `${productTitle} - ${variantTitle}` : productTitle;
+  const mappedDisplayTitle = applyMappings(displayTitle, textMappings);
 
   const handleSave = useCallback(async (overridePinned?: boolean, overrideNoWeight?: boolean) => {
     setSaving(true);
@@ -184,33 +189,43 @@ export default function ScaleProductDetailPage() {
   // mapped to the recalled item number) instead of this page's own opened product.
   const printForWeight = useCallback(
     async (weight?: string | null, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
-      const snTitle = override?.productTitle ?? productTitle;
-      const snVariant = override ? null : variantTitle;
-      const snPlu = override?.plu ?? plu;
-      const sn = await fetchNextSn(variantId || null, snPlu || null, snTitle, snVariant);
-      const plainPayload = buildQrPayload({
-        plu: snPlu || null,
-        productTitle: snTitle,
-        variantTitle: snVariant,
-        itemWeight: weight || null,
-      }, sn);
-      let encryptedPayload: string;
+      if (isPrinting.current) return;
+      isPrinting.current = true;
       try {
-        encryptedPayload = await encryptQrPayload(plainPayload);
-      } catch {
-        setError('Encryption failed — label not printed. Check your connection and try again.');
-        return;
+        const rawTitle = override?.productTitle ?? productTitle;
+        const rawVariant = override ? null : variantTitle;
+        const snPlu = override?.plu ?? plu;
+        // Apply label abbreviation mappings before embedding in QR/display
+        const mappedTitle   = applyMappings(rawTitle, textMappings);
+        const mappedVariant = rawVariant ? applyMappings(rawVariant, textMappings) : rawVariant;
+        const sn = await fetchNextSn(variantId || null, snPlu || null, mappedTitle, mappedVariant);
+        const plainPayload = buildQrPayload({
+          plu: snPlu || null,
+          productTitle: mappedTitle,
+          variantTitle: mappedVariant,
+          itemWeight: weight || null,
+        }, sn);
+        let encryptedPayload: string;
+        try {
+          encryptedPayload = await encryptQrPayload(plainPayload);
+        } catch {
+          setError('Encryption failed — label not printed. Check your connection and try again.');
+          return;
+        }
+        const { printedAtEst } = triggerPrint({
+          plu: snPlu || null,
+          productTitle: mappedTitle,
+          variantTitle: mappedVariant,
+          itemWeight: weight || null,
+        }, sn, encryptedPayload);
+        setManualWeight('');
+        setPrintCount((n) => n + 1);
+        await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), snPlu, override?.productTitle ?? displayTitle, weight, encryptedPayload, printedAtEst, sn);
+      } finally {
+        isPrinting.current = false;
       }
-      const { printedAtEst } = triggerPrint({
-        plu: snPlu || null,
-        productTitle: snTitle,
-        variantTitle: snVariant,
-        itemWeight: weight || null,
-      }, sn, encryptedPayload);
-      setPrintCount((n) => n + 1);
-      await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), snPlu, override?.productTitle ?? displayTitle, weight, encryptedPayload, printedAtEst, sn);
     },
-    [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel, variantId]
+    [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel, variantId, textMappings]
   );
 
   // Item number is always ignored on this page — the product is already chosen by opening this URL.
@@ -237,6 +252,10 @@ export default function ScaleProductDetailPage() {
 
   useEffect(() => {
     scale.autoConnect();
+    fetch('/api/scale/text-mappings')
+      .then(r => r.json())
+      .then(d => setTextMappings(d.mappings ?? []))
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -267,9 +286,16 @@ export default function ScaleProductDetailPage() {
             <ArrowLeft className="w-4 h-4 text-slate-400" />
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-bold text-slate-100 leading-tight truncate">{displayTitle || 'Product'}</h1>
+            <h1 className="text-base font-bold text-slate-100 leading-tight truncate">{mappedDisplayTitle || 'Product'}</h1>
             <p className="text-xs text-slate-500 leading-tight">Scale mapping &amp; print</p>
           </div>
+          <button
+            onClick={() => router.push('/scale/settings')}
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors flex-shrink-0"
+            aria-label="Scale settings"
+          >
+            <Settings className="w-4 h-4 text-slate-400" />
+          </button>
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
             <span
               className={`w-2 h-2 rounded-full inline-block ${
@@ -324,7 +350,7 @@ export default function ScaleProductDetailPage() {
                 <div className="relative bg-white rounded-xl overflow-hidden shadow-lg ring-1 ring-slate-700" style={{ aspectRatio: '3/2' }}>
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-[66.6%] flex flex-col items-start gap-1 px-2 py-2">
-                      <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{displayTitle || 'Product'}</p>
+                      <p className="text-[8px] font-bold text-slate-900 leading-tight line-clamp-3 break-words w-full">{mappedDisplayTitle || 'Product'}</p>
                       {!noWeight && <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Weight:</span> {previewWeight || '—'}</p>}
                       {/* <p className="text-[7px] text-slate-700 leading-tight"><span className="font-bold">Packing Date:</span> {formatEst(new Date())}</p> */}
                       <p className="text-[7px] text-slate-500 leading-tight font-mono"><span className="font-bold not-italic">SN:</span> preview</p>

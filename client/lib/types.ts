@@ -332,6 +332,11 @@ export interface ScaleProduct {
   noWeight?: boolean;
 }
 
+export interface TextMapping {
+  phrase: string;
+  abbreviation: string;
+}
+
 export interface PrintedLabel {
   id: string;
   itemNumber: string;

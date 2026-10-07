@@ -68,7 +68,15 @@ async function startListening(p: SerialPort) {
     let chunks = 0;
     let streamDone = false;
 
-    const r = p.readable!.getReader();
+    let r: ReadableStreamDefaultReader<Uint8Array>;
+    try {
+      r = p.readable!.getReader();
+    } catch (err) {
+      console.error('[scale] failed to open reader — port may have disconnected:', err);
+      setSnapshot({ state: 'disconnected', error: 'Scale disconnected unexpectedly. Reconnect to continue.', portLabel: null });
+      port = null;
+      return;
+    }
     reader = r;
     setSnapshot({ state: 'receiving' });
     const receivingSince = Date.now();
@@ -89,6 +97,7 @@ async function startListening(p: SerialPort) {
       }
     }, POLL_MS);
 
+    let portDead = false;
     try {
       while (true) {
         const { value, done } = await r.read();
@@ -98,12 +107,22 @@ async function startListening(p: SerialPort) {
         chunks += 1;
         setSnapshot({ chunkCount: chunks });
       }
-    } catch {
-      // normal — reader was cancelled by silence detector
+    } catch (err) {
+      // A cancel from the silence detector is expected; anything else means the port died.
+      if (err instanceof Error && err.name !== 'AbortError' && !String(err).includes('cancel')) {
+        console.error('[scale] serial read error — port likely disconnected:', err);
+        portDead = true;
+      }
     } finally {
       clearInterval(checker);
-      r.releaseLock();
+      try { r.releaseLock(); } catch { /* already released */ }
       reader = null;
+    }
+
+    if (portDead) {
+      setSnapshot({ state: 'disconnected', error: 'Scale disconnected. Reconnect to continue.', portLabel: null });
+      port = null;
+      return;
     }
 
     if (!active) break;
