@@ -22,6 +22,8 @@ public class TableStorageService
     private readonly TableClient _barcodeAudits;
     private readonly TableClient _snCounters;
     private readonly TableClient _textMappings;
+    private readonly TableClient _purchaseOrders;
+    private readonly TableClient _purchaseOrderLineItems;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -40,7 +42,9 @@ public class TableStorageService
         _scannedLabels        = tableServiceClient.GetTableClient("scannedlabels");
         _barcodeAudits        = tableServiceClient.GetTableClient("barcodeaudits");
         _snCounters           = tableServiceClient.GetTableClient("sncounters");
-        _textMappings         = tableServiceClient.GetTableClient("textmappings");
+        _textMappings              = tableServiceClient.GetTableClient("textmappings");
+        _purchaseOrders            = tableServiceClient.GetTableClient("purchaseorders");
+        _purchaseOrderLineItems    = tableServiceClient.GetTableClient("purchaseorderlineitems");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -59,6 +63,8 @@ public class TableStorageService
         await _barcodeAudits.CreateIfNotExistsAsync();
         await _snCounters.CreateIfNotExistsAsync();
         await _textMappings.CreateIfNotExistsAsync();
+        await _purchaseOrders.CreateIfNotExistsAsync();
+        await _purchaseOrderLineItems.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1072,5 +1078,102 @@ public class TableStorageService
         {
             return false;
         }
+    }
+
+    // ─── Purchase Orders ─────────────────────────────────────────────────────
+
+    public async Task UpsertPurchaseOrderAsync(PurchaseOrderEntity entity)
+    {
+        await _purchaseOrders.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    public async Task UpsertPurchaseOrderLineItemAsync(PurchaseOrderLineItemEntity entity)
+    {
+        await _purchaseOrderLineItems.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    public async Task<List<PurchaseOrderEntity>> GetOpenPurchaseOrdersAsync()
+    {
+        var results = new List<PurchaseOrderEntity>();
+        await foreach (var e in _purchaseOrders.QueryAsync<PurchaseOrderEntity>(
+            filter: "PartitionKey eq 'po'"))
+        {
+            if (e.Status == "open" || e.Status == "partial")
+                results.Add(e);
+        }
+        return results.OrderByDescending(e => e.ShopifyCreatedAt).ToList();
+    }
+
+    public async Task<PurchaseOrderEntity?> GetPurchaseOrderByIdAsync(string numericPoId)
+    {
+        try
+        {
+            var response = await _purchaseOrders.GetEntityAsync<PurchaseOrderEntity>("po", numericPoId);
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<PurchaseOrderLineItemEntity>> GetPurchaseOrderLineItemsAsync(string numericPoId)
+    {
+        var results = new List<PurchaseOrderLineItemEntity>();
+        await foreach (var e in _purchaseOrderLineItems.QueryAsync<PurchaseOrderLineItemEntity>(
+            filter: $"PartitionKey eq '{numericPoId}'"))
+            results.Add(e);
+        return results;
+    }
+
+    public async Task<PurchaseOrderLineItemEntity?> ApprovePurchaseOrderLineItemAsync(
+        string numericPoId, string numericLineItemId, int quantityReceived, string printedBy)
+    {
+        PurchaseOrderLineItemEntity entity;
+        try
+        {
+            var response = await _purchaseOrderLineItems.GetEntityAsync<PurchaseOrderLineItemEntity>(
+                numericPoId, numericLineItemId);
+            entity = response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+
+        entity.QuantityReceived += quantityReceived;
+        entity.PrintedAt = DateTimeOffset.UtcNow;
+        entity.PrintedBy = printedBy;
+
+        if (entity.QuantityReceived >= entity.QuantityOrdered)
+            entity.Status = "approved";
+        else if (entity.QuantityReceived > 0)
+            entity.Status = "partial";
+
+        await _purchaseOrderLineItems.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        return entity;
+    }
+
+    public async Task CheckAndFulfillPurchaseOrderAsync(string numericPoId)
+    {
+        var po = await GetPurchaseOrderByIdAsync(numericPoId);
+        if (po == null) return;
+
+        var lineItems = await GetPurchaseOrderLineItemsAsync(numericPoId);
+        if (lineItems.Count == 0) return;
+
+        var approved = lineItems.Count(li => li.Status == "approved");
+        var partial  = lineItems.Count(li => li.Status == "partial");
+
+        po.ApprovedLineItems = approved;
+
+        if (approved == lineItems.Count)
+            po.Status = "fulfilled";
+        else if (approved > 0 || partial > 0)
+            po.Status = "partial";
+        else
+            po.Status = "open";
+
+        await _purchaseOrders.UpsertEntityAsync(po, TableUpdateMode.Replace);
     }
 }

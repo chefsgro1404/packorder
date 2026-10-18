@@ -80,6 +80,11 @@ public class WebhookFunction
                         await HandleOrderRemoveIfFulfilled(bodyJson);
                         break;
 
+                    case "purchase_orders/create":
+                    case "purchase_orders/update":
+                        await HandlePurchaseOrderUpsert(bodyJson);
+                        break;
+
                     default:
                         _logger.LogInformation("Unhandled webhook topic: {Topic}", topic);
                         break;
@@ -205,6 +210,71 @@ public class WebhookFunction
 
         await _tableStorage.RemoveUnfulfilledOrderAsync(order.Id.ToString());
         _logger.LogInformation("Webhook removed order {OrderId} from unfulfilled cache", order.Id);
+    }
+
+    private async Task HandlePurchaseOrderUpsert(string bodyJson)
+    {
+        var po = JsonConvert.DeserializeObject<WebhookPurchaseOrder>(bodyJson);
+        if (po == null) return;
+
+        var numericPoId = po.Id.ToString();
+
+        var poEntity = new PurchaseOrderEntity
+        {
+            PartitionKey       = "po",
+            RowKey             = numericPoId,
+            PoId               = $"gid://shopify/PurchaseOrder/{po.Id}",
+            PoName             = po.Name,
+            Status             = "open",
+            Vendor             = po.VendorName ?? "",
+            TotalLineItems     = po.LineItems.Count,
+            ApprovedLineItems  = 0,
+            ShopifyCreatedAt   = DateTimeOffset.TryParse(po.CreatedAt, out var created) ? created : DateTimeOffset.UtcNow,
+            ShopifyUpdatedAt   = DateTimeOffset.TryParse(po.UpdatedAt, out var updated) ? updated : DateTimeOffset.UtcNow,
+        };
+
+        // Preserve existing approval progress on updates
+        var existing = await _tableStorage.GetPurchaseOrderByIdAsync(numericPoId);
+        if (existing != null)
+        {
+            poEntity.Status           = existing.Status;
+            poEntity.ApprovedLineItems = existing.ApprovedLineItems;
+        }
+
+        await _tableStorage.UpsertPurchaseOrderAsync(poEntity);
+
+        // Upsert each line item — preserve approval state if already present
+        foreach (var li in po.LineItems)
+        {
+            var numericLineItemId = li.Id.ToString();
+            PurchaseOrderLineItemEntity? existingLi = null;
+
+            var existingItems = await _tableStorage.GetPurchaseOrderLineItemsAsync(numericPoId);
+            existingLi = existingItems.FirstOrDefault(x => x.RowKey == numericLineItemId);
+
+            var lineItemEntity = new PurchaseOrderLineItemEntity
+            {
+                PartitionKey      = numericPoId,
+                RowKey            = numericLineItemId,
+                LineItemId        = $"gid://shopify/PurchaseOrderLineItem/{li.Id}",
+                ProductTitle      = li.ProductTitle,
+                VariantTitle      = li.VariantTitle,
+                VariantId         = li.VariantId.HasValue
+                                        ? $"gid://shopify/ProductVariant/{li.VariantId.Value}"
+                                        : null,
+                Sku               = li.Sku,
+                QuantityOrdered   = li.Quantity,
+                QuantityReceived  = existingLi?.QuantityReceived ?? 0,
+                Status            = existingLi?.Status ?? "pending",
+                PrintedAt         = existingLi?.PrintedAt,
+                PrintedBy         = existingLi?.PrintedBy,
+            };
+
+            await _tableStorage.UpsertPurchaseOrderLineItemAsync(lineItemEntity);
+        }
+
+        _logger.LogInformation("Webhook upserted PO {PoId} ({PoName}) with {Count} line items",
+            po.Id, po.Name, po.LineItems.Count);
     }
 
     private bool VerifyHmac(byte[] body, HttpRequestData req)

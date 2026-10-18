@@ -834,3 +834,70 @@ public class TextMappingDeleteRequest
 {
     [JsonProperty("phrase")] public string Phrase { get; set; } = "";
 }
+
+// ─── Purchase Orders ──────────────────────────────────────────────────────────
+
+public class PurchaseOrderEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "po";
+    public string RowKey { get; set; } = "";           // numeric PO ID
+    public string PoId { get; set; } = "";             // full GID
+    public string PoName { get; set; } = "";           // e.g. "PO-1001"
+    public string Status { get; set; } = "open";       // open | partial | fulfilled
+    public string Vendor { get; set; } = "";
+    public int TotalLineItems { get; set; }
+    public int ApprovedLineItems { get; set; }
+    public DateTimeOffset ShopifyCreatedAt { get; set; }
+    public DateTimeOffset ShopifyUpdatedAt { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class PurchaseOrderLineItemEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";     // numeric PO ID
+    public string RowKey { get; set; } = "";           // numeric line item ID
+    public string LineItemId { get; set; } = "";
+    public string ProductTitle { get; set; } = "";
+    public string? VariantTitle { get; set; }
+    public string? VariantId { get; set; }
+    public string? Sku { get; set; }
+    public int QuantityOrdered { get; set; }
+    public int QuantityReceived { get; set; }
+    public string Status { get; set; } = "pending";   // pending | partial | approved
+    public DateTimeOffset? PrintedAt { get; set; }
+    public string? PrintedBy { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+// Webhook REST payload for purchase_orders/create and purchase_orders/update
+public class WebhookPurchaseOrder
+{
+    [JsonProperty("id")]          public long Id { get; set; }
+    [JsonProperty("name")]        public string Name { get; set; } = "";
+    [JsonProperty("status")]      public string Status { get; set; } = "open";
+    [JsonProperty("vendor_name")] public string? VendorName { get; set; }
+    [JsonProperty("note")]        public string? Note { get; set; }
+    [JsonProperty("created_at")]  public string CreatedAt { get; set; } = "";
+    [JsonProperty("updated_at")]  public string UpdatedAt { get; set; } = "";
+    [JsonProperty("line_items")]  public List<WebhookPurchaseOrderLineItem> LineItems { get; set; } = new();
+}
+
+public class WebhookPurchaseOrderLineItem
+{
+    [JsonProperty("id")]            public long Id { get; set; }
+    [JsonProperty("product_title")] public string ProductTitle { get; set; } = "";
+    [JsonProperty("variant_title")] public string? VariantTitle { get; set; }
+    [JsonProperty("variant_id")]    public long? VariantId { get; set; }
+    [JsonProperty("sku")]           public string? Sku { get; set; }
+    [JsonProperty("quantity")]      public int Quantity { get; set; }
+}
+
+public class ApprovePurchaseOrderLineItemRequest
+{
+    [JsonProperty("poId")]             public string PoId { get; set; } = "";
+    [JsonProperty("lineItemId")]       public string LineItemId { get; set; } = "";
+    [JsonProperty("quantityReceived")] public int QuantityReceived { get; set; }
+    [JsonProperty("printedBy")]        public string PrintedBy { get; set; } = "";
+}

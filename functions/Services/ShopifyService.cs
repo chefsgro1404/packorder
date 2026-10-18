@@ -883,5 +883,48 @@ public class ShopifyService
 
         return results;
     }
+
+    // ─── Purchase Orders (REST) ───────────────────────────────────────────────
+
+    private async Task<JArray?> RestGetArrayAsync(string path, int retries = 3)
+    {
+        var url = $"https://{_storeDomain}/admin/api/{_apiVersion}/{path}";
+        for (int attempt = 0; attempt < retries; attempt++)
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("X-Shopify-Access-Token", _accessToken);
+
+            var response = await _http.SendAsync(request);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                var delay = response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(2);
+                _logger.LogWarning("REST rate-limited, retrying in {Delay}s", delay.TotalSeconds);
+                await Task.Delay(delay);
+                continue;
+            }
+
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync();
+            var obj = JsonConvert.DeserializeObject<JObject>(json);
+            return obj?.Properties().FirstOrDefault()?.Value as JArray;
+        }
+        throw new Exception($"REST GET {path} failed after {retries} retries");
+    }
+
+    public async Task<List<WebhookPurchaseOrder>> GetPurchaseOrdersAsync(string status = "open")
+    {
+        try
+        {
+            var arr = await RestGetArrayAsync($"purchase_orders.json?status={status}&limit=250");
+            if (arr == null) return new List<WebhookPurchaseOrder>();
+            return arr.ToObject<List<WebhookPurchaseOrder>>() ?? new List<WebhookPurchaseOrder>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to fetch purchase orders from Shopify");
+            return new List<WebhookPurchaseOrder>();
+        }
+    }
 }
 
