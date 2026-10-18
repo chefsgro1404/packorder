@@ -24,6 +24,9 @@ import {
   ListFilter,
   Bug,
   Settings,
+  ClipboardList,
+  Tag,
+  X,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -34,7 +37,8 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel, TextMapping } from '@/lib/types';
+import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem } from '@/lib/types';
+import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
 
@@ -47,6 +51,10 @@ interface CurrentItem {
   variantTitle?: string | null;
   variantId?: string | null;
   found: boolean;
+  // PO context — set when item was selected from a PO suggestion
+  poId?: string | null;
+  poLineItemId?: string | null;
+  poQuantityOrdered?: number;
 }
 
 function isPlaceholderItemNumber(itemNumber: string): boolean {
@@ -506,6 +514,169 @@ function PrintHistory({
   );
 }
 
+// ─── PO status badge ─────────────────────────────────────────────────────────
+
+function PoStatusBadge({ status }: { status: string }) {
+  if (status === 'approved')
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-950 text-emerald-400 border border-emerald-900">Approved</span>;
+  if (status === 'partial')
+    return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-950 text-amber-400 border border-amber-900">Partial</span>;
+  return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-slate-800 text-slate-400 border border-slate-700">Pending</span>;
+}
+
+// ─── PO suggestions panel ────────────────────────────────────────────────────
+
+function PoSuggestions({
+  orders,
+  loading,
+  error,
+  lineItemsCache,
+  expandedPoId,
+  onToggleExpand,
+  onSelectItem,
+}: {
+  orders: PurchaseOrder[];
+  loading: boolean;
+  error: string | null;
+  lineItemsCache: Record<string, PurchaseOrderLineItem[]>;
+  expandedPoId: string | null;
+  onToggleExpand: (id: string) => void;
+  onSelectItem: (po: PurchaseOrder, li: PurchaseOrderLineItem) => void;
+}) {
+  const [panelOpen, setPanelOpen] = useState(true);
+
+  const pendingCount = orders.reduce((acc, o) => {
+    const items = lineItemsCache[o.id] ?? [];
+    return acc + items.filter(li => li.status !== 'approved').length;
+  }, 0);
+
+  return (
+    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+        onClick={() => setPanelOpen(v => !v)}
+      >
+        <div className="flex items-center gap-2">
+          <ClipboardList className="w-4 h-4 text-slate-500" />
+          <span className="text-sm font-semibold text-slate-200">PO Suggestions</span>
+          {pendingCount > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-900 text-blue-300 border border-blue-800">
+              {pendingCount} pending
+            </span>
+          )}
+        </div>
+        {panelOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+      </button>
+
+      {panelOpen && (
+        <div className="border-t border-slate-800">
+          {loading ? (
+            <div className="flex items-center gap-2 px-4 py-5 text-slate-500">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              <span className="text-sm">Loading open POs…</span>
+            </div>
+          ) : error ? (
+            <p className="px-4 py-4 text-sm text-rose-400">{error}</p>
+          ) : orders.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center">
+              <ClipboardList className="w-5 h-5 text-slate-700" />
+              <p className="text-sm text-slate-600">No open purchase orders</p>
+            </div>
+          ) : (
+            <div className="flex flex-col divide-y divide-slate-800/60">
+              {orders.map(po => {
+                const isExpanded = expandedPoId === po.id;
+                const items = lineItemsCache[po.id] ?? [];
+                const pendingItems = items.filter(li => li.status !== 'approved');
+                const approvedItems = items.filter(li => li.status === 'approved');
+
+                return (
+                  <div key={po.id}>
+                    <button
+                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-900/40 transition-colors text-left"
+                      onClick={() => onToggleExpand(po.id)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-slate-200">{po.poName}</span>
+                          {po.vendor && <span className="text-xs text-slate-500">{po.vendor}</span>}
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${
+                            po.status === 'partial'
+                              ? 'bg-amber-950 text-amber-400 border-amber-900'
+                              : 'bg-blue-950 text-blue-400 border-blue-900'
+                          }`}>{po.status}</span>
+                        </div>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {po.approvedLineItems}/{po.totalLineItems} items received
+                        </p>
+                      </div>
+                      {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />}
+                    </button>
+
+                    {isExpanded && items.length === 0 && (
+                      <div className="px-4 pb-3">
+                        <p className="text-xs text-slate-500">No line items loaded — tap to expand</p>
+                      </div>
+                    )}
+
+                    {isExpanded && items.length > 0 && (
+                      <div className="px-4 pb-3 flex flex-col gap-2">
+                        {pendingItems.map(li => (
+                          <button
+                            key={li.id}
+                            onClick={() => onSelectItem(po, li)}
+                            className="flex items-start gap-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl px-3 py-2.5 text-left transition-colors active:scale-[0.99]"
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                              <Tag className="w-3.5 h-3.5 text-slate-500" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-200 leading-snug">{li.productTitle}</p>
+                                  {li.variantTitle && li.variantTitle !== 'Default Title' && (
+                                    <p className="text-xs text-slate-400">{li.variantTitle}</p>
+                                  )}
+                                  {li.sku && <p className="text-xs text-slate-500 font-mono">SKU: {li.sku}</p>}
+                                </div>
+                                <PoStatusBadge status={li.status} />
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">
+                                {li.quantityReceived}/{li.quantityOrdered} received
+                              </p>
+                            </div>
+                          </button>
+                        ))}
+                        {approvedItems.length > 0 && (
+                          <div className="flex flex-col gap-1.5">
+                            <p className="text-[10px] text-slate-600 uppercase tracking-widest font-semibold px-0.5">Completed</p>
+                            {approvedItems.map(li => (
+                              <div
+                                key={li.id}
+                                className="flex items-center gap-3 bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-2 opacity-50"
+                              >
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm text-slate-400 leading-snug line-through">{li.productTitle}</p>
+                                  <p className="text-xs text-slate-600">{li.quantityReceived}/{li.quantityOrdered} received</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ScalePage() {
@@ -518,6 +689,10 @@ export default function ScalePage() {
   const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
+  const [manualWeight, setManualWeight] = useState('');
+  const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+  const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
+  const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
   const isPrinting = useRef(false);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
     if (typeof window === 'undefined') return '3x2';
@@ -609,10 +784,74 @@ export default function ScalePage() {
         console.error('[scale] failed to log printed label:', res.status, await res.text().catch(() => ''));
       }
     } catch (err) {
-      // printing already happened, audit log failure shouldn't block the user — but make sure it's visible
       console.error('[scale] failed to log printed label:', err, '| item:', item.itemNumber, '| qr:', qrPayload);
     }
-  }, [fetchHistory]);
+
+    // Auto-approve PO line item if this print was for one
+    if (item.poId && item.poLineItemId) {
+      try {
+        await approvePoItem(item.poId, item.poLineItemId, 1);
+        const fresh = await refreshLineItems(item.poId);
+        setPoLineItemsCache(prev => ({ ...prev, [item.poId!]: fresh }));
+      } catch (err) {
+        console.error('[scale] PO approval failed:', err);
+      }
+    }
+  }, [fetchHistory, approvePoItem, refreshLineItems]);
+
+  const handlePoToggle = useCallback(async (poId: string) => {
+    setExpandedPoId(prev => (prev === poId ? null : poId));
+    if (!poLineItemsCache[poId]) {
+      const items = await fetchLineItems(poId);
+      setPoLineItemsCache(prev => ({ ...prev, [poId]: items }));
+    }
+  }, [fetchLineItems, poLineItemsCache]);
+
+  const handlePoItemSelect = useCallback(async (po: PurchaseOrder, li: PurchaseOrderLineItem) => {
+    setLookupLoading(true);
+    setManualWeight('');
+    resetPrinted();
+
+    let plu = '';
+    let productTitle = li.productTitle;
+    let variantTitle = li.variantTitle && li.variantTitle !== 'Default Title' ? li.variantTitle : null;
+    let found = false;
+
+    // Try to find a mapped PLU for this variant
+    if (li.variantId) {
+      try {
+        const numericVariantId = li.variantId.includes('/') ? li.variantId.split('/').pop() ?? '' : li.variantId;
+        const res = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(numericVariantId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.data?.found) {
+            plu = data.data.plu ?? '';
+            productTitle = data.data.productTitle ?? li.productTitle;
+            variantTitle = (data.data.variantTitle && data.data.variantTitle !== 'Default Title')
+              ? data.data.variantTitle : variantTitle;
+            found = true;
+          }
+        }
+      } catch {
+        // ignore lookup failure — still load item with PO title
+      }
+    }
+
+    setCurrentItem({
+      itemNumber: '',
+      itemName: productTitle,
+      itemWeight: '',
+      plu,
+      productTitle,
+      variantTitle,
+      variantId: li.variantId,
+      found,
+      poId: po.id,
+      poLineItemId: li.id,
+      poQuantityOrdered: li.quantityOrdered,
+    });
+    setLookupLoading(false);
+  }, [resetPrinted]);
 
   const printItem = useCallback(async (item: CurrentItem) => {
     if (isPrinting.current) return;
@@ -654,8 +893,10 @@ export default function ScalePage() {
       // If nothing is loaded, prompt staff to search and pick a product.
       if (isPlaceholderItemNumber(reading.itemNumber ?? '')) {
         if (currentItem) {
+          // Preserve PO context when scale fires with placeholder item number
           const updated = { ...currentItem, itemWeight: reading.itemWeight };
           setCurrentItem(updated);
+          setManualWeight('');
           await printItem(updated);
         } else {
           setUnmappedPrompt({ itemNumber: reading.itemNumber ?? '0', weight: reading.itemWeight });
@@ -747,6 +988,13 @@ export default function ScalePage() {
     await printItem(currentItem);
   };
 
+  const handleManualWeightPrint = async () => {
+    if (!currentItem || !manualWeight.trim()) return;
+    const item = { ...currentItem, itemWeight: manualWeight.trim() };
+    setCurrentItem(item);
+    await printItem(item);
+  };
+
   const handleReprint = async (record: PrintedLabel) => {
     console.log('[scale] reprinting:', record.productTitle, record.printedAtEst);
     const baseSn = record.sn ?? generateSn();
@@ -827,6 +1075,17 @@ export default function ScalePage() {
       </div>
 
       <div className="px-4 py-5 flex flex-col gap-4">
+        {/* PO Suggestions */}
+        <PoSuggestions
+          orders={poOrders}
+          loading={poLoading}
+          error={poError}
+          lineItemsCache={poLineItemsCache}
+          expandedPoId={expandedPoId}
+          onToggleExpand={handlePoToggle}
+          onSelectItem={handlePoItemSelect}
+        />
+
         {/* Select Product entry point */}
         <button
           onClick={() => router.push('/scale/products')}
@@ -906,19 +1165,61 @@ export default function ScalePage() {
                   </div>
                 )}
 
+                {/* PO context banner */}
+                {currentItem.poId && (
+                  <div className="flex items-center gap-2 bg-blue-950/40 border border-blue-900 rounded-xl px-3 py-2.5 mb-2">
+                    <ClipboardList className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                    <p className="text-xs text-blue-300 flex-1 min-w-0">
+                      From PO · {currentItem.poQuantityOrdered} units ordered
+                      {!currentItem.itemWeight ? ' — enter weight below or weigh on scale' : ''}
+                    </p>
+                    <button
+                      onClick={() => { setCurrentItem(null); setManualWeight(''); resetPrinted(); }}
+                      className="w-5 h-5 flex items-center justify-center rounded text-blue-500 hover:text-blue-300 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Manual weight input for PO items without a scale reading yet */}
+                {currentItem.poId && !currentItem.itemWeight && (
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="e.g. 1.25 kg"
+                      value={manualWeight}
+                      onChange={e => setManualWeight(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleManualWeightPrint(); }}
+                      className="flex-1 h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                    />
+                    <button
+                      onClick={handleManualWeightPrint}
+                      disabled={!manualWeight.trim()}
+                      className="h-10 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-semibold text-sm flex items-center gap-1.5 transition-colors active:scale-[0.98]"
+                    >
+                      <Printer className="w-3.5 h-3.5" /> Print
+                    </button>
+                  </div>
+                )}
+
                 {/* Action buttons */}
                 <div className="flex flex-col gap-2">
-                  <button
-                    onClick={handleManualPrint}
-                    disabled={!canPrint}
-                    className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-                  >
-                    <Printer className="w-4 h-4" />
-                    {printedAt ? 'Print Again' : 'Print Label'}
-                  </button>
+                  {(!currentItem.poId || !!currentItem.itemWeight) && (
+                    <button
+                      onClick={handleManualPrint}
+                      disabled={!canPrint}
+                      className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+                    >
+                      <Printer className="w-4 h-4" />
+                      {printedAt ? 'Print Again' : 'Print Label'}
+                    </button>
+                  )}
                   <button
                     onClick={() => {
                       setCurrentItem(null);
+                      setManualWeight('');
                       resetPrinted();
                     }}
                     className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"

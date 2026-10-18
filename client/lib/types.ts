@@ -348,3 +348,30 @@ export interface PrintedLabel {
   printedBy: string | null;
   sn: string | null;
 }
+
+export interface PurchaseOrder {
+  id: string;
+  poId: string;
+  poName: string;
+  status: 'open' | 'partial' | 'fulfilled';
+  vendor: string;
+  totalLineItems: number;
+  approvedLineItems: number;
+  shopifyCreatedAt: string;
+  shopifyUpdatedAt: string;
+}
+
+export interface PurchaseOrderLineItem {
+  id: string;
+  poId: string;
+  lineItemId: string;
+  productTitle: string;
+  variantTitle: string | null;
+  variantId: string | null;
+  sku: string | null;
+  quantityOrdered: number;
+  quantityReceived: number;
+  status: 'pending' | 'partial' | 'approved';
+  printedAt: string | null;
+  printedBy: string | null;
+}

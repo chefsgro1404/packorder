@@ -42,7 +42,19 @@ public class PurchaseOrderFunction
             return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
 
         var orders = await _tableStorage.GetOpenPurchaseOrdersAsync();
-        return await ResponseHelper.WriteSuccess(req, orders, _allowedOrigins);
+        var mapped = orders.Select(o => new
+        {
+            id                = o.RowKey,
+            poId              = o.PoId,
+            poName            = o.PoName,
+            status            = o.Status,
+            vendor            = o.Vendor,
+            totalLineItems    = o.TotalLineItems,
+            approvedLineItems = o.ApprovedLineItems,
+            shopifyCreatedAt  = o.ShopifyCreatedAt,
+            shopifyUpdatedAt  = o.ShopifyUpdatedAt,
+        });
+        return await ResponseHelper.WriteSuccess(req, mapped, _allowedOrigins);
     }
 
     // GET /api/purchase-orders/{id} — returns PO with its line items
@@ -65,7 +77,36 @@ public class PurchaseOrderFunction
 
         var lineItems = await _tableStorage.GetPurchaseOrderLineItemsAsync(id);
 
-        return await ResponseHelper.WriteSuccess(req, new { purchaseOrder = po, lineItems }, _allowedOrigins);
+        return await ResponseHelper.WriteSuccess(req, new
+        {
+            purchaseOrder = new
+            {
+                id                = po.RowKey,
+                poId              = po.PoId,
+                poName            = po.PoName,
+                status            = po.Status,
+                vendor            = po.Vendor,
+                totalLineItems    = po.TotalLineItems,
+                approvedLineItems = po.ApprovedLineItems,
+                shopifyCreatedAt  = po.ShopifyCreatedAt,
+                shopifyUpdatedAt  = po.ShopifyUpdatedAt,
+            },
+            lineItems = lineItems.Select(li => new
+            {
+                id               = li.RowKey,
+                poId             = li.PartitionKey,
+                lineItemId       = li.LineItemId,
+                productTitle     = li.ProductTitle,
+                variantTitle     = li.VariantTitle,
+                variantId        = li.VariantId,
+                sku              = li.Sku,
+                quantityOrdered  = li.QuantityOrdered,
+                quantityReceived = li.QuantityReceived,
+                status           = li.Status,
+                printedAt        = li.PrintedAt,
+                printedBy        = li.PrintedBy,
+            }),
+        }, _allowedOrigins);
     }
 
     // POST /api/purchase-orders/approve — marks a line item approved after barcode print
@@ -114,6 +155,19 @@ public class PurchaseOrderFunction
         _logger.LogInformation("Approved PO {PoId} line item {LineItemId} qty={Qty} by {By}",
             numericPoId, numericLineItemId, body.QuantityReceived, printedBy);
 
-        return await ResponseHelper.WriteSuccess(req, updated, _allowedOrigins);
+        return await ResponseHelper.WriteSuccess(req, new
+        {
+            id               = updated.RowKey,
+            poId             = updated.PartitionKey,
+            lineItemId       = updated.LineItemId,
+            productTitle     = updated.ProductTitle,
+            variantTitle     = updated.VariantTitle,
+            sku              = updated.Sku,
+            quantityOrdered  = updated.QuantityOrdered,
+            quantityReceived = updated.QuantityReceived,
+            status           = updated.Status,
+            printedAt        = updated.PrintedAt,
+            printedBy        = updated.PrintedBy,
+        }, _allowedOrigins);
     }
 }
