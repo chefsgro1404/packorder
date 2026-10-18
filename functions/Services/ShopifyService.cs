@@ -889,6 +889,7 @@ public class ShopifyService
     private const string GetVariantAdjustmentsQuery = @"
         query GetVariantAdjustments($variantId: ID!) {
           productVariant(id: $variantId) {
+            inventoryItem { id }
             metafield(namespace: ""custom"", key: ""adjustments"") { value }
             product {
               metafield(namespace: ""custom"", key: ""adjustments"") { value }
@@ -900,6 +901,7 @@ public class ShopifyService
     /// Returns the parsed custom.adjustments metafield JSON for a variant.
     /// Checks variant-level first (multi-variant), then product-level (single-variant).
     /// Returns null if the metafield is absent or not parseable.
+    /// When present, embeds "child_inventory_item_id" into the returned JObject.
     /// </summary>
     public async Task<JObject?> GetVariantAdjustmentsAsync(string variantId)
     {
@@ -925,12 +927,129 @@ public class ShopifyService
             var raw = variantValue ?? productValue;
 
             if (string.IsNullOrWhiteSpace(raw)) return null;
-            return JObject.Parse(raw);
+            var parsed = JObject.Parse(raw);
+
+            // Embed child's own inventory item ID so callers can do the +delta adjustment.
+            var childInventoryItemId = variant["inventoryItem"]?["id"]?.ToString();
+            if (!string.IsNullOrEmpty(childInventoryItemId))
+                parsed["child_inventory_item_id"] = childInventoryItemId;
+
+            return parsed;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to fetch custom.adjustments for variant {VariantId}", variantId);
             return null;
+        }
+    }
+
+    // ─── Variant inventory item lookup ────────────────────────────────────────
+
+    private const string GetVariantInventoryQuery = @"
+        query GetVariantInventory($variantId: ID!) {
+          productVariant(id: $variantId) {
+            inventoryItem {
+              id
+              inventoryLevels(first: 1) {
+                nodes { location { id } }
+              }
+            }
+          }
+        }";
+
+    /// <summary>
+    /// Returns the inventoryItemId and primary location for a variant.
+    /// Used for PO quantity correction adjustments (Story 2).
+    /// </summary>
+    public async Task<(string? InventoryItemId, string? LocationId)> GetVariantInventoryAsync(string variantId)
+    {
+        var gid = variantId.StartsWith("gid://") ? variantId : $"gid://shopify/ProductVariant/{variantId}";
+        try
+        {
+            var data = await GraphQlAsync(GetVariantInventoryQuery, new { variantId = gid });
+            var inventoryItem = data["productVariant"]?["inventoryItem"];
+            if (inventoryItem == null || inventoryItem.Type == JTokenType.Null) return (null, null);
+
+            var itemId = inventoryItem["id"]?.ToString();
+            var levels = inventoryItem["inventoryLevels"]?["nodes"] as JArray;
+            var locationId = levels?.Count > 0 ? levels[0]["location"]?["id"]?.ToString() : null;
+
+            return (itemId, locationId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch inventory info for variant {VariantId}", variantId);
+            return (null, null);
+        }
+    }
+
+    // ─── Transformation options (parent → children) ───────────────────────────
+
+    private const string GetChildTransformationVariantsQuery = @"
+        query GetChildVariants($variantId: ID!) {
+          productVariant(id: $variantId) {
+            inventoryItem { id }
+            product {
+              variants(first: 100) {
+                nodes {
+                  id title
+                  inventoryItem { id }
+                  metafield(namespace: ""custom"", key: ""adjustments"") { value }
+                }
+              }
+            }
+          }
+        }";
+
+    /// <summary>
+    /// Given a parent variant ID, returns all child variants that reference this parent
+    /// via their custom.adjustments metafield. Used by the transformation UI (Story 3).
+    /// </summary>
+    public async Task<List<Models.TransformationOption>> GetChildTransformationVariantsAsync(string parentVariantId)
+    {
+        var gid = parentVariantId.StartsWith("gid://") ? parentVariantId
+            : $"gid://shopify/ProductVariant/{parentVariantId}";
+        try
+        {
+            var data = await GraphQlAsync(GetChildTransformationVariantsQuery, new { variantId = gid });
+            var parentVariant = data["productVariant"];
+            if (parentVariant == null) return new List<Models.TransformationOption>();
+
+            var parentInventoryItemId = parentVariant["inventoryItem"]?["id"]?.ToString();
+            if (string.IsNullOrEmpty(parentInventoryItemId)) return new List<Models.TransformationOption>();
+
+            var variants = parentVariant["product"]?["variants"]?["nodes"] as JArray;
+            if (variants == null) return new List<Models.TransformationOption>();
+
+            var results = new List<Models.TransformationOption>();
+            foreach (var v in variants)
+            {
+                var metafieldNode = v["metafield"];
+                if (metafieldNode == null || metafieldNode.Type == JTokenType.Null) continue;
+                var metafieldValue = metafieldNode["value"]?.ToString();
+                if (string.IsNullOrWhiteSpace(metafieldValue)) continue;
+
+                JObject adjustments;
+                try { adjustments = JObject.Parse(metafieldValue); }
+                catch { continue; }
+
+                var adjParentInventoryId = adjustments["parent_inventory_id"]?.ToString();
+                if (adjParentInventoryId != parentInventoryItemId) continue;
+
+                results.Add(new Models.TransformationOption
+                {
+                    VariantId       = v["id"]!.ToString(),
+                    Title           = v["title"]?.ToString() ?? "",
+                    InventoryItemId = v["inventoryItem"]?["id"]?.ToString() ?? "",
+                    LocationId      = adjustments["parent_location_id"]?.ToString() ?? "",
+                });
+            }
+            return results;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch child transformation variants for {VariantId}", parentVariantId);
+            return new List<Models.TransformationOption>();
         }
     }
 

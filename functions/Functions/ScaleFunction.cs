@@ -586,18 +586,88 @@ public class ScaleFunction
 
             return await ResponseHelper.WriteSuccess(req, new
             {
-                found             = true,
-                isWeighted        = adjustments["is_weighted"]?.ToObject<bool>() ?? false,
-                weightPerUnit     = adjustments["weight_per_unit"]?.ToObject<double>() ?? 0.0,
-                parentInventoryId = adjustments["parent_inventory_id"]?.ToString() ?? "",
-                parentProductHandle = adjustments["parent_product_handle"]?.ToString() ?? "",
-                parentProductTitle  = adjustments["parent_product_title"]?.ToString() ?? "",
-                parentLocationId    = adjustments["parent_location_id"]?.ToString() ?? "",
+                found                = true,
+                isWeighted           = adjustments["is_weighted"]?.ToObject<bool>() ?? false,
+                weightPerUnit        = adjustments["weight_per_unit"]?.ToObject<double>() ?? 0.0,
+                parentInventoryId    = adjustments["parent_inventory_id"]?.ToString() ?? "",
+                parentProductHandle  = adjustments["parent_product_handle"]?.ToString() ?? "",
+                parentProductTitle   = adjustments["parent_product_title"]?.ToString() ?? "",
+                parentLocationId     = adjustments["parent_location_id"]?.ToString() ?? "",
+                childInventoryItemId = adjustments["child_inventory_item_id"]?.ToString() ?? "",
             }, _allowedOrigins);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Inventory mapping lookup failed for variant");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ScaleVariantInventory")]
+    public async Task<HttpResponseData> VariantInventory(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/variant-inventory")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = ParseQueryString(req.Url.Query);
+            var variantId = qs.TryGetValue("variantId", out var v) ? v : "";
+            if (string.IsNullOrWhiteSpace(variantId))
+                return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var (inventoryItemId, locationId) = await _shopify.GetVariantInventoryAsync(variantId);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found           = !string.IsNullOrEmpty(inventoryItemId),
+                inventoryItemId = inventoryItemId ?? "",
+                locationId      = locationId ?? "",
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "VariantInventory lookup failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ScaleTransformationOptions")]
+    public async Task<HttpResponseData> TransformationOptions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/transformation-options")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = ParseQueryString(req.Url.Query);
+            var variantId = qs.TryGetValue("variantId", out var v) ? v : "";
+            if (string.IsNullOrWhiteSpace(variantId))
+                return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var options = await _shopify.GetChildTransformationVariantsAsync(variantId);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found   = options.Count > 0,
+                options = options,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "TransformationOptions lookup failed for variant");
             return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
     }

@@ -38,7 +38,8 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload } from '@/lib/types';
+import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption } from '@/lib/types';
+import { BulkPrintModal } from '@/components/BulkPrintModal';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { usePrintQueue } from '@/hooks/usePrintQueue';
 import { applyMappings } from '@/lib/textMappings';
@@ -679,6 +680,120 @@ function PoSuggestions({
   );
 }
 
+// ─── Bulk print label result ──────────────────────────────────────────────────
+
+interface BulkPrintLabelResult {
+  index: number;
+  sn: string;
+  qrPayload: string;
+  printedAtEst: string;
+  status: 'printed' | 'failed';
+  error?: string;
+}
+
+function BulkPrintResultPanel({
+  results,
+  poQuantityOrdered,
+  inventoryAdjusted,
+  onReprint,
+  onDismiss,
+}: {
+  results: BulkPrintLabelResult[];
+  poQuantityOrdered: number;
+  inventoryAdjusted: number | null;
+  onReprint: (r: BulkPrintLabelResult) => void;
+  onDismiss: () => void;
+}) {
+  const printed = results.filter(r => r.status === 'printed').length;
+  const failed = results.filter(r => r.status === 'failed').length;
+
+  return (
+    <div className="flex flex-col gap-2 bg-slate-900/80 border border-slate-700 rounded-2xl p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          {failed === 0 ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+          ) : (
+            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          )}
+          <span className="text-sm font-semibold text-slate-200">
+            {printed}/{results.length} labels printed
+            {poQuantityOrdered > printed && ` · ${poQuantityOrdered - printed} short vs PO`}
+          </span>
+        </div>
+        <button
+          onClick={onDismiss}
+          className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {inventoryAdjusted !== null && inventoryAdjusted < 0 && (
+        <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-1.5">
+          Shopify inventory adjusted by {inventoryAdjusted} for the {Math.abs(inventoryAdjusted)} unit shortfall
+        </p>
+      )}
+      <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+        {results.map(r => (
+          <div
+            key={r.index}
+            className={`flex items-center gap-2.5 rounded-xl px-3 py-2 ${
+              r.status === 'printed' ? 'bg-slate-800/60' : 'bg-rose-950/40 border border-rose-900/40'
+            }`}
+          >
+            <span className={`text-[10px] font-bold w-5 text-center ${r.status === 'printed' ? 'text-slate-500' : 'text-rose-400'}`}>
+              #{r.index}
+            </span>
+            <div className="flex-1 min-w-0">
+              {r.status === 'printed' ? (
+                <p className="text-xs text-slate-300 font-mono truncate">{r.sn}</p>
+              ) : (
+                <p className="text-xs text-rose-300">{r.error ?? 'Print failed'}</p>
+              )}
+            </div>
+            <button
+              onClick={() => onReprint(r)}
+              className="flex-shrink-0 flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-200 px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              <RotateCcw className="w-3 h-3" /> Reprint
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Transformation options panel ─────────────────────────────────────────────
+
+function TransformationPanel({
+  options,
+  onSelect,
+}: {
+  options: TransformationOption[];
+  onSelect: (opt: TransformationOption) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-2.5 mb-2">
+      <div className="flex items-center gap-2">
+        <Droplets className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+        <p className="text-xs font-semibold text-violet-300">Transformation Options</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {options.map(opt => (
+          <button
+            key={opt.variantId}
+            onClick={() => onSelect(opt)}
+            className="flex items-center gap-1.5 text-xs bg-violet-900/50 hover:bg-violet-800/60 border border-violet-800/60 text-violet-200 rounded-lg px-2.5 py-1.5 transition-colors font-medium"
+          >
+            Transform → {opt.title}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export default function ScalePage() {
@@ -696,6 +811,10 @@ export default function ScalePage() {
   const [lastAdjustment, setLastAdjustment] = useState<{ delta: number; parentTitle: string } | null>(null);
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+  const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem } | null>(null);
+  const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
+  const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
+  const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
   const { isPrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
@@ -791,6 +910,27 @@ export default function ScalePage() {
     return () => { cancelled = true; };
   }, [currentItem?.variantId]);
 
+  // Fetch transformation options (parent → children) when variant changes
+  useEffect(() => {
+    const variantId = currentItem?.variantId;
+    if (!variantId) { setTransformationOptions(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/scale/transformation-options?variantId=${encodeURIComponent(variantId)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) {
+          const opts = data.data?.options;
+          setTransformationOptions(Array.isArray(opts) && opts.length > 0 ? opts : null);
+        }
+      } catch {
+        if (!cancelled) setTransformationOptions(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentItem?.variantId]);
+
   // Poll status of an in-progress remote print job (non-printer device watching its queued job)
   useEffect(() => {
     if (!remotePrintJob) return;
@@ -838,6 +978,7 @@ export default function ScalePage() {
     printedAtEst: string,
     sn: string,
     mapping?: InventoryMappingInfo | null,
+    skipPoApproval?: boolean,
   ) => {
     try {
       const res = await fetch('/api/scale/print-log', {
@@ -862,8 +1003,8 @@ export default function ScalePage() {
       console.error('[scale] failed to log printed label:', err, '| item:', item.itemNumber, '| qr:', qrPayload);
     }
 
-    // Auto-approve PO line item if this print was for one
-    if (item.poId && item.poLineItemId) {
+    // Auto-approve PO line item if this print was for one (skipped during bulk print — approved in bulk after)
+    if (!skipPoApproval && item.poId && item.poLineItemId) {
       try {
         await approvePoItem(item.poId, item.poLineItemId, 1);
         const fresh = await refreshLineItems(item.poId);
@@ -873,7 +1014,7 @@ export default function ScalePage() {
       }
     }
 
-    // Adjust parent product inventory for wet products
+    // Adjust parent product inventory for wet products, then increase child inventory
     if (mapping?.found && mapping.parentInventoryId && mapping.parentLocationId) {
       const rawWeight = parseFloat(item.itemWeight?.replace(/[^0-9.]/g, '') ?? '0') || 0;
       let delta = 0;
@@ -899,6 +1040,24 @@ export default function ScalePage() {
         } catch (err) {
           console.error('[scale] inventory adjustment failed:', err);
         }
+
+        // Increase child (transformation output) inventory by the same amount
+        if (mapping.childInventoryItemId) {
+          try {
+            await fetch('/api/scale/inventory-adjust', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                inventoryItemId: mapping.childInventoryItemId,
+                locationId: mapping.parentLocationId,
+                delta: Math.abs(delta),
+                reason: 'correction',
+              }),
+            });
+          } catch (err) {
+            console.error('[scale] child inventory increase failed:', err);
+          }
+        }
       }
     }
   }, [fetchHistory, approvePoItem, refreshLineItems]);
@@ -913,8 +1072,8 @@ export default function ScalePage() {
 
   const handlePoItemSelect = useCallback(async (po: PurchaseOrder, li: PurchaseOrderLineItem) => {
     setLookupLoading(true);
-    setManualWeight('');
-    resetPrinted();
+    setBulkPrintResults(null);
+    setBulkInventoryAdjusted(null);
 
     let plu = '';
     let productTitle = li.productTitle;
@@ -941,7 +1100,7 @@ export default function ScalePage() {
       }
     }
 
-    setCurrentItem({
+    const resolvedItem: CurrentItem = {
       itemNumber: '',
       itemName: productTitle,
       itemWeight: '',
@@ -953,9 +1112,128 @@ export default function ScalePage() {
       poId: po.id,
       poLineItemId: li.id,
       poQuantityOrdered: li.quantityOrdered,
-    });
+    };
+
+    setBulkPrintModal({ item: resolvedItem, po, li });
     setLookupLoading(false);
-  }, [resetPrinted]);
+  }, []);
+
+  const handleBulkPrint = useCallback(async (
+    modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem },
+    quantity: number,
+    weight: string,
+  ) => {
+    const { item: baseItem, po, li } = modalState;
+    const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
+
+    setBulkPrintModal(null);
+    resetPrinted();
+    setCurrentItem(item);
+    setBulkPrintResults([]);
+    setBulkInventoryAdjusted(null);
+    setPrintError(null);
+
+    const mappedTitle   = applyMappings(item.productTitle, textMappings);
+    const mappedVariant = item.variantTitle ? applyMappings(item.variantTitle, textMappings) : item.variantTitle;
+
+    const results: BulkPrintLabelResult[] = [];
+
+    for (let i = 0; i < quantity; i++) {
+      try {
+        const sn = await fetchNextSn(item.variantId, item.found ? item.plu : null, mappedTitle, mappedVariant);
+        const plainPayload = buildQrPayload({
+          plu: item.found ? item.plu : null,
+          productTitle: mappedTitle,
+          variantTitle: mappedVariant,
+          itemWeight: item.itemWeight,
+        }, sn);
+
+        let encryptedPayload: string;
+        try {
+          encryptedPayload = await encryptQrPayload(plainPayload);
+        } catch {
+          results.push({ index: i + 1, sn, qrPayload: '', printedAtEst: '', status: 'failed', error: 'Encryption failed' });
+          setBulkPrintResults([...results]);
+          continue;
+        }
+
+        const printedAtEst = formatEst(new Date());
+        if (isPrinterDevice) {
+          triggerPrint({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant, itemWeight: item.itemWeight }, sn, encryptedPayload);
+        } else {
+          await createJob({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: item.itemWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
+        }
+        // Log each label; skip PO approval (done once after the full batch)
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true);
+        results.push({ index: i + 1, sn, qrPayload: encryptedPayload, printedAtEst, status: 'printed' });
+      } catch (err) {
+        results.push({ index: i + 1, sn: '', qrPayload: '', printedAtEst: '', status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
+      }
+      setBulkPrintResults([...results]);
+    }
+
+    // Approve PO line item with the actual printed count
+    const printedCount = results.filter(r => r.status === 'printed').length;
+    if (printedCount > 0) {
+      try {
+        await approvePoItem(po.id, li.id, printedCount);
+        const fresh = await refreshLineItems(po.id);
+        setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
+      } catch (err) {
+        console.error('[scale] PO bulk approval failed:', err);
+      }
+    }
+
+    // Shopify inventory correction: if received fewer than ordered, adjust the delta
+    const shortfall = li.quantityOrdered - printedCount;
+    if (shortfall > 0 && item.variantId) {
+      try {
+        const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId)}`);
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          const { inventoryItemId, locationId } = invData.data ?? {};
+          if (inventoryItemId && locationId) {
+            const adjustDelta = -shortfall;
+            await fetch('/api/scale/inventory-adjust', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ inventoryItemId, locationId, delta: adjustDelta, reason: 'correction' }),
+            });
+            setBulkInventoryAdjusted(adjustDelta);
+          }
+        }
+      } catch (err) {
+        console.error('[scale] PO inventory correction failed:', err);
+      }
+    }
+  }, [textMappings, isPrinterDevice, triggerPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
+
+  const handleTransformationSelect = useCallback((opt: TransformationOption) => {
+    if (!currentItem) return;
+    setCurrentItem({
+      ...currentItem,
+      variantId: opt.variantId,
+      variantTitle: opt.title !== 'Default Title' ? opt.title : null,
+    });
+    setTransformationOptions(null);
+    resetPrinted();
+  }, [currentItem, resetPrinted]);
+
+  const handleBulkReprint = useCallback((r: BulkPrintLabelResult) => {
+    if (!currentItem) return;
+    const reprintSn = buildReprintSn(r.sn || generateSn());
+    const printedAtEst = formatEst(new Date());
+    if (!r.qrPayload) return;
+    let newQrPayload: string;
+    if (isEncryptedQr(r.qrPayload)) {
+      // Reuse the existing encrypted payload for simplicity (same SN swap approach as handleReprint)
+      // Async decrypt/re-encrypt is avoided here — just use the existing payload as-is
+      newQrPayload = r.qrPayload;
+    } else {
+      newQrPayload = r.qrPayload;
+    }
+    printVerbatim({ productTitle: currentItem.productTitle, variantTitle: currentItem.variantTitle ?? null, qrPayload: newQrPayload, itemWeight: currentItem.itemWeight, printedAtEst, sn: reprintSn });
+  }, [currentItem, buildReprintSn, printVerbatim]);
 
   const printItem = useCallback(async (item: CurrentItem) => {
     if (isPrinting.current) return;
@@ -1336,6 +1614,11 @@ export default function ScalePage() {
                   </div>
                 )}
 
+                {/* Transformation options — shown when current variant has child transformation variants */}
+                {transformationOptions && transformationOptions.length > 0 && (
+                  <TransformationPanel options={transformationOptions} onSelect={handleTransformationSelect} />
+                )}
+
                 {/* Wet product / inventory mapping banner */}
                 {inventoryMapping?.found && (
                   <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 mb-2 border ${
@@ -1389,9 +1672,20 @@ export default function ScalePage() {
                   </div>
                 )}
 
+                {/* Bulk print results — shown inline after bulk print completes */}
+                {bulkPrintResults && bulkPrintResults.length > 0 && (
+                  <BulkPrintResultPanel
+                    results={bulkPrintResults}
+                    poQuantityOrdered={currentItem.poQuantityOrdered ?? bulkPrintResults.length}
+                    inventoryAdjusted={bulkInventoryAdjusted}
+                    onReprint={handleBulkReprint}
+                    onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); }}
+                  />
+                )}
+
                 {/* Action buttons */}
                 <div className="flex flex-col gap-2">
-                  {(!currentItem.poId || !!currentItem.itemWeight) && (
+                  {(!currentItem.poId || !!currentItem.itemWeight) && !bulkPrintResults && (
                     <button
                       onClick={handleManualPrint}
                       disabled={!canPrint}
@@ -1405,6 +1699,9 @@ export default function ScalePage() {
                     onClick={() => {
                       setCurrentItem(null);
                       setManualWeight('');
+                      setBulkPrintResults(null);
+                      setBulkInventoryAdjusted(null);
+                      setTransformationOptions(null);
                       resetPrinted();
                     }}
                     className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"
@@ -1469,6 +1766,16 @@ export default function ScalePage() {
           hideSave={isPlaceholderItemNumber(unmappedPrompt.itemNumber)}
           onClose={() => setUnmappedPrompt(null)}
           onResolved={handleUnmappedResolved}
+        />
+      )}
+
+      {bulkPrintModal && (
+        <BulkPrintModal
+          productTitle={bulkPrintModal.item.productTitle}
+          variantTitle={bulkPrintModal.item.variantTitle ?? null}
+          orderedQuantity={bulkPrintModal.li.quantityOrdered}
+          onConfirm={(qty, wt) => handleBulkPrint(bulkPrintModal, qty, wt)}
+          onClose={() => setBulkPrintModal(null)}
         />
       )}
 

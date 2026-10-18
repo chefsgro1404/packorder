@@ -946,3 +946,11 @@ public class FailPrintJobRequest
 {
     [JsonProperty("reason")] public string Reason { get; set; } = "";
 }
+
+public class TransformationOption
+{
+    [JsonProperty("variantId")]       public string VariantId { get; set; } = "";
+    [JsonProperty("title")]           public string Title { get; set; } = "";
+    [JsonProperty("inventoryItemId")] public string InventoryItemId { get; set; } = "";
+    [JsonProperty("locationId")]      public string LocationId { get; set; } = "";
+}

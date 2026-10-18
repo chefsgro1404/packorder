@@ -397,6 +397,290 @@ public class InventoryMappingTests
         Assert.Null(result);
     }
 
+    // ─── GetVariantAdjustments — embeds child_inventory_item_id ──────────────
+
+    [Fact]
+    public async Task GetVariantAdjustments_WithInventoryItem_EmbedsChildInventoryItemId()
+    {
+        var metafieldJson = JsonConvert.SerializeObject(new
+        {
+            parent_inventory_id   = "gid://shopify/InventoryItem/999",
+            weight_per_unit       = 3.5,
+            is_weighted           = true,
+            parent_location_id    = "gid://shopify/Location/111",
+            parent_product_handle = "whole-salmon",
+            parent_product_title  = "Whole Atlantic Salmon"
+        });
+
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                inventoryItem = new { id = "gid://shopify/InventoryItem/42" },
+                metafield = new { value = metafieldJson },
+                product   = new { metafield = (object?)null }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var result = await svc.GetVariantAdjustmentsAsync("123456789");
+
+        Assert.NotNull(result);
+        Assert.Equal("gid://shopify/InventoryItem/42", result!["child_inventory_item_id"]?.ToString());
+        Assert.Equal("gid://shopify/InventoryItem/999", result["parent_inventory_id"]?.ToString());
+    }
+
+    [Fact]
+    public async Task GetVariantAdjustments_NoInventoryItem_DoesNotEmbedChildId()
+    {
+        var metafieldJson = JsonConvert.SerializeObject(new
+        {
+            parent_inventory_id  = "gid://shopify/InventoryItem/999",
+            weight_per_unit      = 1.0,
+            is_weighted          = false,
+            parent_location_id   = "gid://shopify/Location/111",
+            parent_product_handle = "whole-chicken",
+            parent_product_title  = "Whole Chicken"
+        });
+
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                metafield = new { value = metafieldJson },
+                product   = new { metafield = (object?)null }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var result = await svc.GetVariantAdjustmentsAsync("789");
+
+        Assert.NotNull(result);
+        Assert.Null(result!["child_inventory_item_id"]);
+    }
+
+    // ─── GetVariantInventoryAsync — unit tests ────────────────────────────────
+
+    [Fact]
+    public async Task GetVariantInventory_ReturnsInventoryItemIdAndLocationId()
+    {
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                inventoryItem = new
+                {
+                    id = "gid://shopify/InventoryItem/12345",
+                    inventoryLevels = new
+                    {
+                        nodes = new[]
+                        {
+                            new { location = new { id = "gid://shopify/Location/67890" } }
+                        }
+                    }
+                }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var (itemId, locationId) = await svc.GetVariantInventoryAsync("111");
+
+        Assert.Equal("gid://shopify/InventoryItem/12345", itemId);
+        Assert.Equal("gid://shopify/Location/67890", locationId);
+    }
+
+    [Fact]
+    public async Task GetVariantInventory_NullVariant_ReturnsNullTuple()
+    {
+        var handler = MockGraphQlResponse(new { productVariant = (object?)null });
+
+        var svc = CreateService(handler);
+        var (itemId, locationId) = await svc.GetVariantInventoryAsync("nonexistent");
+
+        Assert.Null(itemId);
+        Assert.Null(locationId);
+    }
+
+    [Fact]
+    public async Task GetVariantInventory_NoInventoryLevels_ReturnsItemIdOnly()
+    {
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                inventoryItem = new
+                {
+                    id = "gid://shopify/InventoryItem/99",
+                    inventoryLevels = new { nodes = new object[0] }
+                }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var (itemId, locationId) = await svc.GetVariantInventoryAsync("123");
+
+        Assert.Equal("gid://shopify/InventoryItem/99", itemId);
+        Assert.Null(locationId);
+    }
+
+    [Fact]
+    public async Task GetVariantInventory_GraphQlError_ReturnsNullTuple()
+    {
+        var mock = new Mock<HttpMessageHandler>();
+        mock.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.OK,
+                Content    = new StringContent(JsonConvert.SerializeObject(new
+                {
+                    errors = new[] { new { message = "Access denied" } }
+                }))
+            });
+
+        var svc = CreateService(mock.Object);
+        var (itemId, locationId) = await svc.GetVariantInventoryAsync("123");
+
+        Assert.Null(itemId);
+        Assert.Null(locationId);
+    }
+
+    [Theory]
+    [InlineData("9876")]
+    [InlineData("gid://shopify/ProductVariant/9876")]
+    public async Task GetVariantInventory_NormalizesVariantIdToGid(string variantId)
+    {
+        string? capturedBody = null;
+        var mock = new Mock<HttpMessageHandler>();
+        mock.Protected()
+            .Setup<Task<HttpResponseMessage>>("SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
+            .Returns<HttpRequestMessage, CancellationToken>(async (req, _) =>
+            {
+                capturedBody = await req.Content!.ReadAsStringAsync();
+                return new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content    = new StringContent(JsonConvert.SerializeObject(new
+                    {
+                        data = new { productVariant = (object?)null }
+                    }))
+                };
+            });
+
+        var svc = CreateService(mock.Object);
+        await svc.GetVariantInventoryAsync(variantId);
+
+        Assert.NotNull(capturedBody);
+        Assert.Contains("gid://shopify/ProductVariant/9876", capturedBody!);
+    }
+
+    // ─── GetChildTransformationVariantsAsync — unit tests ─────────────────────
+
+    [Fact]
+    public async Task GetChildTransformationVariants_ReturnsMatchingChildren()
+    {
+        const string parentInventoryId = "gid://shopify/InventoryItem/100";
+        var childAdjJson = JsonConvert.SerializeObject(new
+        {
+            parent_inventory_id  = parentInventoryId,
+            weight_per_unit      = 2.0,
+            is_weighted          = true,
+            parent_location_id   = "gid://shopify/Location/200",
+            parent_product_handle = "whole-salmon",
+            parent_product_title  = "Whole Salmon"
+        });
+        var otherAdjJson = JsonConvert.SerializeObject(new
+        {
+            parent_inventory_id  = "gid://shopify/InventoryItem/999",  // different parent
+            weight_per_unit      = 1.0,
+            is_weighted          = false,
+            parent_location_id   = "gid://shopify/Location/200",
+            parent_product_handle = "other-product",
+            parent_product_title  = "Other Product"
+        });
+
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                inventoryItem = new { id = parentInventoryId },
+                product = new
+                {
+                    variants = new
+                    {
+                        nodes = new object[]
+                        {
+                            new { id = "gid://shopify/ProductVariant/10", title = "Ready to Cook", inventoryItem = new { id = "gid://shopify/InventoryItem/10" }, metafield = new { value = childAdjJson } },
+                            new { id = "gid://shopify/ProductVariant/20", title = "Other Child",   inventoryItem = new { id = "gid://shopify/InventoryItem/20" }, metafield = new { value = otherAdjJson } },
+                            new { id = "gid://shopify/ProductVariant/30", title = "No Metafield",  inventoryItem = new { id = "gid://shopify/InventoryItem/30" }, metafield = (object?)null }
+                        }
+                    }
+                }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var options = await svc.GetChildTransformationVariantsAsync("parent-variant-id");
+
+        Assert.Single(options);
+        Assert.Equal("gid://shopify/ProductVariant/10", options[0].VariantId);
+        Assert.Equal("Ready to Cook", options[0].Title);
+        Assert.Equal("gid://shopify/InventoryItem/10", options[0].InventoryItemId);
+        Assert.Equal("gid://shopify/Location/200", options[0].LocationId);
+    }
+
+    [Fact]
+    public async Task GetChildTransformationVariants_NoChildren_ReturnsEmpty()
+    {
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                inventoryItem = new { id = "gid://shopify/InventoryItem/100" },
+                product = new
+                {
+                    variants = new { nodes = new object[0] }
+                }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var options = await svc.GetChildTransformationVariantsAsync("parent");
+
+        Assert.Empty(options);
+    }
+
+    [Fact]
+    public async Task GetChildTransformationVariants_NullParentVariant_ReturnsEmpty()
+    {
+        var handler = MockGraphQlResponse(new { productVariant = (object?)null });
+
+        var svc = CreateService(handler);
+        var options = await svc.GetChildTransformationVariantsAsync("nonexistent");
+
+        Assert.Empty(options);
+    }
+
+    [Fact]
+    public async Task GetChildTransformationVariants_NoParentInventoryItem_ReturnsEmpty()
+    {
+        var handler = MockGraphQlResponse(new
+        {
+            productVariant = new
+            {
+                inventoryItem = (object?)null,
+                product = new { variants = new { nodes = new object[0] } }
+            }
+        });
+
+        var svc = CreateService(handler);
+        var options = await svc.GetChildTransformationVariantsAsync("parent");
+
+        Assert.Empty(options);
+    }
+
     // ─── AdjustInventoryAsync — unit tests ───────────────────────────────────
 
     [Fact]

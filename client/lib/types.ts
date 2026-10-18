@@ -357,6 +357,14 @@ export interface InventoryMappingInfo {
   parentProductHandle: string;
   parentProductTitle: string;
   parentLocationId: string;
+  childInventoryItemId?: string | null;
+}
+
+export interface TransformationOption {
+  variantId: string;
+  title: string;
+  inventoryItemId: string;
+  locationId: string;
 }
 
 export interface PurchaseOrder {
