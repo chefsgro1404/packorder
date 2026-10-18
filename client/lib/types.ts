@@ -371,6 +371,31 @@ export interface PurchaseOrder {
   shopifyUpdatedAt: string;
 }
 
+export interface PrintJobPayload {
+  plu: string | null;
+  productTitle: string;
+  variantTitle: string | null;
+  itemWeight: string | null;
+  qrPayload: string;
+  sn: string;
+  labelSizeKey: string;
+  printedAtEst: string;
+}
+
+export interface PrintJob {
+  id: string;
+  status: 'queued' | 'claimed' | 'completed' | 'failed';
+  payload: string;
+  jobType: 'label' | 'barcode';
+  createdBy: string;
+  claimedBy: string | null;
+  claimedAt: string | null;
+  completedAt: string | null;
+  failedReason: string | null;
+  retryCount: number;
+  createdAt: string;
+}
+
 export interface PurchaseOrderLineItem {
   id: string;
   poId: string;

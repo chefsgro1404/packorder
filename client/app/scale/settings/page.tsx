@@ -13,6 +13,7 @@ import {
   Webhook,
   Tag,
   Type,
+  Printer,
 } from 'lucide-react';
 
 interface TextMapping {
@@ -40,6 +41,22 @@ export default function ScaleSettingsPage() {
   const [mappingsSaving, setMappingsSaving] = useState(false);
   const [mappingsError, setMappingsError] = useState<string | null>(null);
   const [deletingPhrase, setDeletingPhrase] = useState<string | null>(null);
+
+  // ── Printer device ───────────────────────────────────────────────────────
+  const [isPrinterDevice, setIsPrinterDevice] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsPrinterDevice(localStorage.getItem('shipScanPrinterDevice') === 'true');
+    } catch {}
+  }, []);
+
+  const handleTogglePrinterDevice = (enabled: boolean) => {
+    try {
+      localStorage.setItem('shipScanPrinterDevice', enabled ? 'true' : 'false');
+    } catch {}
+    setIsPrinterDevice(enabled);
+  };
 
   // ── Auto-sync settings ───────────────────────────────────────────────────
   const [syncSettings, setSyncSettings] = useState<SyncSettings>({
@@ -356,6 +373,39 @@ export default function ScaleSettingsPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Printer device ───────────────────────────────────────────────── */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+            <Printer className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-semibold text-slate-200">Printer Device</h2>
+          </div>
+          <div className="px-4 pb-4 flex flex-col gap-3">
+            <p className="text-xs text-slate-500">
+              Register this device as the printer. When enabled, this device polls for print jobs
+              queued from other devices (e.g. iPad) and executes them using its connected printer.
+              Only enable on the device physically connected to the label printer.
+            </p>
+            <button
+              onClick={() => handleTogglePrinterDevice(!isPrinterDevice)}
+              className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
+                isPrinterDevice
+                  ? 'bg-amber-950/40 border-amber-800 text-amber-300'
+                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${isPrinterDevice ? 'bg-amber-500' : 'bg-slate-700'}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${isPrinterDevice ? 'translate-x-5' : 'translate-x-0'}`} />
+              </span>
+              {isPrinterDevice ? 'This device is registered as the printer' : 'Register as printer device'}
+            </button>
+            {isPrinterDevice && (
+              <p className="text-xs text-amber-400/70">
+                Keep the Scale &amp; Print page open on this device to receive and execute remote print jobs.
+              </p>
             )}
           </div>
         </div>

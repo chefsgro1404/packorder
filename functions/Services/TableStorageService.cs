@@ -24,6 +24,7 @@ public class TableStorageService
     private readonly TableClient _textMappings;
     private readonly TableClient _purchaseOrders;
     private readonly TableClient _purchaseOrderLineItems;
+    private readonly TableClient _printJobs;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -45,6 +46,7 @@ public class TableStorageService
         _textMappings              = tableServiceClient.GetTableClient("textmappings");
         _purchaseOrders            = tableServiceClient.GetTableClient("purchaseorders");
         _purchaseOrderLineItems    = tableServiceClient.GetTableClient("purchaseorderlineitems");
+        _printJobs                 = tableServiceClient.GetTableClient("printjobs");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -65,6 +67,7 @@ public class TableStorageService
         await _textMappings.CreateIfNotExistsAsync();
         await _purchaseOrders.CreateIfNotExistsAsync();
         await _purchaseOrderLineItems.CreateIfNotExistsAsync();
+        await _printJobs.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1175,5 +1178,105 @@ public class TableStorageService
             po.Status = "open";
 
         await _purchaseOrders.UpsertEntityAsync(po, TableUpdateMode.Replace);
+    }
+
+    // ─── Print Jobs (Cross-Device Print Sync) ────────────────────────────────
+
+    public async Task<PrintJobEntity> CreatePrintJobAsync(string userId, string payload, string jobType, string createdBy)
+    {
+        var entity = new PrintJobEntity
+        {
+            PartitionKey = userId,
+            RowKey       = Guid.NewGuid().ToString("N"),
+            Status       = "queued",
+            Payload      = payload,
+            JobType      = jobType,
+            CreatedBy    = createdBy,
+            CreatedAt    = DateTimeOffset.UtcNow,
+        };
+        await _printJobs.AddEntityAsync(entity);
+        return entity;
+    }
+
+    public async Task<List<PrintJobEntity>> ListPrintJobsAsync(string userId, string? status = null)
+    {
+        var filter = $"PartitionKey eq '{userId}'";
+        if (!string.IsNullOrWhiteSpace(status))
+            filter += $" and Status eq '{status}'";
+        var results = new List<PrintJobEntity>();
+        await foreach (var e in _printJobs.QueryAsync<PrintJobEntity>(filter: filter))
+            results.Add(e);
+        return results.OrderBy(e => e.CreatedAt).ToList();
+    }
+
+    public async Task<PrintJobEntity?> GetPrintJobAsync(string userId, string rowKey)
+    {
+        try
+        {
+            var response = await _printJobs.GetEntityAsync<PrintJobEntity>(userId, rowKey);
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
+        }
+    }
+
+    public async Task<bool> ClaimPrintJobAsync(string userId, string rowKey, string deviceId)
+    {
+        try
+        {
+            var response = await _printJobs.GetEntityAsync<PrintJobEntity>(userId, rowKey);
+            var entity = response.Value;
+            if (entity.Status != "queued") return false;
+            entity.Status    = "claimed";
+            entity.ClaimedBy = deviceId;
+            entity.ClaimedAt = DateTimeOffset.UtcNow;
+            await _printJobs.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 412)
+        {
+            return false;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return false;
+        }
+    }
+
+    public async Task CompletePrintJobAsync(string userId, string rowKey)
+    {
+        try
+        {
+            var response = await _printJobs.GetEntityAsync<PrintJobEntity>(userId, rowKey);
+            var entity = response.Value;
+            entity.Status      = "completed";
+            entity.CompletedAt = DateTimeOffset.UtcNow;
+            await _printJobs.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Replace);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to complete print job {RowKey}", rowKey);
+        }
+    }
+
+    public async Task FailPrintJobAsync(string userId, string rowKey, string reason)
+    {
+        try
+        {
+            var response = await _printJobs.GetEntityAsync<PrintJobEntity>(userId, rowKey);
+            var entity = response.Value;
+            entity.Status      = "queued";   // release back to queue for retry
+            entity.ClaimedBy   = null;
+            entity.ClaimedAt   = null;
+            entity.FailedReason = reason;
+            entity.RetryCount++;
+            await _printJobs.UpdateEntityAsync(entity, ETag.All, TableUpdateMode.Replace);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to release print job {RowKey}", rowKey);
+        }
     }
 }

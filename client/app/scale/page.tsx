@@ -38,8 +38,9 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo } from '@/lib/types';
+import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload } from '@/lib/types';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
+import { usePrintQueue } from '@/hooks/usePrintQueue';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
 
@@ -693,7 +694,9 @@ export default function ScalePage() {
   const [manualWeight, setManualWeight] = useState('');
   const [inventoryMapping, setInventoryMapping] = useState<InventoryMappingInfo | null>(null);
   const [lastAdjustment, setLastAdjustment] = useState<{ delta: number; parentTitle: string } | null>(null);
+  const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+  const { isPrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
   const isPrinting = useRef(false);
@@ -787,6 +790,47 @@ export default function ScalePage() {
     })();
     return () => { cancelled = true; };
   }, [currentItem?.variantId]);
+
+  // Poll status of an in-progress remote print job (non-printer device watching its queued job)
+  useEffect(() => {
+    if (!remotePrintJob) return;
+    if (remotePrintJob.status === 'completed' || remotePrintJob.status === 'failed') return;
+    const poll = setInterval(async () => {
+      const fresh = await getJob(remotePrintJob.id);
+      if (fresh) setRemotePrintJob(fresh);
+    }, 2000);
+    return () => clearInterval(poll);
+  }, [remotePrintJob, getJob]);
+
+  // Printer device background poll — claims and executes jobs from other devices
+  useEffect(() => {
+    if (!isPrinterDevice) return;
+    const poll = setInterval(async () => {
+      const jobs = await listQueuedJobs();
+      for (const job of jobs) {
+        const claimed = await claimJob(job.id);
+        if (!claimed) continue;
+        try {
+          const payload = JSON.parse(job.payload) as PrintJobPayload;
+          triggerPrint(
+            {
+              plu: payload.plu,
+              productTitle: payload.productTitle,
+              variantTitle: payload.variantTitle,
+              itemWeight: payload.itemWeight,
+            },
+            payload.sn,
+            payload.qrPayload
+          );
+          await completeJob(job.id);
+        } catch (err) {
+          console.error('[scale] remote job execution failed:', err);
+          await failJob(job.id, err instanceof Error ? err.message : 'execution failed');
+        }
+      }
+    }, 3000);
+    return () => clearInterval(poll);
+  }, [isPrinterDevice, listQueuedJobs, claimJob, completeJob, failJob, triggerPrint]);
 
   const logPrintedLabel = useCallback(async (
     item: CurrentItem,
@@ -934,17 +978,39 @@ export default function ScalePage() {
         setPrintError('Encryption failed — label not printed. Check your connection and try again.');
         return;
       }
-      const printedAtEst = triggerPrint({
-        plu: item.found ? item.plu : null,
-        productTitle: mappedTitle,
-        variantTitle: mappedVariant,
-        itemWeight: item.itemWeight,
-      }, sn, encryptedPayload).printedAtEst;
-      await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, inventoryMapping);
+
+      if (isPrinterDevice) {
+        const { printedAtEst } = triggerPrint({
+          plu: item.found ? item.plu : null,
+          productTitle: mappedTitle,
+          variantTitle: mappedVariant,
+          itemWeight: item.itemWeight,
+        }, sn, encryptedPayload);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, inventoryMapping);
+      } else {
+        const printedAtEst = formatEst(new Date());
+        const jobPayload: PrintJobPayload = {
+          plu: item.found ? item.plu : null,
+          productTitle: mappedTitle,
+          variantTitle: mappedVariant ?? null,
+          itemWeight: item.itemWeight,
+          qrPayload: encryptedPayload,
+          sn,
+          labelSizeKey,
+          printedAtEst,
+        };
+        const job = await createJob(jobPayload, 'label');
+        if (job) {
+          setRemotePrintJob(job);
+          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, inventoryMapping);
+        } else {
+          setPrintError('Failed to queue print job — check your connection and try again.');
+        }
+      }
     } finally {
       isPrinting.current = false;
     }
-  }, [triggerPrint, logPrintedLabel, textMappings, inventoryMapping]);
+  }, [triggerPrint, logPrintedLabel, textMappings, inventoryMapping, isPrinterDevice, createJob, labelSizeKey]);
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
@@ -1210,6 +1276,34 @@ export default function ScalePage() {
                 <div className="border-t border-slate-800 my-4" />
 
                 {/* Feedback banners */}
+                {!isPrinterDevice && remotePrintJob && (
+                  <div className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 mb-3 border text-sm ${
+                    remotePrintJob.status === 'completed'
+                      ? 'bg-emerald-950/50 border-emerald-900 text-emerald-300'
+                      : remotePrintJob.status === 'failed'
+                      ? 'bg-rose-950/50 border-rose-900 text-rose-300'
+                      : remotePrintJob.status === 'claimed'
+                      ? 'bg-blue-950/50 border-blue-900 text-blue-300'
+                      : 'bg-amber-950/50 border-amber-900 text-amber-300'
+                  }`}>
+                    <Printer className="w-4 h-4 flex-shrink-0" />
+                    <span className="flex-1 min-w-0 font-medium">
+                      {remotePrintJob.status === 'queued' && 'Waiting for printer device…'}
+                      {remotePrintJob.status === 'claimed' && `Printing on ${remotePrintJob.claimedBy ?? 'another device'}…`}
+                      {remotePrintJob.status === 'completed' && 'Printed successfully on remote device'}
+                      {remotePrintJob.status === 'failed' && `Print failed: ${remotePrintJob.failedReason ?? 'unknown error'}`}
+                    </span>
+                    {(remotePrintJob.status === 'completed' || remotePrintJob.status === 'failed') && (
+                      <button
+                        onClick={() => setRemotePrintJob(null)}
+                        className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-current opacity-60 hover:opacity-100 transition-opacity"
+                        aria-label="Dismiss"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
                 {printError && (
                   <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5 mb-3">
                     <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />

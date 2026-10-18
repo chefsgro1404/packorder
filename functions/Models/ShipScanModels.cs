@@ -909,3 +909,40 @@ public class InventoryAdjustRequest
     [JsonProperty("delta")]           public int Delta { get; set; }
     [JsonProperty("reason")]          public string Reason { get; set; } = "correction";
 }
+
+// ─── Print Jobs (Cross-Device Print Sync) ────────────────────────────────────
+
+public class PrintJobEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";   // userId
+    public string RowKey { get; set; } = "";          // job GUID
+    public string Status { get; set; } = "queued";   // queued | claimed | completed | failed
+    public string Payload { get; set; } = "{}";      // JSON: PrintJobPayload
+    public string JobType { get; set; } = "label";   // label | barcode
+    public string CreatedBy { get; set; } = "";      // deviceId
+    public string? ClaimedBy { get; set; }
+    public DateTimeOffset? ClaimedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public string? FailedReason { get; set; }
+    public int RetryCount { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class CreatePrintJobRequest
+{
+    [JsonProperty("payload")]   public string Payload { get; set; } = "{}";
+    [JsonProperty("jobType")]   public string JobType { get; set; } = "label";
+    [JsonProperty("createdBy")] public string CreatedBy { get; set; } = "";
+}
+
+public class ClaimPrintJobRequest
+{
+    [JsonProperty("deviceId")] public string DeviceId { get; set; } = "";
+}
+
+public class FailPrintJobRequest
+{
+    [JsonProperty("reason")] public string Reason { get; set; } = "";
+}
