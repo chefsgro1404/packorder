@@ -27,6 +27,7 @@ import {
   ClipboardList,
   Tag,
   X,
+  Droplets,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -37,7 +38,7 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem } from '@/lib/types';
+import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo } from '@/lib/types';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
@@ -690,6 +691,8 @@ export default function ScalePage() {
   const [printError, setPrintError] = useState<string | null>(null);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
   const [manualWeight, setManualWeight] = useState('');
+  const [inventoryMapping, setInventoryMapping] = useState<InventoryMappingInfo | null>(null);
+  const [lastAdjustment, setLastAdjustment] = useState<{ delta: number; parentTitle: string } | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
@@ -763,7 +766,35 @@ export default function ScalePage() {
     }
   }, []);
 
-  const logPrintedLabel = useCallback(async (item: CurrentItem, qrPayload: string, printedAtEst: string, sn: string) => {
+  // Fetch inventory mapping whenever the selected variant changes
+  useEffect(() => {
+    const variantId = currentItem?.variantId;
+    setLastAdjustment(null);
+    if (!variantId) {
+      setInventoryMapping(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(variantId)}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled) setInventoryMapping(data.data ?? null);
+      } catch {
+        if (!cancelled) setInventoryMapping(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentItem?.variantId]);
+
+  const logPrintedLabel = useCallback(async (
+    item: CurrentItem,
+    qrPayload: string,
+    printedAtEst: string,
+    sn: string,
+    mapping?: InventoryMappingInfo | null,
+  ) => {
     try {
       const res = await fetch('/api/scale/print-log', {
         method: 'POST',
@@ -795,6 +826,35 @@ export default function ScalePage() {
         setPoLineItemsCache(prev => ({ ...prev, [item.poId!]: fresh }));
       } catch (err) {
         console.error('[scale] PO approval failed:', err);
+      }
+    }
+
+    // Adjust parent product inventory for wet products
+    if (mapping?.found && mapping.parentInventoryId && mapping.parentLocationId) {
+      const rawWeight = parseFloat(item.itemWeight?.replace(/[^0-9.]/g, '') ?? '0') || 0;
+      let delta = 0;
+      if (mapping.isWeighted) {
+        if (rawWeight > 0 && mapping.weightPerUnit > 0)
+          delta = -Math.round(rawWeight / mapping.weightPerUnit);
+      } else {
+        delta = -1;
+      }
+      if (delta !== 0) {
+        try {
+          await fetch('/api/scale/inventory-adjust', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              inventoryItemId: mapping.parentInventoryId,
+              locationId: mapping.parentLocationId,
+              delta,
+              reason: 'correction',
+            }),
+          });
+          setLastAdjustment({ delta, parentTitle: mapping.parentProductTitle });
+        } catch (err) {
+          console.error('[scale] inventory adjustment failed:', err);
+        }
       }
     }
   }, [fetchHistory, approvePoItem, refreshLineItems]);
@@ -880,11 +940,11 @@ export default function ScalePage() {
         variantTitle: mappedVariant,
         itemWeight: item.itemWeight,
       }, sn, encryptedPayload).printedAtEst;
-      await logPrintedLabel(item, encryptedPayload, printedAtEst, sn);
+      await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, inventoryMapping);
     } finally {
       isPrinting.current = false;
     }
-  }, [triggerPrint, logPrintedLabel, textMappings]);
+  }, [triggerPrint, logPrintedLabel, textMappings, inventoryMapping]);
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
@@ -1179,6 +1239,37 @@ export default function ScalePage() {
                     >
                       <X className="w-3 h-3" />
                     </button>
+                  </div>
+                )}
+
+                {/* Wet product / inventory mapping banner */}
+                {inventoryMapping?.found && (
+                  <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 mb-2 border ${
+                    lastAdjustment
+                      ? 'bg-emerald-950/40 border-emerald-800/60'
+                      : 'bg-amber-950/40 border-amber-800/60'
+                  }`}>
+                    <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-400' : 'text-amber-400'}`} />
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-300' : 'text-amber-300'}`}>
+                        Wet Product
+                      </p>
+                      {lastAdjustment ? (
+                        <p className="text-xs text-emerald-400/80 leading-tight mt-0.5">
+                          {Math.abs(lastAdjustment.delta)} unit{Math.abs(lastAdjustment.delta) !== 1 ? 's' : ''} deducted from {lastAdjustment.parentTitle}
+                        </p>
+                      ) : inventoryMapping.isWeighted ? (
+                        <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                          {currentItem.itemWeight
+                            ? `~${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit)} unit${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit) !== 1 ? 's' : ''} of ${inventoryMapping.parentProductTitle} will be deducted`
+                            : `Deducts from ${inventoryMapping.parentProductTitle} · ${inventoryMapping.weightPerUnit} lbs/unit`}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                          1 unit of {inventoryMapping.parentProductTitle} will be deducted
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
 

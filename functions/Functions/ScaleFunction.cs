@@ -516,6 +516,92 @@ public class ScaleFunction
         }
     }
 
+    [Function("ScaleInventoryAdjust")]
+    public async Task<HttpResponseData> InventoryAdjust(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "scale/inventory-adjust")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (userId, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<InventoryAdjustRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.InventoryItemId))
+                return await ResponseHelper.WriteError(req, "inventoryItemId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.LocationId))
+                return await ResponseHelper.WriteError(req, "locationId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (request.Delta == 0)
+                return await ResponseHelper.WriteError(req, "delta must be non-zero", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var quantityAfter = await _shopify.AdjustInventoryAsync(
+                request.InventoryItemId, request.LocationId, request.Delta, request.Reason);
+
+            _logger.LogInformation(
+                "Inventory adjusted: item={ItemId} location={LocationId} delta={Delta} quantityAfter={After} by={By}",
+                request.InventoryItemId, request.LocationId, request.Delta, quantityAfter, userId);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                ok            = true,
+                delta         = request.Delta,
+                quantityAfter,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Inventory adjustment failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ScaleInventoryMapping")]
+    public async Task<HttpResponseData> InventoryMapping(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/inventory-mapping")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = ParseQueryString(req.Url.Query);
+            var variantId = qs.TryGetValue("variantId", out var v) ? v : "";
+            if (string.IsNullOrWhiteSpace(variantId))
+                return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var adjustments = await _shopify.GetVariantAdjustmentsAsync(variantId);
+            if (adjustments == null)
+                return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found             = true,
+                isWeighted        = adjustments["is_weighted"]?.ToObject<bool>() ?? false,
+                weightPerUnit     = adjustments["weight_per_unit"]?.ToObject<double>() ?? 0.0,
+                parentInventoryId = adjustments["parent_inventory_id"]?.ToString() ?? "",
+                parentProductHandle = adjustments["parent_product_handle"]?.ToString() ?? "",
+                parentProductTitle  = adjustments["parent_product_title"]?.ToString() ?? "",
+                parentLocationId    = adjustments["parent_location_id"]?.ToString() ?? "",
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Inventory mapping lookup failed for variant");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     private static Dictionary<string, string> ParseQueryString(string query)
     {
         return query.TrimStart('?')

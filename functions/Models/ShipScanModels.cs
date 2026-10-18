@@ -901,3 +901,11 @@ public class ApprovePurchaseOrderLineItemRequest
     [JsonProperty("quantityReceived")] public int QuantityReceived { get; set; }
     [JsonProperty("printedBy")]        public string PrintedBy { get; set; } = "";
 }
+
+public class InventoryAdjustRequest
+{
+    [JsonProperty("inventoryItemId")] public string InventoryItemId { get; set; } = "";
+    [JsonProperty("locationId")]      public string LocationId { get; set; } = "";
+    [JsonProperty("delta")]           public int Delta { get; set; }
+    [JsonProperty("reason")]          public string Reason { get; set; } = "correction";
+}

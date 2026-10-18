@@ -349,6 +349,16 @@ export interface PrintedLabel {
   sn: string | null;
 }
 
+export interface InventoryMappingInfo {
+  found: boolean;
+  isWeighted: boolean;
+  weightPerUnit: number;
+  parentInventoryId: string;
+  parentProductHandle: string;
+  parentProductTitle: string;
+  parentLocationId: string;
+}
+
 export interface PurchaseOrder {
   id: string;
   poId: string;

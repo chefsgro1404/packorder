@@ -884,6 +884,108 @@ public class ShopifyService
         return results;
     }
 
+    // ─── Inventory mapping (custom.adjustments metafield) ────────────────────
+
+    private const string GetVariantAdjustmentsQuery = @"
+        query GetVariantAdjustments($variantId: ID!) {
+          productVariant(id: $variantId) {
+            metafield(namespace: ""custom"", key: ""adjustments"") { value }
+            product {
+              metafield(namespace: ""custom"", key: ""adjustments"") { value }
+            }
+          }
+        }";
+
+    /// <summary>
+    /// Returns the parsed custom.adjustments metafield JSON for a variant.
+    /// Checks variant-level first (multi-variant), then product-level (single-variant).
+    /// Returns null if the metafield is absent or not parseable.
+    /// </summary>
+    public async Task<JObject?> GetVariantAdjustmentsAsync(string variantId)
+    {
+        var gid = variantId.StartsWith("gid://") ? variantId : $"gid://shopify/ProductVariant/{variantId}";
+
+        try
+        {
+            var data = await GraphQlAsync(GetVariantAdjustmentsQuery, new { variantId = gid });
+            var variant = data["productVariant"];
+            if (variant == null) return null;
+
+            // Prefer variant-level metafield (multi-variant products);
+            // fall back to product-level (single-variant/"Default Title" products).
+            // Guard against JTokenType.Null tokens (JSON null vs absent key) before indexing.
+            var variantMeta = variant["metafield"];
+            var variantValue = variantMeta != null && variantMeta.Type != JTokenType.Null
+                ? variantMeta["value"]?.ToString() : null;
+
+            var productMeta = variant["product"]?["metafield"];
+            var productValue = productMeta != null && productMeta.Type != JTokenType.Null
+                ? productMeta["value"]?.ToString() : null;
+
+            var raw = variantValue ?? productValue;
+
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            return JObject.Parse(raw);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch custom.adjustments for variant {VariantId}", variantId);
+            return null;
+        }
+    }
+
+    // ─── Inventory adjustment ─────────────────────────────────────────────────
+
+    private const string AdjustInventoryMutation = @"
+        mutation AdjustInventory($input: InventoryAdjustQuantitiesInput!) {
+          inventoryAdjustQuantities(input: $input) {
+            userErrors { field message }
+            inventoryAdjustmentGroup {
+              changes {
+                delta
+                quantityAfterChange
+                item { id }
+                location { id }
+              }
+            }
+          }
+        }";
+
+    /// <summary>
+    /// Adjusts available inventory for a parent product.
+    /// delta is negative to deduct (e.g. -2 removes 2 units).
+    /// Returns the quantity after adjustment, or null on error.
+    /// </summary>
+    public async Task<int?> AdjustInventoryAsync(string inventoryItemId, string locationId, int delta, string reason = "correction")
+    {
+        var itemGid = inventoryItemId.StartsWith("gid://") ? inventoryItemId
+            : $"gid://shopify/InventoryItem/{inventoryItemId}";
+        var locationGid = locationId.StartsWith("gid://") ? locationId
+            : $"gid://shopify/Location/{locationId}";
+
+        var data = await GraphQlAsync(AdjustInventoryMutation, new
+        {
+            input = new
+            {
+                reason,
+                name    = "available",
+                changes = new[]
+                {
+                    new { inventoryItemId = itemGid, locationId = locationGid, delta }
+                }
+            }
+        });
+
+        var errors = data["inventoryAdjustQuantities"]?["userErrors"]?.ToObject<List<GraphQlUserError>>();
+        if (errors?.Any() == true)
+            throw new Exception($"Inventory adjustment error: {errors[0].Message}");
+
+        var changes = data["inventoryAdjustQuantities"]?["inventoryAdjustmentGroup"]?["changes"] as JArray;
+        return changes?.Count > 0
+            ? changes[0]["quantityAfterChange"]?.ToObject<int>()
+            : null;
+    }
+
     // ─── Purchase Orders (REST) ───────────────────────────────────────────────
 
     private async Task<JArray?> RestGetArrayAsync(string path, int retries = 3)
