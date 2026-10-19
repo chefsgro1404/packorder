@@ -40,6 +40,7 @@ import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption } from '@/lib/types';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
+import { LotReceivingModal } from '@/components/LotReceivingModal';
 import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
 import { ManualTransformModal } from '@/components/ManualTransformModal';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
@@ -880,6 +881,7 @@ export default function ScalePage() {
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem } | null>(null);
+  const [lotReceivingModal, setLotReceivingModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
@@ -1170,14 +1172,16 @@ export default function ScalePage() {
     let productTitle = li.productTitle;
     let variantTitle = li.variantTitle && li.variantTitle !== 'Default Title' ? li.variantTitle : null;
     let found = false;
+    let isLotReceiving = false;
 
-    // Try to find a mapped PLU for this variant
+    // Try to find a mapped PLU and receiving mode for this variant
     if (li.variantId) {
       try {
         const numericVariantId = li.variantId.includes('/') ? li.variantId.split('/').pop() ?? '' : li.variantId;
         const res = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(numericVariantId)}`);
         if (res.ok) {
           const data = await res.json();
+          isLotReceiving = !!data.data?.isLotReceiving;
           if (data.data?.found) {
             plu = data.data.plu ?? '';
             productTitle = data.data.productTitle ?? li.productTitle;
@@ -1206,7 +1210,11 @@ export default function ScalePage() {
       vendorName: po.vendor ?? null,
     };
 
-    setBulkPrintModal({ item: resolvedItem, po, li });
+    if (isLotReceiving) {
+      setLotReceivingModal({ item: resolvedItem, po, li });
+    } else {
+      setBulkPrintModal({ item: resolvedItem, po, li });
+    }
     setLookupLoading(false);
   }, []);
 
@@ -1331,6 +1339,107 @@ export default function ScalePage() {
         });
       } catch (err) {
         console.error('[scale] failed to save bulk session:', err);
+      }
+    }
+  }, [textMappings, isPrinterDevice, triggerPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
+
+  const handleLotReceive = useCallback(async (
+    modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem },
+    totalWeightLbs: number,
+    barcodeCount: number,
+    lotNo: string,
+    expiryDate: string,
+  ) => {
+    const { item: baseItem, po, li } = modalState;
+
+    setLotReceivingModal(null);
+    resetPrinted();
+    setCurrentItem(baseItem);
+    setBulkPrintResults([]);
+    setBulkInventoryAdjusted(null);
+    setPrintError(null);
+
+    const mappedTitle   = applyMappings(baseItem.productTitle, textMappings);
+    const mappedVariant = baseItem.variantTitle ? applyMappings(baseItem.variantTitle, textMappings) : baseItem.variantTitle;
+    const weightPerLabel = (totalWeightLbs / barcodeCount).toFixed(2);
+
+    const results: BulkPrintLabelResult[] = [];
+
+    for (let i = 0; i < barcodeCount; i++) {
+      try {
+        const sn = await fetchNextSn(baseItem.variantId, baseItem.found ? baseItem.plu : null, mappedTitle, mappedVariant);
+        const labelWeight = `${weightPerLabel} lbs (LOT)`;
+        const plainPayload = buildQrPayload({
+          plu: baseItem.found ? baseItem.plu : null,
+          productTitle: mappedTitle,
+          variantTitle: mappedVariant,
+          itemWeight: labelWeight,
+        }, sn);
+
+        let encryptedPayload: string;
+        try {
+          encryptedPayload = await encryptQrPayload(plainPayload);
+        } catch {
+          results.push({ index: i + 1, sn, qrPayload: '', printedAtEst: '', status: 'failed', error: 'Encryption failed' });
+          setBulkPrintResults([...results]);
+          continue;
+        }
+
+        const printedAtEst = formatEst(new Date());
+        const itemWithWeight = { ...baseItem, itemWeight: labelWeight };
+        if (isPrinterDevice) {
+          triggerPrint({ plu: baseItem.found ? baseItem.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant, itemWeight: labelWeight }, sn, encryptedPayload);
+        } else {
+          await createJob({ plu: baseItem.found ? baseItem.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: labelWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
+        }
+        await logPrintedLabel(itemWithWeight, encryptedPayload, printedAtEst, sn, null, true, lotNo || null, expiryDate || null);
+        results.push({ index: i + 1, sn, qrPayload: encryptedPayload, printedAtEst, status: 'printed' });
+      } catch (err) {
+        results.push({ index: i + 1, sn: '', qrPayload: '', printedAtEst: '', status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
+      }
+      setBulkPrintResults([...results]);
+    }
+
+    // Approve PO line item with total weight (lbs) as received quantity
+    const printedCount = results.filter(r => r.status === 'printed').length;
+    if (printedCount > 0) {
+      try {
+        await approvePoItem(po.id, li.id, totalWeightLbs);
+        const fresh = await refreshLineItems(po.id);
+        setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
+      } catch (err) {
+        console.error('[scale] lot PO approval failed:', err);
+      }
+
+      // Save bulk session history
+      try {
+        const sessionDateEst = formatEst(new Date());
+        await fetch('/api/scale/bulk-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productTitle: baseItem.productTitle,
+            variantTitle: baseItem.variantTitle ?? null,
+            poId: baseItem.poId ?? null,
+            poLineItemId: baseItem.poLineItemId ?? null,
+            vendorName: baseItem.vendorName ?? null,
+            lotNo: lotNo || null,
+            expiryDate: expiryDate || null,
+            quantityOrdered: li.quantityOrdered,
+            quantityPrinted: totalWeightLbs,
+            results: results.map(r => ({
+              index: r.index,
+              sn: r.sn,
+              qrPayload: r.qrPayload,
+              printedAtEst: r.printedAtEst,
+              status: r.status,
+              error: r.error ?? null,
+            })),
+            sessionDateEst,
+          }),
+        });
+      } catch (err) {
+        console.error('[scale] failed to save lot session:', err);
       }
     }
   }, [textMappings, isPrinterDevice, triggerPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
@@ -2049,6 +2158,18 @@ export default function ScalePage() {
           vendorName={bulkPrintModal.item.vendorName}
           onConfirm={(qty, wt, lotNo, expiryDate) => handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate)}
           onClose={() => setBulkPrintModal(null)}
+        />
+      )}
+
+      {lotReceivingModal && (
+        <LotReceivingModal
+          productTitle={lotReceivingModal.item.productTitle}
+          variantTitle={lotReceivingModal.item.variantTitle ?? null}
+          vendorName={lotReceivingModal.item.vendorName}
+          onConfirm={(totalWeightLbs, barcodeCount, lotNo, expiryDate) =>
+            handleLotReceive(lotReceivingModal, totalWeightLbs, barcodeCount, lotNo, expiryDate)
+          }
+          onClose={() => setLotReceivingModal(null)}
         />
       )}
 

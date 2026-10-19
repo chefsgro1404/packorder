@@ -268,8 +268,22 @@ public class ScaleFunction
                     return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
 
                 var entity = await _tableStorage.GetProductLookupByVariantAsync(variantId);
+
+                // Check lot-receiving tag from synced product variants (independent of scale-specific lookup)
+                var variantEntity = await _tableStorage.GetProductVariantByVariantIdAsync(variantId);
+                var isLotReceiving = false;
+                if (variantEntity != null)
+                {
+                    try
+                    {
+                        var tags = System.Text.Json.JsonSerializer.Deserialize<List<string>>(variantEntity.Tags) ?? new();
+                        isLotReceiving = tags.Any(t => t.Equals("lot-receiving", StringComparison.OrdinalIgnoreCase));
+                    }
+                    catch { }
+                }
+
                 if (entity == null)
-                    return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving }, _allowedOrigins);
 
                 return await ResponseHelper.WriteSuccess(req, new
                 {
@@ -284,6 +298,7 @@ public class ScaleFunction
                     pricePerLb = entity.PricePerLb,
                     pinned = entity.Pinned,
                     noWeight = entity.NoWeight,
+                    isLotReceiving,
                 }, _allowedOrigins);
             }
 
