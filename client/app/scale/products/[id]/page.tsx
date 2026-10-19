@@ -18,6 +18,9 @@ import {
   ChevronUp,
   Bug,
   Settings,
+  Plus,
+  Trash2,
+  Zap,
 } from 'lucide-react';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
@@ -26,7 +29,7 @@ import { buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { ScaleProduct, TextMapping } from '@/lib/types';
+import { ScaleProduct, TextMapping, WeightRangeRule } from '@/lib/types';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, type LabelSizeKey } from '@/lib/labelSizes';
 
@@ -65,6 +68,9 @@ export default function ScaleProductDetailPage() {
 
   const [noWeight, setNoWeight] = useState(false);
   const [printCount, setPrintCount] = useState(0);
+  const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>([]);
+  const [weightRangesSaving, setWeightRangesSaving] = useState(false);
+  const [weightRangesSavedAt, setWeightRangesSavedAt] = useState<Date | null>(null);
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
@@ -100,6 +106,14 @@ export default function ScaleProductDetailPage() {
           setPricePerLb(saved.pricePerLb != null ? String(saved.pricePerLb) : '');
           setPinned(!!saved.pinned);
           setNoWeight(!!saved.noWeight);
+          // Load weight ranges for this product (if productId available)
+          if (saved.productId) {
+            const wr = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(saved.productId)}`);
+            if (wr.ok) {
+              const wrData = await wr.json();
+              if (!cancelled) setWeightRanges(Array.isArray(wrData.data?.rules) ? wrData.data.rules : []);
+            }
+          }
           return;
         }
 
@@ -164,6 +178,25 @@ export default function ScaleProductDetailPage() {
       setSaving(false);
     }
   }, [productId, variantId, productTitle, variantTitle, imageUrl, itemNumber, plu, pricePerLb, pinned, noWeight]);
+
+  const handleSaveWeightRanges = useCallback(async () => {
+    if (!productId) return;
+    setWeightRangesSaving(true);
+    try {
+      const res = await fetch('/api/scale/weight-ranges', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, rules: weightRanges }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Save failed');
+      setWeightRangesSavedAt(new Date());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save weight ranges');
+    } finally {
+      setWeightRangesSaving(false);
+    }
+  }, [productId, weightRanges]);
 
   const logPrintedLabel = useCallback(async (logItemNumber: string, logPlu: string, logTitle: string, weight: string | null | undefined, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
@@ -506,6 +539,99 @@ export default function ScaleProductDetailPage() {
             >
               {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
               Save
+            </button>
+          </div>
+
+          {/* Weight ranges (categorical auto-detection) */}
+          <div className="border border-slate-800 rounded-2xl bg-slate-900 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-violet-400 flex-shrink-0" />
+              <h2 className="text-sm font-semibold text-slate-200 flex-1">Weight Auto-Detection</h2>
+            </div>
+            <p className="text-xs text-slate-500">
+              Configure weight ranges for automatic variant selection (e.g. Small / Medium / Large chicken).
+              Each range maps a weight interval to a specific product variant.
+            </p>
+
+            {weightRanges.map((rule, i) => (
+              <div key={i} className="flex flex-col gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-violet-300">Tier {i + 1}</span>
+                  <button
+                    onClick={() => setWeightRanges(prev => prev.filter((_, idx) => idx !== i))}
+                    className="text-slate-600 hover:text-rose-400 transition-colors"
+                    aria-label="Remove tier"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Label</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Small"
+                      value={rule.label}
+                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, label: e.target.value } : r))}
+                      className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Variant ID</label>
+                    <input
+                      type="text"
+                      placeholder="GID or numeric ID"
+                      value={rule.variantId}
+                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r))}
+                      className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors font-mono text-[11px]"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Min lbs (≥)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="e.g. 1.5"
+                      value={rule.minLbs}
+                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, minLbs: parseFloat(e.target.value) || 0 } : r))}
+                      className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Max lbs (&lt;) — blank = no limit</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="no limit"
+                      value={rule.maxLbs ?? ''}
+                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, maxLbs: e.target.value ? parseFloat(e.target.value) : null } : r))}
+                      className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <button
+              onClick={() => setWeightRanges(prev => [...prev, { variantId: '', label: '', minLbs: 0, maxLbs: null }])}
+              className="flex items-center gap-2 text-xs text-violet-400 hover:text-violet-200 px-3 py-2 rounded-xl border border-violet-900/40 hover:border-violet-700 bg-violet-950/20 transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Tier
+            </button>
+
+            {weightRangesSavedAt && (
+              <p className="text-xs text-emerald-400">Saved at {formatEst(weightRangesSavedAt)} EST</p>
+            )}
+
+            <button
+              onClick={handleSaveWeightRanges}
+              disabled={weightRangesSaving || !productId}
+              className="w-full h-11 flex items-center justify-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
+            >
+              {weightRangesSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              Save Weight Ranges
             </button>
           </div>
 

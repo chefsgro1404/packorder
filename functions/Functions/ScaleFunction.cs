@@ -272,6 +272,7 @@ public class ScaleFunction
                 // Check lot-receiving tag from synced product variants (independent of scale-specific lookup)
                 var variantEntity = await _tableStorage.GetProductVariantByVariantIdAsync(variantId);
                 var isLotReceiving = false;
+                List<Models.WeightRangeRule> weightRulesForVariant = new();
                 if (variantEntity != null)
                 {
                     try
@@ -280,10 +281,15 @@ public class ScaleFunction
                         isLotReceiving = tags.Any(t => t.Equals("lot-receiving", StringComparison.OrdinalIgnoreCase));
                     }
                     catch { }
+                    try
+                    {
+                        weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(variantEntity.WeightRanges) ?? new();
+                    }
+                    catch { }
                 }
 
                 if (entity == null)
-                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving }, _allowedOrigins);
+                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving, weightRanges = weightRulesForVariant }, _allowedOrigins);
 
                 return await ResponseHelper.WriteSuccess(req, new
                 {
@@ -299,6 +305,7 @@ public class ScaleFunction
                     pinned = entity.Pinned,
                     noWeight = entity.NoWeight,
                     isLotReceiving,
+                    weightRanges = weightRulesForVariant,
                 }, _allowedOrigins);
             }
 
@@ -695,6 +702,126 @@ public class ScaleFunction
         catch (Exception ex)
         {
             _logger.LogError(ex, "TransformationOptions lookup failed for variant");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    // ─── Weight category auto-detection ──────────────────────────────────────
+
+    [Function("ScaleWeightCategory")]
+    public async Task<HttpResponseData> WeightCategory(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/weight-category")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = ParseQueryString(req.Url.Query);
+            var productId = qs.TryGetValue("productId", out var p) ? p : "";
+            var weightStr = qs.TryGetValue("weightLbs", out var w) ? w : "";
+
+            if (string.IsNullOrWhiteSpace(productId))
+                return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (!double.TryParse(weightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var weightLbs) || weightLbs <= 0)
+                return await ResponseHelper.WriteError(req, "weightLbs must be a positive number", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            // Load weight ranges from local cache first; fall back to live Shopify fetch
+            var variants = await _tableStorage.GetProductVariantsByProductIdAsync(productId);
+            string? weightRangesJson = variants.Count > 0 ? variants[0].WeightRanges : null;
+
+            if (string.IsNullOrWhiteSpace(weightRangesJson) || weightRangesJson == "[]")
+            {
+                var live = await _shopify.GetProductWeightRangesRawAsync(productId);
+                weightRangesJson = live ?? "[]";
+            }
+
+            List<Models.WeightRangeRule> rules;
+            try { rules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(weightRangesJson!) ?? new(); }
+            catch { rules = new(); }
+
+            if (rules.Count == 0)
+                return await ResponseHelper.WriteSuccess(req, new { matched = false, weightLbs }, _allowedOrigins);
+
+            // minLbs inclusive, maxLbs exclusive (last tier has null maxLbs = no upper bound)
+            var match = rules.FirstOrDefault(r => weightLbs >= r.MinLbs && (r.MaxLbs == null || weightLbs < r.MaxLbs));
+            if (match == null)
+                return await ResponseHelper.WriteSuccess(req, new { matched = false, weightLbs }, _allowedOrigins);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                matched   = true,
+                weightLbs,
+                variantId = match.VariantId,
+                label     = match.Label,
+                minLbs    = match.MinLbs,
+                maxLbs    = match.MaxLbs,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "WeightCategory lookup failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ScaleWeightRanges")]
+    public async Task<HttpResponseData> WeightRangesEndpoint(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "put", "options", Route = "scale/weight-ranges")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                var qs = ParseQueryString(req.Url.Query);
+                var productId = qs.TryGetValue("productId", out var p) ? p : "";
+                if (string.IsNullOrWhiteSpace(productId))
+                    return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+                var variants = await _tableStorage.GetProductVariantsByProductIdAsync(productId);
+                var json = variants.Count > 0 ? variants[0].WeightRanges : null;
+
+                List<Models.WeightRangeRule> rules;
+                try { rules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(json ?? "[]") ?? new(); }
+                catch { rules = new(); }
+
+                return await ResponseHelper.WriteSuccess(req, new { rules }, _allowedOrigins);
+            }
+
+            // PUT — save weight ranges to Shopify and update local cache
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = Newtonsoft.Json.JsonConvert.DeserializeObject<SaveWeightRangesRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.ProductId))
+                return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var rulesJson = Newtonsoft.Json.JsonConvert.SerializeObject(request.Rules ?? new List<Models.WeightRangeRule>());
+
+            // Save to Shopify
+            await _shopify.SetProductWeightRangesAsync(request.ProductId, rulesJson);
+
+            // Update local variant cache
+            await _tableStorage.UpdateProductVariantWeightRangesAsync(request.ProductId, rulesJson);
+
+            _logger.LogInformation("Saved weight ranges for product {ProductId}: {Count} rules", request.ProductId, request.Rules?.Count ?? 0);
+            return await ResponseHelper.WriteSuccess(req, new { ok = true, rules = request.Rules ?? new List<Models.WeightRangeRule>() }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "WeightRanges endpoint failed");
             return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
     }

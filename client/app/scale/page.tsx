@@ -28,6 +28,7 @@ import {
   Tag,
   X,
   Droplets,
+  Zap,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -38,7 +39,8 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption } from '@/lib/types';
+import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption, WeightRangeRule } from '@/lib/types';
+import { matchWeightRange, parseWeightToLbs } from '@/lib/weightCategory';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
 import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
 import { ManualTransformModal } from '@/components/ManualTransformModal';
@@ -879,6 +881,8 @@ export default function ScalePage() {
   const [manualTransformModal, setManualTransformModal] = useState(false);
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
+  const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>([]);
+  const [autoDetect, setAutoDetect] = useState<{ matched: WeightRangeRule | null; noMatch: boolean; weightLbs: number } | null>(null);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
@@ -1003,6 +1007,31 @@ export default function ScalePage() {
     })();
     return () => { cancelled = true; };
   }, [currentItem?.variantId]);
+
+  // Fetch weight ranges whenever the product changes (for categorical auto-detection)
+  useEffect(() => {
+    const productId = currentItem?.variantId
+      ? null  // We'll get ranges from by-variant endpoint if available
+      : null;
+    // Weight ranges are fetched from by-variant in handlePoItemSelect and stored in currentItem.
+    // For scale reading flow, we need to fetch them when productId is available.
+    // Reset auto-detect when item changes.
+    setAutoDetect(null);
+  }, [currentItem?.variantId]);
+
+  // Run auto-detection when weight is available and ranges are loaded
+  useEffect(() => {
+    if (weightRanges.length === 0 || !currentItem?.itemWeight) {
+      if (weightRanges.length > 0 && !currentItem?.itemWeight) {
+        // Product has ranges but no weight yet — wait
+      }
+      return;
+    }
+    const lbs = parseWeightToLbs(currentItem.itemWeight);
+    if (lbs === null) return;
+    const matched = matchWeightRange(weightRanges, lbs);
+    setAutoDetect({ matched, noMatch: matched === null, weightLbs: lbs });
+  }, [weightRanges, currentItem?.itemWeight]);
 
   // Poll status of an in-progress remote print job (non-printer device watching its queued job)
   useEffect(() => {
@@ -1165,12 +1194,15 @@ export default function ScalePage() {
     setLookupLoading(true);
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
+    setWeightRanges([]);
+    setAutoDetect(null);
 
     let plu = '';
     let productTitle = li.productTitle;
     let variantTitle = li.variantTitle && li.variantTitle !== 'Default Title' ? li.variantTitle : null;
     let found = false;
     let isLotReceiving = false;
+    let ranges: WeightRangeRule[] = [];
 
     // Try to find a mapped PLU and receiving mode for this variant
     if (li.variantId) {
@@ -1180,6 +1212,7 @@ export default function ScalePage() {
         if (res.ok) {
           const data = await res.json();
           isLotReceiving = !!data.data?.isLotReceiving;
+          ranges = Array.isArray(data.data?.weightRanges) ? data.data.weightRanges : [];
           if (data.data?.found) {
             plu = data.data.plu ?? '';
             productTitle = data.data.productTitle ?? li.productTitle;
@@ -1207,6 +1240,14 @@ export default function ScalePage() {
       poQuantityOrdered: li.quantityOrdered,
       vendorName: po.vendor ?? null,
     };
+
+    // For categorical products (weight ranges), skip BulkPrintModal and enter per-item weighing mode
+    if (ranges.length > 0 && !isLotReceiving) {
+      setWeightRanges(ranges);
+      setCurrentItem(resolvedItem);
+      setLookupLoading(false);
+      return;
+    }
 
     setBulkPrintModal({ item: resolvedItem, po, li, isLotReceiving });
     setLookupLoading(false);
@@ -1498,6 +1539,28 @@ export default function ScalePage() {
         return;
       }
       setCurrentItem(item);
+      // If the product has weight ranges (categorical), fetch them and run auto-detection
+      // before printing. In categorical mode we show confirmation UI instead of auto-printing.
+      if (item.found && item.variantId) {
+        try {
+          const numericId = item.variantId.includes('/') ? item.variantId.split('/').pop()! : item.variantId;
+          const rangesRes = await fetch(`/api/scale/weight-category?productId=${encodeURIComponent(numericId)}&weightLbs=${encodeURIComponent('0')}`);
+          // We use the weight-ranges endpoint for the full rules list
+          const rulesRes = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(numericId)}`);
+          if (rulesRes.ok) {
+            const rulesData = await rulesRes.json();
+            const rules: WeightRangeRule[] = Array.isArray(rulesData.data?.rules) ? rulesData.data.rules : [];
+            if (rules.length > 0) {
+              setWeightRanges(rules);
+              // Don't auto-print — show confirmation UI
+              return;
+            }
+          }
+          void rangesRes; // unused if no ranges
+        } catch {
+          // ignore — proceed with normal print
+        }
+      }
       await printItem(item);
     },
     [lookupProduct, printItem, resetPrinted, currentItem]
@@ -1569,7 +1632,21 @@ export default function ScalePage() {
       console.warn('[scale] manual print requested with no current item');
       return;
     }
+    // When auto-detect has a match, apply the matched variant before printing
+    if (autoDetect?.matched && currentItem.variantId !== autoDetect.matched.variantId) {
+      const itemWithVariant = { ...currentItem, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
+      setCurrentItem(itemWithVariant);
+      await printItem(itemWithVariant);
+      // Reset for next item (staff places next chicken)
+      setAutoDetect(null);
+      setWeightRanges(prev => prev); // keep ranges for next weigh
+      return;
+    }
     await printItem(currentItem);
+    if (weightRanges.length > 0) {
+      // Reset detection for next item in sequence
+      setAutoDetect(null);
+    }
   };
 
   const handleManualWeightPrint = async () => {
@@ -1640,6 +1717,8 @@ export default function ScalePage() {
     setTransformationOptions(null);
     setInventoryMappingOverride(null);
     setManualTransformModal(false);
+    setWeightRanges([]);
+    setAutoDetect(null);
     resetPrinted();
   };
 
@@ -1822,6 +1901,53 @@ export default function ScalePage() {
                   />
 
                   <div className="border-t border-slate-800" />
+
+                  {/* ── Weight auto-detection banner ── */}
+                  {autoDetect && (
+                    <div className={`flex flex-col gap-2 rounded-xl px-3 py-2.5 border ${
+                      autoDetect.noMatch
+                        ? 'bg-rose-950/40 border-rose-800/60'
+                        : 'bg-emerald-950/40 border-emerald-800/60'
+                    }`}>
+                      <div className="flex items-center gap-2">
+                        <Zap className={`w-4 h-4 flex-shrink-0 ${autoDetect.noMatch ? 'text-rose-400' : 'text-emerald-400'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold ${autoDetect.noMatch ? 'text-rose-300' : 'text-emerald-300'}`}>
+                            {autoDetect.noMatch
+                              ? `No match — ${autoDetect.weightLbs.toFixed(2)} lbs falls outside all configured ranges`
+                              : `Auto-detected: ${autoDetect.matched!.label} — ${autoDetect.weightLbs.toFixed(2)} lbs`}
+                          </p>
+                          {!autoDetect.noMatch && autoDetect.matched && (
+                            <p className="text-[11px] text-emerald-400/70 mt-0.5">
+                              Range: ≥{autoDetect.matched.minLbs} lbs{autoDetect.matched.maxLbs != null ? ` · <${autoDetect.matched.maxLbs} lbs` : ''}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {/* Override buttons for other tiers */}
+                      {weightRanges.length > 1 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          <span className="text-[10px] text-slate-500 self-center">Override:</span>
+                          {weightRanges.map(r => (
+                            <button
+                              key={r.variantId}
+                              onClick={() => {
+                                setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect.weightLbs });
+                                if (currentItem) setCurrentItem({ ...currentItem, variantId: r.variantId, variantTitle: r.label });
+                              }}
+                              className={`text-[11px] px-2 py-0.5 rounded-lg font-medium transition-colors ${
+                                autoDetect.matched?.variantId === r.variantId
+                                  ? 'bg-emerald-700 text-white'
+                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              }`}
+                            >
+                              {r.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* ── Feedback banners ── */}
 

@@ -247,6 +247,28 @@ public class TableStorageService
         return all.FirstOrDefault(e => e.RowKey == rk);
     }
 
+    public async Task<List<ProductVariantEntity>> GetProductVariantsByProductIdAsync(string productId)
+    {
+        var pk = StripGid(productId);
+        var results = new List<ProductVariantEntity>();
+        await foreach (var entity in _productVariants.QueryAsync<ProductVariantEntity>(e => e.PartitionKey == pk))
+            results.Add(entity);
+        return results;
+    }
+
+    public async Task UpdateProductVariantWeightRangesAsync(string productId, string weightRangesJson)
+    {
+        var pk = StripGid(productId);
+        var variants = await GetProductVariantsByProductIdAsync(productId);
+        foreach (var entity in variants)
+        {
+            entity.WeightRanges = weightRangesJson;
+            try { await _productVariants.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace); }
+            catch (Exception ex) { _logger.LogWarning("Failed to update WeightRanges for {VariantId}: {Message}", entity.RowKey, ex.Message); }
+        }
+        InvalidateVariantsCache();
+    }
+
     public async Task UpdateProductVariantBarcodeAsync(string productId, string variantId, string barcode)
     {
         var pk = StripGid(productId);

@@ -379,6 +379,14 @@ public class RefreshRequest
 
 // ─── Product Sync ────────────────────────────────────────────────────────────
 
+public class WeightRangeRule
+{
+    [JsonProperty("variantId")]  public string VariantId { get; set; } = "";
+    [JsonProperty("label")]      public string Label { get; set; } = "";
+    [JsonProperty("minLbs")]     public double MinLbs { get; set; }
+    [JsonProperty("maxLbs")]     public double? MaxLbs { get; set; }
+}
+
 public class ProductVariantEntity : ITableEntity
 {
     public string PartitionKey { get; set; } = ""; // numeric product ID
@@ -392,6 +400,7 @@ public class ProductVariantEntity : ITableEntity
     public string Vendor { get; set; } = "";
     public string Tags { get; set; } = "[]";       // JSON-encoded string array
     public string Collections { get; set; } = "[]"; // JSON-encoded string array of collection titles
+    public string WeightRanges { get; set; } = "[]"; // JSON-encoded WeightRangeRule[] — per-product, same on all variants
     public string? ImageUrl { get; set; }
     public string Price { get; set; } = "0.00";
     public string Status { get; set; } = "ACTIVE"; // ACTIVE | DRAFT | ARCHIVED
@@ -1012,6 +1021,12 @@ public class SaveBulkSessionRequest
     [JsonProperty("quantityPrinted")] public int QuantityPrinted { get; set; }
     [JsonProperty("results")]         public List<BulkSessionLabelResult> Results { get; set; } = new();
     [JsonProperty("sessionDateEst")]  public string SessionDateEst { get; set; } = "";
+}
+
+public class SaveWeightRangesRequest
+{
+    [JsonProperty("productId")] public string ProductId { get; set; } = "";
+    [JsonProperty("rules")]     public List<WeightRangeRule>? Rules { get; set; }
 }
 
 // ─── Webhook Registration ─────────────────────────────────────────────────────

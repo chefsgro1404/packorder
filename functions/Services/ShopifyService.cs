@@ -462,6 +462,7 @@ public class ShopifyService
                 collections(first: 10) {
                   edges { node { title } }
                 }
+                weightRanges: metafield(namespace: ""custom"", key: ""weight_ranges"") { id value }
                 variants(first: 100) {
                   edges { node { id sku barcode title price } }
                 }
@@ -503,6 +504,16 @@ public class ShopifyService
                 var imageUrl = featuredImageToken != null && featuredImageToken.Type != JTokenType.Null
                     ? featuredImageToken["url"]?.ToString() : null;
 
+                var weightRangesMeta = product["weightRanges"];
+                var weightRangesRaw = weightRangesMeta != null && weightRangesMeta.Type != JTokenType.Null
+                    ? weightRangesMeta["value"]?.ToString() : null;
+                string weightRangesJson = "[]";
+                if (!string.IsNullOrWhiteSpace(weightRangesRaw))
+                {
+                    try { JArray.Parse(weightRangesRaw); weightRangesJson = weightRangesRaw; }
+                    catch { }
+                }
+
                 foreach (var ve in (product["variants"]?["edges"] as JArray) ?? new JArray())
                 {
                     var v = ve["node"]!;
@@ -521,6 +532,7 @@ public class ShopifyService
                         Status = status,
                         Tags = tagsJson,
                         Collections = collectionsJson,
+                        WeightRanges = weightRangesJson,
                         ImageUrl = imageUrl,
                         Price = v["price"]?.ToString() ?? "0.00"
                     });
@@ -529,6 +541,69 @@ public class ShopifyService
         }
 
         return results;
+    }
+
+    // ─── Product weight ranges (custom.weight_ranges metafield) ─────────────
+
+    private const string GetProductWeightRangesQuery = @"
+        query GetProductWeightRanges($productId: ID!) {
+          product(id: $productId) {
+            id
+            weightRanges: metafield(namespace: ""custom"", key: ""weight_ranges"") { id value }
+          }
+        }";
+
+    private const string SetMetafieldsMutation = @"
+        mutation SetMetafields($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) {
+            metafields { id key namespace value }
+            userErrors { field message }
+          }
+        }";
+
+    /// <summary>
+    /// Returns the raw weight_ranges JSON for a product (live Shopify fetch).
+    /// </summary>
+    public async Task<string?> GetProductWeightRangesRawAsync(string productId)
+    {
+        var gid = productId.StartsWith("gid://") ? productId : $"gid://shopify/Product/{productId}";
+        try
+        {
+            var data = await GraphQlAsync(GetProductWeightRangesQuery, new { productId = gid });
+            var meta = data["product"]?["weightRanges"];
+            if (meta == null || meta.Type == JTokenType.Null) return null;
+            return meta["value"]?.ToString();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch weight_ranges for product {ProductId}", productId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Saves weight_ranges JSON to Shopify via metafieldsSet mutation.
+    /// </summary>
+    public async Task SetProductWeightRangesAsync(string productId, string weightRangesJson)
+    {
+        var gid = productId.StartsWith("gid://") ? productId : $"gid://shopify/Product/{productId}";
+        var data = await GraphQlAsync(SetMetafieldsMutation, new
+        {
+            metafields = new[]
+            {
+                new
+                {
+                    ownerId          = gid,
+                    @namespace       = "custom",
+                    key              = "weight_ranges",
+                    type             = "json",
+                    value            = weightRangesJson,
+                }
+            }
+        });
+        var errors = data["metafieldsSet"]?["userErrors"]?.ToObject<List<GraphQlUserError>>();
+        if (errors?.Any() == true)
+            throw new Exception($"metafieldsSet error: {errors[0].Message}");
     }
 
     // ─── Variant barcode update ──────────────────────────────────────────────

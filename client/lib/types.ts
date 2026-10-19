@@ -294,6 +294,15 @@ export interface ShipmentScanRecord {
   packagedAt: string | null;
 }
 
+// ─── Weight category auto-detection ──────────────────────────────────────────
+
+export interface WeightRangeRule {
+  variantId: string;
+  label: string;
+  minLbs: number;
+  maxLbs: number | null;
+}
+
 // ─── Scale & Print Mode ───────────────────────────────────────────────────────
 
 export interface ProductLookup {
