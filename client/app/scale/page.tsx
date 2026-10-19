@@ -343,11 +343,15 @@ function DeviceSetup({
   scaleError,
   onConnectScale,
   onDisconnectScale,
+  isPrinterDevice,
+  onTogglePrinterDevice,
 }: {
   scaleState: string;
   scaleError: string | null;
   onConnectScale: () => void;
   onDisconnectScale: () => void;
+  isPrinterDevice: boolean;
+  onTogglePrinterDevice: (enabled: boolean) => void;
 }) {
   const [open, setOpen] = useState(scaleState === 'disconnected');
   const isSerialSupported =
@@ -426,6 +430,40 @@ function DeviceSetup({
                 <Plug className="w-3 h-3" /> Connect
               </button>
             )}
+          </div>
+
+          {/* Printer device toggle */}
+          <div className="flex items-center gap-3">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              isPrinterDevice ? 'bg-violet-950/60 text-violet-400' : 'bg-slate-900 text-slate-500'
+            }`}>
+              <Printer className="w-4 h-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium text-slate-200">Printer Device</p>
+                {isPrinterDevice && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-violet-950 text-violet-400 border border-violet-900">
+                    Active
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-600">
+                {isPrinterDevice
+                  ? 'This device will claim and execute remote print jobs'
+                  : 'Enable to receive prints from other devices on this account'}
+              </p>
+            </div>
+            <button
+              onClick={() => onTogglePrinterDevice(!isPrinterDevice)}
+              className={`flex-shrink-0 text-xs px-2.5 py-1.5 rounded-lg font-semibold transition-colors ${
+                isPrinterDevice
+                  ? 'text-slate-500 hover:text-rose-400 hover:bg-rose-950/30'
+                  : 'text-slate-900 bg-slate-100 hover:bg-white'
+              }`}
+            >
+              {isPrinterDevice ? 'Disable' : 'Enable'}
+            </button>
           </div>
         </div>
       )}
@@ -845,7 +883,7 @@ export default function ScalePage() {
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
-  const { isPrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
+  const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
   const isPrinting = useRef(false);
@@ -1947,6 +1985,8 @@ export default function ScalePage() {
               scaleError={scale.error}
               onConnectScale={scale.connect}
               onDisconnectScale={scale.disconnect}
+              isPrinterDevice={isPrinterDevice}
+              onTogglePrinterDevice={togglePrinterDevice}
             />
 
             {/* ── Diagnostics ───────────────────────────────────────────────── */}
