@@ -358,6 +358,8 @@ export interface InventoryMappingInfo {
   parentProductTitle: string;
   parentLocationId: string;
   childInventoryItemId?: string | null;
+  parentUnits?: number;
+  childUnits?: number;
 }
 
 export interface TransformationOption {
@@ -365,6 +367,8 @@ export interface TransformationOption {
   title: string;
   inventoryItemId: string;
   locationId: string;
+  parentUnits?: number;
+  childUnits?: number;
 }
 
 export interface PurchaseOrder {

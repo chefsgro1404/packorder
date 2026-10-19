@@ -964,6 +964,8 @@ public class TransformationOption
     [JsonProperty("title")]           public string Title { get; set; } = "";
     [JsonProperty("inventoryItemId")] public string InventoryItemId { get; set; } = "";
     [JsonProperty("locationId")]      public string LocationId { get; set; } = "";
+    [JsonProperty("parentUnits")]     public int ParentUnits { get; set; } = 1;
+    [JsonProperty("childUnits")]      public int ChildUnits { get; set; } = 1;
 }
 
 // ─── Bulk Print Sessions ──────────────────────────────────────────────────────

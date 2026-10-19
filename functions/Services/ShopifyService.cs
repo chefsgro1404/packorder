@@ -1042,6 +1042,8 @@ public class ShopifyService
                     Title           = v["title"]?.ToString() ?? "",
                     InventoryItemId = v["inventoryItem"]?["id"]?.ToString() ?? "",
                     LocationId      = adjustments["parent_location_id"]?.ToString() ?? "",
+                    ParentUnits     = adjustments["parent_units"]?.ToObject<int>() ?? 1,
+                    ChildUnits      = adjustments["child_units"]?.ToObject<int>() ?? 1,
                 });
             }
             return results;

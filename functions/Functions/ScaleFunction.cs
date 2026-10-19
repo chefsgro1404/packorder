@@ -604,6 +604,8 @@ public class ScaleFunction
                 parentProductTitle   = adjustments["parent_product_title"]?.ToString() ?? "",
                 parentLocationId     = adjustments["parent_location_id"]?.ToString() ?? "",
                 childInventoryItemId = adjustments["child_inventory_item_id"]?.ToString() ?? "",
+                parentUnits          = adjustments["parent_units"]?.ToObject<int>() ?? 1,
+                childUnits           = adjustments["child_units"]?.ToObject<int>() ?? 1,
             }, _allowedOrigins);
         }
         catch (Exception ex)

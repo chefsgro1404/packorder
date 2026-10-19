@@ -41,6 +41,7 @@ import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption } from '@/lib/types';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
 import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
+import { ManualTransformModal } from '@/components/ManualTransformModal';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { usePrintQueue } from '@/hooks/usePrintQueue';
 import { applyMappings } from '@/lib/textMappings';
@@ -776,27 +777,46 @@ function BulkPrintResultPanel({
 function TransformationPanel({
   options,
   onSelect,
+  onManualTransform,
 }: {
   options: TransformationOption[];
   onSelect: (opt: TransformationOption) => void;
+  onManualTransform?: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-2.5 mb-2">
-      <div className="flex items-center gap-2">
-        <Droplets className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-        <p className="text-xs font-semibold text-violet-300">Transformation Options</p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {options.map(opt => (
+    <div className="flex flex-col gap-2 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Droplets className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+          <p className="text-xs font-semibold text-violet-300">
+            {options.length > 0 ? 'Transformation Options' : 'No auto-detected transforms'}
+          </p>
+        </div>
+        {onManualTransform && (
           <button
-            key={opt.variantId}
-            onClick={() => onSelect(opt)}
-            className="flex items-center gap-1.5 text-xs bg-violet-900/50 hover:bg-violet-800/60 border border-violet-800/60 text-violet-200 rounded-lg px-2.5 py-1.5 transition-colors font-medium"
+            onClick={onManualTransform}
+            className="text-[11px] text-violet-400 hover:text-violet-200 px-2 py-1 rounded-lg hover:bg-violet-900/40 transition-colors"
           >
-            Transform → {opt.title}
+            Manual →
           </button>
-        ))}
+        )}
       </div>
+      {options.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {options.map(opt => (
+            <button
+              key={opt.variantId}
+              onClick={() => onSelect(opt)}
+              className="flex flex-col text-left text-xs bg-violet-900/50 hover:bg-violet-800/60 border border-violet-800/60 text-violet-200 rounded-lg px-2.5 py-1.5 transition-colors"
+            >
+              <span className="font-semibold">→ {opt.title}</span>
+              {(opt.parentUnits !== undefined && opt.childUnits !== undefined) && (opt.parentUnits !== 1 || opt.childUnits !== 1) && (
+                <span className="text-violet-400/70 text-[10px] mt-0.5">{opt.parentUnits}:{opt.childUnits} ratio</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -815,7 +835,10 @@ export default function ScalePage() {
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
   const [manualWeight, setManualWeight] = useState('');
   const [inventoryMapping, setInventoryMapping] = useState<InventoryMappingInfo | null>(null);
+  const [inventoryMappingOverride, setInventoryMappingOverride] = useState<InventoryMappingInfo | null>(null);
+  const skipNextInventoryFetch = useRef(false);
   const [lastAdjustment, setLastAdjustment] = useState<{ delta: number; parentTitle: string } | null>(null);
+  const [manualTransformModal, setManualTransformModal] = useState(false);
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem } | null>(null);
@@ -901,6 +924,11 @@ export default function ScalePage() {
     setLastAdjustment(null);
     if (!variantId) {
       setInventoryMapping(null);
+      return;
+    }
+    // Skip fetch when a manual transform override was just set
+    if (skipNextInventoryFetch.current) {
+      skipNextInventoryFetch.current = false;
       return;
     }
     let cancelled = false;
@@ -1028,17 +1056,28 @@ export default function ScalePage() {
       }
     }
 
-    // Adjust parent product inventory for wet products, then increase child inventory
+    // Adjust parent product inventory for wet/transformation products, then increase child inventory
     if (mapping?.found && mapping.parentInventoryId && mapping.parentLocationId) {
       const rawWeight = parseFloat(item.itemWeight?.replace(/[^0-9.]/g, '') ?? '0') || 0;
-      let delta = 0;
+      let parentDelta = 0;
+      let childDelta = 0;
+
       if (mapping.isWeighted) {
-        if (rawWeight > 0 && mapping.weightPerUnit > 0)
-          delta = -Math.round(rawWeight / mapping.weightPerUnit);
+        // Weight-based: derive from measured weight
+        if (rawWeight > 0 && mapping.weightPerUnit > 0) {
+          const consumed = Math.round(rawWeight / mapping.weightPerUnit);
+          parentDelta = -consumed;
+          childDelta = consumed * (mapping.childUnits ?? 1);
+        }
       } else {
-        delta = -1;
+        // Count-based: use configured ratio (default 1:1)
+        const pUnits = mapping.parentUnits ?? 1;
+        const cUnits = mapping.childUnits ?? 1;
+        parentDelta = -pUnits;
+        childDelta = cUnits;
       }
-      if (delta !== 0) {
+
+      if (parentDelta !== 0) {
         try {
           await fetch('/api/scale/inventory-adjust', {
             method: 'POST',
@@ -1046,17 +1085,17 @@ export default function ScalePage() {
             body: JSON.stringify({
               inventoryItemId: mapping.parentInventoryId,
               locationId: mapping.parentLocationId,
-              delta,
+              delta: parentDelta,
               reason: 'correction',
             }),
           });
-          setLastAdjustment({ delta, parentTitle: mapping.parentProductTitle });
+          setLastAdjustment({ delta: parentDelta, parentTitle: mapping.parentProductTitle });
         } catch (err) {
           console.error('[scale] inventory adjustment failed:', err);
         }
 
-        // Increase child (transformation output) inventory by the same amount
-        if (mapping.childInventoryItemId) {
+        // Increase child (transformation output) inventory
+        if (mapping.childInventoryItemId && childDelta > 0) {
           try {
             await fetch('/api/scale/inventory-adjust', {
               method: 'POST',
@@ -1064,7 +1103,7 @@ export default function ScalePage() {
               body: JSON.stringify({
                 inventoryItemId: mapping.childInventoryItemId,
                 locationId: mapping.parentLocationId,
-                delta: Math.abs(delta),
+                delta: childDelta,
                 reason: 'correction',
               }),
             });
@@ -1265,6 +1304,54 @@ export default function ScalePage() {
       variantId: opt.variantId,
       variantTitle: opt.title !== 'Default Title' ? opt.title : null,
     });
+    setInventoryMappingOverride(null); // ratio comes from child metafield, not override
+    setTransformationOptions(null);
+    resetPrinted();
+  }, [currentItem, resetPrinted]);
+
+  const handleManualTransformConfirm = useCallback(async (
+    childVariant: { variantId: string; productTitle: string; variantTitle: string | null; inventoryItemId: string },
+    parentUnits: number,
+    childUnits: number,
+  ) => {
+    if (!currentItem?.variantId) return;
+    setManualTransformModal(false);
+
+    // Resolve parent and child inventory concurrently
+    const toNumeric = (id: string) => id.includes('/') ? id.split('/').pop() ?? id : id;
+    const [parentInv, childInv] = await Promise.allSettled([
+      fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(toNumeric(currentItem.variantId))}`).then(r => r.ok ? r.json() : null),
+      childVariant.variantId
+        ? fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(toNumeric(childVariant.variantId))}`).then(r => r.ok ? r.json() : null)
+        : Promise.resolve(null),
+    ]);
+    const parentData = parentInv.status === 'fulfilled' ? parentInv.value : null;
+    const childData  = childInv.status === 'fulfilled'  ? childInv.value  : null;
+
+    const override: InventoryMappingInfo = {
+      found: true,
+      isWeighted: false,
+      weightPerUnit: 0,
+      parentInventoryId:    parentData?.data?.inventoryItemId ?? '',
+      parentProductHandle:  '',
+      parentProductTitle:   currentItem.productTitle,
+      parentLocationId:     parentData?.data?.locationId ?? '',
+      childInventoryItemId: childData?.data?.inventoryItemId || childVariant.inventoryItemId || '',
+      parentUnits,
+      childUnits,
+    };
+
+    skipNextInventoryFetch.current = true;
+    setInventoryMappingOverride(override);
+    setInventoryMapping(override);
+    setCurrentItem({
+      ...currentItem,
+      variantId: childVariant.variantId,
+      productTitle: childVariant.productTitle,
+      variantTitle: childVariant.variantTitle,
+      itemName: childVariant.productTitle,
+      found: true,
+    });
     setTransformationOptions(null);
     resetPrinted();
   }, [currentItem, resetPrinted]);
@@ -1307,6 +1394,7 @@ export default function ScalePage() {
         return;
       }
 
+      const effectiveMapping = inventoryMappingOverride ?? inventoryMapping;
       if (isPrinterDevice) {
         const { printedAtEst } = triggerPrint({
           plu: item.found ? item.plu : null,
@@ -1314,7 +1402,7 @@ export default function ScalePage() {
           variantTitle: mappedVariant,
           itemWeight: item.itemWeight,
         }, sn, encryptedPayload);
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, inventoryMapping);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping);
       } else {
         const printedAtEst = formatEst(new Date());
         const jobPayload: PrintJobPayload = {
@@ -1330,7 +1418,7 @@ export default function ScalePage() {
         const job = await createJob(jobPayload, 'label');
         if (job) {
           setRemotePrintJob(job);
-          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, inventoryMapping);
+          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping);
         } else {
           setPrintError('Failed to queue print job — check your connection and try again.');
         }
@@ -1338,7 +1426,7 @@ export default function ScalePage() {
     } finally {
       isPrinting.current = false;
     }
-  }, [triggerPrint, logPrintedLabel, textMappings, inventoryMapping, isPrinterDevice, createJob, labelSizeKey]);
+  }, [triggerPrint, logPrintedLabel, textMappings, inventoryMapping, inventoryMappingOverride, isPrinterDevice, createJob, labelSizeKey]);
 
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
@@ -1508,6 +1596,8 @@ export default function ScalePage() {
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
     setTransformationOptions(null);
+    setInventoryMappingOverride(null);
+    setManualTransformModal(false);
     resetPrinted();
   };
 
@@ -1734,39 +1824,50 @@ export default function ScalePage() {
                     </div>
                   )}
 
-                  {/* Transformation options */}
-                  {transformationOptions && transformationOptions.length > 0 && (
-                    <TransformationPanel options={transformationOptions} onSelect={handleTransformationSelect} />
+                  {/* Transformation options (auto-detected or manual fallback) */}
+                  {(transformationOptions !== null) && (
+                    <TransformationPanel
+                      options={transformationOptions}
+                      onSelect={handleTransformationSelect}
+                      onManualTransform={() => setManualTransformModal(true)}
+                    />
                   )}
 
                   {/* Wet product / inventory mapping */}
-                  {inventoryMapping?.found && (
-                    <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border ${
-                      lastAdjustment ? 'bg-emerald-950/40 border-emerald-800/60' : 'bg-amber-950/40 border-amber-800/60'
-                    }`}>
-                      <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-400' : 'text-amber-400'}`} />
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-300' : 'text-amber-300'}`}>
-                          Wet Product
-                        </p>
-                        {lastAdjustment ? (
-                          <p className="text-xs text-emerald-400/80 leading-tight mt-0.5">
-                            {Math.abs(lastAdjustment.delta)} unit{Math.abs(lastAdjustment.delta) !== 1 ? 's' : ''} deducted from {lastAdjustment.parentTitle}
+                  {(() => {
+                    const m = inventoryMappingOverride ?? inventoryMapping;
+                    if (!m?.found) return null;
+                    const pUnits = m.parentUnits ?? 1;
+                    const cUnits = m.childUnits ?? 1;
+                    const ratioLabel = (pUnits !== 1 || cUnits !== 1) ? ` (${pUnits}:${cUnits} ratio)` : '';
+                    return (
+                      <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border ${
+                        lastAdjustment ? 'bg-emerald-950/40 border-emerald-800/60' : 'bg-amber-950/40 border-amber-800/60'
+                      }`}>
+                        <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-400' : 'text-amber-400'}`} />
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-300' : 'text-amber-300'}`}>
+                            {inventoryMappingOverride ? 'Manual Transformation' : 'Wet Product'}
                           </p>
-                        ) : inventoryMapping.isWeighted ? (
-                          <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
-                            {currentItem.itemWeight
-                              ? `~${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit)} unit${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit) !== 1 ? 's' : ''} of ${inventoryMapping.parentProductTitle} will be deducted`
-                              : `Deducts from ${inventoryMapping.parentProductTitle} · ${inventoryMapping.weightPerUnit} lbs/unit`}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
-                            1 unit of {inventoryMapping.parentProductTitle} will be deducted
-                          </p>
-                        )}
+                          {lastAdjustment ? (
+                            <p className="text-xs text-emerald-400/80 leading-tight mt-0.5">
+                              {Math.abs(lastAdjustment.delta)} unit{Math.abs(lastAdjustment.delta) !== 1 ? 's' : ''} deducted from {lastAdjustment.parentTitle}
+                            </p>
+                          ) : m.isWeighted ? (
+                            <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                              {currentItem.itemWeight
+                                ? `~${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / m.weightPerUnit)} unit${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / m.weightPerUnit) !== 1 ? 's' : ''} of ${m.parentProductTitle} will be deducted`
+                                : `Deducts from ${m.parentProductTitle} · ${m.weightPerUnit} lbs/unit`}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                              {pUnits} unit{pUnits !== 1 ? 's' : ''} of {m.parentProductTitle} → {cUnits} child unit{cUnits !== 1 ? 's' : ''}{ratioLabel}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Manual weight input for PO items without scale reading */}
                   {currentItem.poId && !currentItem.itemWeight && (
@@ -1889,6 +1990,14 @@ export default function ScalePage() {
           hideSave={isPlaceholderItemNumber(unmappedPrompt.itemNumber)}
           onClose={() => setUnmappedPrompt(null)}
           onResolved={handleUnmappedResolved}
+        />
+      )}
+
+      {manualTransformModal && currentItem && (
+        <ManualTransformModal
+          parentProductTitle={currentItem.productTitle}
+          onConfirm={handleManualTransformConfirm}
+          onClose={() => setManualTransformModal(false)}
         />
       )}
 
