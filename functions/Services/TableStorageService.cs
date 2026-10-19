@@ -26,6 +26,7 @@ public class TableStorageService
     private readonly TableClient _purchaseOrderLineItems;
     private readonly TableClient _printJobs;
     private readonly TableClient _bulkSessions;
+    private readonly TableClient _vendors;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -49,6 +50,7 @@ public class TableStorageService
         _purchaseOrderLineItems    = tableServiceClient.GetTableClient("purchaseorderlineitems");
         _printJobs                 = tableServiceClient.GetTableClient("printjobs");
         _bulkSessions              = tableServiceClient.GetTableClient("bulksessions");
+        _vendors                   = tableServiceClient.GetTableClient("vendors");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -71,6 +73,7 @@ public class TableStorageService
         await _purchaseOrderLineItems.CreateIfNotExistsAsync();
         await _printJobs.CreateIfNotExistsAsync();
         await _bulkSessions.CreateIfNotExistsAsync();
+        await _vendors.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1312,5 +1315,171 @@ public class TableStorageService
         {
             return null;
         }
+    }
+
+    // ─── Vendors ─────────────────────────────────────────────────────────────
+
+    public async Task<List<VendorEntity>> GetVendorsAsync()
+    {
+        var results = new List<VendorEntity>();
+        await foreach (var e in _vendors.QueryAsync<VendorEntity>(filter: "PartitionKey eq 'vendor'"))
+            results.Add(e);
+        return results.OrderBy(e => e.VendorName, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    public async Task<VendorEntity> SaveVendorAsync(string vendorName)
+    {
+        var entity = new VendorEntity
+        {
+            PartitionKey = "vendor",
+            RowKey       = Guid.NewGuid().ToString("N"),
+            VendorName   = vendorName.Trim(),
+        };
+        await _vendors.AddEntityAsync(entity);
+        return entity;
+    }
+
+    public async Task DeleteVendorAsync(string id)
+    {
+        await _vendors.DeleteEntityAsync("vendor", id, ETag.All);
+    }
+
+    // ─── Full Sync helpers ────────────────────────────────────────────────────
+
+    // Bulk-upsert POs from Shopify REST payload, preserving existing approval state.
+    public async Task<int> SyncPurchaseOrdersAsync(List<WebhookPurchaseOrder> pos)
+    {
+        foreach (var po in pos)
+        {
+            var numericPoId = po.Id.ToString();
+
+            var poEntity = new PurchaseOrderEntity
+            {
+                PartitionKey      = "po",
+                RowKey            = numericPoId,
+                PoId              = $"gid://shopify/PurchaseOrder/{po.Id}",
+                PoName            = po.Name,
+                Status            = "open",
+                Vendor            = po.VendorName ?? "",
+                TotalLineItems    = po.LineItems.Count,
+                ApprovedLineItems = 0,
+                ShopifyCreatedAt  = DateTimeOffset.TryParse(po.CreatedAt, out var created) ? created : DateTimeOffset.UtcNow,
+                ShopifyUpdatedAt  = DateTimeOffset.TryParse(po.UpdatedAt, out var updated) ? updated : DateTimeOffset.UtcNow,
+            };
+
+            var existing = await GetPurchaseOrderByIdAsync(numericPoId);
+            if (existing != null)
+            {
+                poEntity.Status           = existing.Status;
+                poEntity.ApprovedLineItems = existing.ApprovedLineItems;
+            }
+
+            await UpsertPurchaseOrderAsync(poEntity);
+
+            var existingItems = await GetPurchaseOrderLineItemsAsync(numericPoId);
+            foreach (var li in po.LineItems)
+            {
+                var numericLiId = li.Id.ToString();
+                var existingLi  = existingItems.FirstOrDefault(x => x.RowKey == numericLiId);
+                var liEntity    = new PurchaseOrderLineItemEntity
+                {
+                    PartitionKey     = numericPoId,
+                    RowKey           = numericLiId,
+                    LineItemId       = $"gid://shopify/PurchaseOrderLineItem/{li.Id}",
+                    ProductTitle     = li.ProductTitle,
+                    VariantTitle     = li.VariantTitle,
+                    VariantId        = li.VariantId.HasValue
+                                           ? $"gid://shopify/ProductVariant/{li.VariantId.Value}"
+                                           : null,
+                    Sku              = li.Sku,
+                    QuantityOrdered  = li.Quantity,
+                    QuantityReceived = existingLi?.QuantityReceived ?? 0,
+                    Status           = existingLi?.Status ?? "pending",
+                    PrintedAt        = existingLi?.PrintedAt,
+                    PrintedBy        = existingLi?.PrintedBy,
+                };
+                await UpsertPurchaseOrderLineItemAsync(liEntity);
+            }
+        }
+        return pos.Count;
+    }
+
+    // Backfill PrintedLabelEntity records that are missing PoId/VendorName
+    // by matching against known PO line items via PoLineItemId.
+    public async Task<int> BackfillPrintedLabelPoLinksAsync()
+    {
+        var labels = new List<PrintedLabelEntity>();
+        await foreach (var e in _printedLabels.QueryAsync<PrintedLabelEntity>())
+        {
+            if (string.IsNullOrEmpty(e.PoId) && !string.IsNullOrEmpty(e.PoLineItemId))
+                labels.Add(e);
+        }
+
+        if (labels.Count == 0) return 0;
+
+        // Build a lookup: lineItemId → (poId, vendor) from POs
+        var poEntities = new List<PurchaseOrderEntity>();
+        await foreach (var po in _purchaseOrders.QueryAsync<PurchaseOrderEntity>(filter: "PartitionKey eq 'po'"))
+            poEntities.Add(po);
+
+        var liToVendor = new Dictionary<string, (string PoId, string Vendor)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var po in poEntities)
+        {
+            var lis = await GetPurchaseOrderLineItemsAsync(po.RowKey);
+            foreach (var li in lis)
+                liToVendor[li.LineItemId] = (po.PoId, po.Vendor);
+        }
+
+        int backfilled = 0;
+        foreach (var label in labels)
+        {
+            if (!liToVendor.TryGetValue(label.PoLineItemId!, out var info)) continue;
+            label.PoId       = info.PoId;
+            label.VendorName = info.Vendor;
+            await _printedLabels.UpdateEntityAsync(label, ETag.All, TableUpdateMode.Merge);
+            backfilled++;
+        }
+        return backfilled;
+    }
+
+    // Validate SN counters: scan printedlabels to count per counter key,
+    // then bump any counter that is lower than the observed max SN for that key.
+    public async Task<int> ReconcileSnCountersAsync()
+    {
+        var maxByKey = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        await foreach (var e in _printedLabels.QueryAsync<PrintedLabelEntity>())
+        {
+            if (string.IsNullOrEmpty(e.Sn)) continue;
+            // SN format: <counterKey>-<4-digit number>, e.g. "GREEN-GLOBAL-0042"
+            var lastDash = e.Sn.LastIndexOf('-');
+            if (lastDash < 0) continue;
+            var key    = e.Sn[..lastDash];
+            var numStr = e.Sn[(lastDash + 1)..];
+            if (!int.TryParse(numStr, out var num)) continue;
+            if (!maxByKey.TryGetValue(key, out var cur) || num > cur)
+                maxByKey[key] = num;
+        }
+
+        int reconciled = 0;
+        foreach (var (key, observedMax) in maxByKey)
+        {
+            SnCounterEntity? counter = null;
+            try
+            {
+                var r = await _snCounters.GetEntityAsync<SnCounterEntity>("sn", key);
+                counter = r.Value;
+            }
+            catch (RequestFailedException ex) when (ex.Status == 404) { }
+
+            var stored = counter?.Count ?? 0;
+            if (stored < observedMax)
+            {
+                var entity = counter ?? new SnCounterEntity { PartitionKey = "sn", RowKey = key };
+                entity.Count = observedMax;
+                await _snCounters.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+                reconciled++;
+            }
+        }
+        return reconciled;
     }
 }

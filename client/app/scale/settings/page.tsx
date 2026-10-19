@@ -14,6 +14,9 @@ import {
   Tag,
   Type,
   Printer,
+  Layers,
+  Building2,
+  X,
 } from 'lucide-react';
 
 interface TextMapping {
@@ -28,6 +31,31 @@ interface SyncSettings {
   lastSyncedAt: string | null;
   lastSyncVendors: string;
   lastSyncTags: string;
+}
+
+interface FullSyncStage {
+  stage: string;
+  count: number;
+  ok: boolean;
+  error?: string;
+}
+
+interface FullSyncResult {
+  ok: boolean;
+  syncedAt: string;
+  stages: FullSyncStage[];
+}
+
+interface Vendor {
+  id: string;
+  vendorName: string;
+}
+
+interface WebhookResult {
+  registered: number;
+  alreadyRegistered: number;
+  errors: number;
+  results: { topic: string; status: string; error?: string }[];
 }
 
 export default function ScaleSettingsPage() {
@@ -72,6 +100,25 @@ export default function ScaleSettingsPage() {
   const [syncError, setSyncError] = useState<string | null>(null);
   const [syncSaved, setSyncSaved] = useState(false);
 
+  // ── Full sync ────────────────────────────────────────────────────────────
+  const [fullSyncing, setFullSyncing] = useState(false);
+  const [fullSyncResult, setFullSyncResult] = useState<FullSyncResult | null>(null);
+  const [fullSyncError, setFullSyncError] = useState<string | null>(null);
+
+  // ── Vendors ─────────────────────────────────────────────────────────────
+  const [vendors, setVendors] = useState<Vendor[]>([]);
+  const [vendorsLoading, setVendorsLoading] = useState(true);
+  const [vendorError, setVendorError] = useState<string | null>(null);
+  const [newVendorName, setNewVendorName] = useState('');
+  const [vendorSaving, setVendorSaving] = useState(false);
+  const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
+
+  // ── Webhook registration ─────────────────────────────────────────────────
+  const [webhookCallbackUrl, setWebhookCallbackUrl] = useState('');
+  const [webhookRegistering, setWebhookRegistering] = useState(false);
+  const [webhookResult, setWebhookResult] = useState<WebhookResult | null>(null);
+  const [webhookError, setWebhookError] = useState<string | null>(null);
+
   const fetchMappings = useCallback(async () => {
     setMappingsLoading(true);
     try {
@@ -98,10 +145,24 @@ export default function ScaleSettingsPage() {
     }
   }, []);
 
+  const fetchVendors = useCallback(async () => {
+    setVendorsLoading(true);
+    try {
+      const res = await fetch('/api/vendors');
+      const data = await res.json();
+      setVendors(data.vendors ?? []);
+    } catch {
+      setVendorError('Failed to load vendors');
+    } finally {
+      setVendorsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMappings();
     fetchSyncSettings();
-  }, [fetchMappings, fetchSyncSettings]);
+    fetchVendors();
+  }, [fetchMappings, fetchSyncSettings, fetchVendors]);
 
   const handleAddMapping = async () => {
     if (!newPhrase.trim() || !newAbbr.trim()) return;
@@ -170,12 +231,92 @@ export default function ScaleSettingsPage() {
     }
   };
 
+  const handleFullSync = async () => {
+    setFullSyncing(true);
+    setFullSyncResult(null);
+    setFullSyncError(null);
+    try {
+      const res = await fetch('/api/sync/full', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Full sync failed');
+      setFullSyncResult(data);
+    } catch (err) {
+      setFullSyncError(err instanceof Error ? err.message : 'Full sync failed');
+    } finally {
+      setFullSyncing(false);
+    }
+  };
+
+  const handleAddVendor = async () => {
+    if (!newVendorName.trim()) return;
+    setVendorSaving(true);
+    setVendorError(null);
+    try {
+      const res = await fetch('/api/vendors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vendorName: newVendorName.trim() }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || 'Save failed');
+      }
+      setNewVendorName('');
+      await fetchVendors();
+    } catch (err) {
+      setVendorError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setVendorSaving(false);
+    }
+  };
+
+  const handleDeleteVendor = async (id: string) => {
+    setDeletingVendorId(id);
+    setVendorError(null);
+    try {
+      await fetch(`/api/vendors/${id}`, { method: 'DELETE' });
+      await fetchVendors();
+    } catch {
+      setVendorError('Delete failed');
+    } finally {
+      setDeletingVendorId(null);
+    }
+  };
+
+  const handleRegisterWebhooks = async () => {
+    if (!webhookCallbackUrl.trim()) return;
+    setWebhookRegistering(true);
+    setWebhookResult(null);
+    setWebhookError(null);
+    try {
+      const res = await fetch('/api/webhooks/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callbackBaseUrl: webhookCallbackUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Registration failed');
+      setWebhookResult(data);
+    } catch (err) {
+      setWebhookError(err instanceof Error ? err.message : 'Registration failed');
+    } finally {
+      setWebhookRegistering(false);
+    }
+  };
+
   const formattedLastSync = syncSettings.lastSyncedAt
     ? new Date(syncSettings.lastSyncedAt).toLocaleString('en-US', {
         timeZone: 'America/New_York',
         month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
       }) + ' EST'
     : null;
+
+  const stageName = (s: string) => ({
+    products: 'Products & variants',
+    purchaseOrders: 'Purchase orders',
+    barcodeBackfill: 'Barcode ↔ PO backfill',
+    snCounters: 'SN counter reconciliation',
+  }[s] ?? s);
 
   return (
     <main className="min-h-screen bg-slate-950 pb-safe">
@@ -190,11 +331,67 @@ export default function ScaleSettingsPage() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-base font-bold text-slate-100 leading-tight">Scale Settings</h1>
-          <p className="text-xs text-slate-500 leading-tight">Auto-sync, title mappings &amp; webhook setup</p>
+          <p className="text-xs text-slate-500 leading-tight">Sync, vendors, webhooks &amp; device setup</p>
         </div>
       </div>
 
       <div className="px-4 py-5 flex flex-col gap-5">
+
+        {/* ── Full Sync ─────────────────────────────────────────────────────── */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+            <Layers className="w-4 h-4 text-indigo-400" />
+            <h2 className="text-sm font-semibold text-slate-200">Full Sync</h2>
+          </div>
+          <div className="px-4 pb-4 flex flex-col gap-3">
+            <p className="text-xs text-slate-500">
+              Runs all four sync stages in order: products &amp; variants → purchase orders → barcode ↔ PO backfill → SN counter reconciliation.
+              Safe to run at any time — existing approval state and received quantities are preserved.
+            </p>
+
+            {fullSyncError && (
+              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-300">{fullSyncError}</p>
+              </div>
+            )}
+
+            {fullSyncResult && (
+              <div className={`border rounded-xl px-3 py-2.5 flex flex-col gap-1.5 ${
+                fullSyncResult.ok ? 'bg-emerald-950/40 border-emerald-900' : 'bg-amber-950/40 border-amber-900'
+              }`}>
+                <p className={`text-xs font-semibold ${fullSyncResult.ok ? 'text-emerald-300' : 'text-amber-300'}`}>
+                  {fullSyncResult.ok ? 'Sync complete' : 'Sync completed with errors'}
+                </p>
+                {fullSyncResult.stages.map(s => (
+                  <div key={s.stage} className="flex items-center gap-2 text-xs">
+                    {s.ok
+                      ? <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                      : <X className="w-3 h-3 text-rose-400 flex-shrink-0" />
+                    }
+                    <span className="text-slate-300">{stageName(s.stage)}</span>
+                    {s.ok
+                      ? <span className="text-slate-500 ml-auto">{s.count}</span>
+                      : <span className="text-rose-400 ml-auto truncate max-w-[140px]">{s.error}</span>
+                    }
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={handleFullSync}
+              disabled={fullSyncing}
+              className="w-full h-11 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
+            >
+              {fullSyncing ? (
+                <><RefreshCw className="w-4 h-4 animate-spin" /> Syncing…</>
+              ) : (
+                <><RefreshCw className="w-4 h-4" /> Run Full Sync Now</>
+              )}
+            </button>
+          </div>
+        </div>
 
         {/* ── Scheduled auto-sync ──────────────────────────────────────────── */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -204,7 +401,7 @@ export default function ScaleSettingsPage() {
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
-              Automatically syncs products from Shopify every day at midnight New York time.
+              Automatically runs the full sync cascade every day at midnight New York time.
               Leave vendors and tags empty to sync everything.
             </p>
 
@@ -222,7 +419,6 @@ export default function ScaleSettingsPage() {
                   </div>
                 )}
 
-                {/* Toggle */}
                 <button
                   onClick={() => setSyncSettings(s => ({ ...s, autoSyncEnabled: !s.autoSyncEnabled }))}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
@@ -288,6 +484,74 @@ export default function ScaleSettingsPage() {
           </div>
         </div>
 
+        {/* ── Vendor Management ────────────────────────────────────────────── */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-teal-400" />
+            <h2 className="text-sm font-semibold text-slate-200">Vendors</h2>
+          </div>
+          <div className="px-4 pb-4 flex flex-col gap-3">
+            <p className="text-xs text-slate-500">
+              Registered vendors are linked to POs and barcode records for traceability.
+            </p>
+
+            {vendorError && (
+              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-300">{vendorError}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newVendorName}
+                onChange={e => setNewVendorName(e.target.value)}
+                placeholder="Vendor name…"
+                className="flex-1 min-w-0 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                onKeyDown={e => { if (e.key === 'Enter') handleAddVendor(); }}
+              />
+              <button
+                onClick={handleAddVendor}
+                disabled={vendorSaving || !newVendorName.trim()}
+                className="w-10 h-10 flex items-center justify-center rounded-xl bg-teal-700 hover:bg-teal-600 disabled:opacity-40 transition-colors flex-shrink-0"
+                aria-label="Add vendor"
+              >
+                {vendorSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+              </button>
+            </div>
+
+            {vendorsLoading ? (
+              <div className="flex items-center gap-2 py-2">
+                <RefreshCw className="w-4 h-4 text-slate-600 animate-spin" />
+                <span className="text-sm text-slate-500">Loading…</span>
+              </div>
+            ) : vendors.length === 0 ? (
+              <p className="text-sm text-slate-600 py-2 text-center">No vendors yet</p>
+            ) : (
+              <div className="flex flex-col divide-y divide-slate-800/60">
+                {vendors.map(v => (
+                  <div key={v.id} className="flex items-center gap-3 py-2.5 group">
+                    <Building2 className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                    <span className="flex-1 min-w-0 text-sm text-slate-300 truncate">{v.vendorName}</span>
+                    <button
+                      onClick={() => handleDeleteVendor(v.id)}
+                      disabled={deletingVendorId === v.id}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 flex-shrink-0"
+                      aria-label={`Delete vendor ${v.vendorName}`}
+                    >
+                      {deletingVendorId === v.id
+                        ? <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        : <Trash2 className="w-3.5 h-3.5" />
+                      }
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* ── Variant title abbreviations ──────────────────────────────────── */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
@@ -307,7 +571,6 @@ export default function ScaleSettingsPage() {
               </div>
             )}
 
-            {/* Add new mapping */}
             <div className="flex gap-2">
               <input
                 type="text"
@@ -339,7 +602,6 @@ export default function ScaleSettingsPage() {
               </button>
             </div>
 
-            {/* Existing mappings */}
             {mappingsLoading ? (
               <div className="flex items-center gap-2 py-2">
                 <RefreshCw className="w-4 h-4 text-slate-600 animate-spin" />
@@ -410,7 +672,7 @@ export default function ScaleSettingsPage() {
           </div>
         </div>
 
-        {/* ── Webhook setup instructions ───────────────────────────────────── */}
+        {/* ── Shopify webhook registration ─────────────────────────────────── */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
             <Webhook className="w-4 h-4 text-purple-400" />
@@ -418,24 +680,59 @@ export default function ScaleSettingsPage() {
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
-              Register these webhooks in Shopify Admin so products and orders update in real-time
-              without needing a manual sync.
+              Auto-register all required webhook subscriptions in Shopify. Enter your Azure Functions base URL below.
+              Topics: products/create, products/update, products/delete, orders/*, purchase_orders/*.
             </p>
-            <div className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-400 space-y-1.5">
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest font-sans">Webhook URL</p>
-              <p className="text-slate-200 break-all">https://&#123;your-functions-url&#125;/api/webhooks/shopify</p>
+
+            {webhookError && (
+              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-300">{webhookError}</p>
+              </div>
+            )}
+
+            {webhookResult && (
+              <div className={`border rounded-xl px-3 py-2.5 flex flex-col gap-1 ${
+                webhookResult.errors === 0 ? 'bg-emerald-950/40 border-emerald-900' : 'bg-amber-950/40 border-amber-900'
+              }`}>
+                <p className="text-xs font-semibold text-slate-200">
+                  {webhookResult.registered} registered · {webhookResult.alreadyRegistered} already registered
+                  {webhookResult.errors > 0 && ` · ${webhookResult.errors} errors`}
+                </p>
+                {webhookResult.results.filter(r => r.status === 'error').map(r => (
+                  <p key={r.topic} className="text-xs text-rose-400 font-mono">{r.topic}: {r.error}</p>
+                ))}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
+                Functions base URL
+              </label>
+              <input
+                type="text"
+                value={webhookCallbackUrl}
+                onChange={e => setWebhookCallbackUrl(e.target.value)}
+                placeholder="https://your-functions-app.azurewebsites.net"
+                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+              />
             </div>
+
+            <div className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-400">
+              <p className="text-slate-500 text-[10px] uppercase tracking-widest font-sans mb-1">Callback endpoint</p>
+              <p className="text-slate-200 break-all">
+                {webhookCallbackUrl.trim()
+                  ? `${webhookCallbackUrl.trim().replace(/\/$/, '')}/api/webhooks/shopify`
+                  : '{base-url}/api/webhooks/shopify'}
+              </p>
+            </div>
+
             <div className="flex flex-col gap-1.5">
               <p className="text-xs text-slate-500 font-medium">Topics to subscribe:</p>
               {[
-                'products/create',
-                'products/update',
-                'products/delete',
-                'orders/create',
-                'orders/updated',
-                'orders/fulfilled',
-                'orders/partially_fulfilled',
-                'orders/cancelled',
+                'products/create', 'products/update', 'products/delete',
+                'orders/create', 'orders/updated', 'orders/fulfilled',
+                'orders/cancelled', 'purchase_orders/create', 'purchase_orders/update',
               ].map(topic => (
                 <div key={topic} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/60 rounded-lg">
                   <Tag className="w-3 h-3 text-slate-500 flex-shrink-0" />
@@ -443,9 +740,20 @@ export default function ScaleSettingsPage() {
                 </div>
               ))}
             </div>
+
+            <button
+              onClick={handleRegisterWebhooks}
+              disabled={webhookRegistering || !webhookCallbackUrl.trim()}
+              className="w-full h-11 flex items-center justify-center gap-2 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
+            >
+              {webhookRegistering ? (
+                <><RefreshCw className="w-4 h-4 animate-spin" /> Registering…</>
+              ) : (
+                <><Webhook className="w-4 h-4" /> Register All Webhooks</>
+              )}
+            </button>
+
             <p className="text-xs text-slate-500">
-              In Shopify Admin → Settings → Notifications → Webhooks, create one webhook per topic above.
-              Set the format to <span className="font-mono text-slate-400">JSON</span>.
               The <span className="font-mono text-slate-400">ShopifyWebhookSecret</span> in Key Vault must match
               the signing secret Shopify shows when creating the first webhook.
             </p>

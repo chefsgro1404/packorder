@@ -73,6 +73,120 @@ public class SyncFunction
         }
     }
 
+    [Function("SyncFull")]
+    public async Task<HttpResponseData> FullSync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "sync/full")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        var stages   = new List<FullSyncStageResult>();
+        var anyError = false;
+
+        // Stage 1: products + variants + metafields
+        var s1 = new FullSyncStageResult { Stage = "products" };
+        try
+        {
+            _logger.LogInformation("Full sync — Stage 1: products");
+            var config = await _tableStorage.GetAutoSyncConfigAsync();
+            string? shopifyQuery = null;
+            if (config != null && (!string.IsNullOrWhiteSpace(config.Vendors) || !string.IsNullOrWhiteSpace(config.Tags)))
+            {
+                var parts = new List<string>();
+                var vList = config.Vendors.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(v => v.Trim()).Where(v => v.Length > 0).ToList();
+                var tList = config.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(t => t.Trim()).Where(t => t.Length > 0).ToList();
+                if (vList.Count == 1) parts.Add($"vendor:{vList[0]}");
+                else if (vList.Count > 1) parts.Add($"({string.Join(" OR ", vList.Select(v => $"vendor:{v}"))})");
+                if (tList.Count == 1) parts.Add($"tag:{tList[0]}");
+                else if (tList.Count > 1) parts.Add($"({string.Join(" OR ", tList.Select(t => $"tag:{t}"))})");
+                shopifyQuery = parts.Count > 0 ? string.Join(" ", parts) : null;
+            }
+            await _tableStorage.DeleteAllProductVariantsAsync();
+            var entities = await _shopify.FetchAllProductVariantsAsync(shopifyQuery);
+            await _tableStorage.BulkUpsertProductVariantsAsync(entities);
+            s1.Count = entities.Count;
+            s1.Ok    = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Full sync Stage 1 (products) failed");
+            s1.Error = ex.Message;
+            anyError = true;
+        }
+        stages.Add(s1);
+
+        // Stage 2: purchase orders + line items
+        var s2 = new FullSyncStageResult { Stage = "purchaseOrders" };
+        try
+        {
+            _logger.LogInformation("Full sync — Stage 2: purchase orders");
+            var pos = await _shopify.GetPurchaseOrdersAsync("open");
+            var partial = await _shopify.GetPurchaseOrdersAsync("partial");
+            pos.AddRange(partial);
+            var synced = await _tableStorage.SyncPurchaseOrdersAsync(pos);
+            s2.Count = synced;
+            s2.Ok    = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Full sync Stage 2 (purchase orders) failed");
+            s2.Error = ex.Message;
+            anyError = true;
+        }
+        stages.Add(s2);
+
+        // Stage 3: barcode ↔ PO backfill
+        var s3 = new FullSyncStageResult { Stage = "barcodeBackfill" };
+        try
+        {
+            _logger.LogInformation("Full sync — Stage 3: barcode backfill");
+            var backfilled = await _tableStorage.BackfillPrintedLabelPoLinksAsync();
+            s3.Count = backfilled;
+            s3.Ok    = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Full sync Stage 3 (barcode backfill) failed");
+            s3.Error = ex.Message;
+            anyError = true;
+        }
+        stages.Add(s3);
+
+        // Stage 4: SN counter reconciliation
+        var s4 = new FullSyncStageResult { Stage = "snCounters" };
+        try
+        {
+            _logger.LogInformation("Full sync — Stage 4: SN counter reconciliation");
+            var reconciled = await _tableStorage.ReconcileSnCountersAsync();
+            s4.Count = reconciled;
+            s4.Ok    = true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Full sync Stage 4 (SN counters) failed");
+            s4.Error = ex.Message;
+            anyError = true;
+        }
+        stages.Add(s4);
+
+        await _tableStorage.SetLastSyncAsync(DateTimeOffset.UtcNow, "", "");
+
+        _logger.LogInformation("Full sync complete. Stages: {Summary}",
+            string.Join(", ", stages.Select(s => $"{s.Stage}:{(s.Ok ? s.Count.ToString() : "ERR")}")));
+
+        return await ResponseHelper.WriteSuccess(req, new FullSyncResult
+        {
+            Ok       = !anyError,
+            SyncedAt = DateTimeOffset.UtcNow.ToString("o"),
+            Stages   = stages,
+        }, _allowedOrigins);
+    }
+
     [Function("SyncProducts")]
     public async Task<HttpResponseData> Sync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "sync")]

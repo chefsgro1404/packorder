@@ -1027,3 +1027,36 @@ public class RegisterWebhooksRequest
 {
     [JsonProperty("callbackBaseUrl")] public string CallbackBaseUrl { get; set; } = "";
 }
+
+// ─── Vendor Management ────────────────────────────────────────────────────────
+
+public class VendorEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "vendor";
+    public string RowKey { get; set; } = "";          // GUID
+    public string VendorName { get; set; } = "";
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class CreateVendorRequest
+{
+    [JsonProperty("vendorName")] public string VendorName { get; set; } = "";
+}
+
+// ─── Full Sync ────────────────────────────────────────────────────────────────
+
+public class FullSyncStageResult
+{
+    [JsonProperty("stage")]   public string Stage { get; set; } = "";
+    [JsonProperty("count")]   public int Count { get; set; }
+    [JsonProperty("ok")]      public bool Ok { get; set; }
+    [JsonProperty("error")]   public string? Error { get; set; }
+}
+
+public class FullSyncResult
+{
+    [JsonProperty("ok")]          public bool Ok { get; set; }
+    [JsonProperty("syncedAt")]    public string SyncedAt { get; set; } = "";
+    [JsonProperty("stages")]      public List<FullSyncStageResult> Stages { get; set; } = new();
+}
