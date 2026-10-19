@@ -401,6 +401,11 @@ public class ScaleFunction
                     qrPayload = e.QrPayload,
                     printedBy = e.PrintedBy,
                     sn = e.Sn,
+                    poId = e.PoId,
+                    poLineItemId = e.PoLineItemId,
+                    vendorName = e.VendorName,
+                    lotNo = e.LotNo,
+                    expiryDate = e.ExpiryDate,
                 }).ToList();
                 _logger.LogInformation("Scale print-log query returned {Count} labels (from={From}, to={To}, plu={Plu})",
                     labels.Count, from, to, plu);
@@ -442,6 +447,11 @@ public class ScaleFunction
                 QrPayload = request.QrPayload,
                 PrintedBy = request.PrintedBy ?? userId,
                 Sn = request.Sn,
+                PoId = request.PoId,
+                PoLineItemId = request.PoLineItemId,
+                VendorName = request.VendorName,
+                LotNo = request.LotNo,
+                ExpiryDate = request.ExpiryDate,
             };
             await _tableStorage.LogPrintedLabelAsync(entityToSave);
 

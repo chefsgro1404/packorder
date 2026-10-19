@@ -58,6 +58,7 @@ interface CurrentItem {
   poId?: string | null;
   poLineItemId?: string | null;
   poQuantityOrdered?: number;
+  vendorName?: string | null;
 }
 
 function isPlaceholderItemNumber(itemNumber: string): boolean {
@@ -979,6 +980,8 @@ export default function ScalePage() {
     sn: string,
     mapping?: InventoryMappingInfo | null,
     skipPoApproval?: boolean,
+    lotNo?: string | null,
+    expiryDate?: string | null,
   ) => {
     try {
       const res = await fetch('/api/scale/print-log', {
@@ -992,6 +995,11 @@ export default function ScalePage() {
           printedAtEst,
           qrPayload,
           sn,
+          poId: item.poId ?? null,
+          poLineItemId: item.poLineItemId ?? null,
+          vendorName: item.vendorName ?? null,
+          lotNo: lotNo ?? null,
+          expiryDate: expiryDate ?? null,
         }),
       });
       if (res.ok) {
@@ -1112,6 +1120,7 @@ export default function ScalePage() {
       poId: po.id,
       poLineItemId: li.id,
       poQuantityOrdered: li.quantityOrdered,
+      vendorName: po.vendor ?? null,
     };
 
     setBulkPrintModal({ item: resolvedItem, po, li });

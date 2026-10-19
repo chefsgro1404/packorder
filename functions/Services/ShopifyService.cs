@@ -1147,5 +1147,92 @@ public class ShopifyService
             return new List<WebhookPurchaseOrder>();
         }
     }
+
+    // ─── Webhook Registration ─────────────────────────────────────────────────
+
+    private static readonly (string Topic, string GqlTopic)[] RequiredWebhookTopics =
+    [
+        ("products/create",          "PRODUCTS_CREATE"),
+        ("products/update",          "PRODUCTS_UPDATE"),
+        ("products/delete",          "PRODUCTS_DELETE"),
+        ("orders/create",            "ORDERS_CREATE"),
+        ("orders/updated",           "ORDERS_UPDATED"),
+        ("orders/cancelled",         "ORDERS_CANCELLED"),
+        ("orders/fulfilled",         "ORDERS_FULFILLED"),
+        ("purchase_orders/create",   "PURCHASE_ORDERS_CREATE"),
+        ("purchase_orders/update",   "PURCHASE_ORDERS_UPDATE"),
+    ];
+
+    private const string ListWebhooksQuery = @"
+        query ListWebhooks {
+          webhookSubscriptions(first: 100) {
+            nodes { id topic callbackUrl }
+          }
+        }";
+
+    private const string CreateWebhookMutation = @"
+        mutation CreateWebhook($topic: WebhookSubscriptionTopic!, $callbackUrl: URL!) {
+          webhookSubscriptionCreate(topic: $topic, webhookSubscription: { callbackUrl: $callbackUrl, format: JSON }) {
+            userErrors { field message }
+            webhookSubscription { id topic callbackUrl }
+          }
+        }";
+
+    public async Task<List<WebhookRegistrationResult>> RegisterWebhooksAsync(string callbackBaseUrl)
+    {
+        var results = new List<WebhookRegistrationResult>();
+        var callbackUrl = $"{callbackBaseUrl.TrimEnd('/')}/api/webhooks/shopify";
+
+        // Fetch existing subscriptions to avoid duplicates
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var listResult = await GraphQlAsync(ListWebhooksQuery);
+            var nodes = listResult["data"]?["webhookSubscriptions"]?["nodes"] as JArray ?? new JArray();
+            foreach (var node in nodes)
+            {
+                var topic = node["topic"]?.ToString() ?? "";
+                // GQL topics come back as e.g. "PRODUCTS_CREATE"; map to rest format
+                existing.Add(topic);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list existing webhook subscriptions; will attempt to register all");
+        }
+
+        foreach (var (restTopic, gqlTopic) in RequiredWebhookTopics)
+        {
+            if (existing.Contains(gqlTopic))
+            {
+                results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "already_registered" });
+                continue;
+            }
+
+            try
+            {
+                var mutation = await GraphQlAsync(CreateWebhookMutation, new { topic = gqlTopic, callbackUrl });
+                var userErrors = mutation["data"]?["webhookSubscriptionCreate"]?["userErrors"] as JArray;
+                if (userErrors != null && userErrors.Count > 0)
+                {
+                    var msg = string.Join("; ", userErrors.Select(e => e["message"]?.ToString()));
+                    results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "error", Error = msg });
+                    _logger.LogWarning("Webhook registration error for {Topic}: {Errors}", restTopic, msg);
+                }
+                else
+                {
+                    results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "registered" });
+                    _logger.LogInformation("Registered webhook for {Topic} → {CallbackUrl}", restTopic, callbackUrl);
+                }
+            }
+            catch (Exception ex)
+            {
+                results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "error", Error = ex.Message });
+                _logger.LogError(ex, "Failed to register webhook for {Topic}", restTopic);
+            }
+        }
+
+        return results;
+    }
 }
 

@@ -752,6 +752,12 @@ public class PrintedLabelEntity : ITableEntity
     public string QrPayload { get; set; } = "";
     public string? PrintedBy { get; set; }
     public string? Sn { get; set; }
+    // PO traceability — set when printed from a PO suggestion
+    public string? PoId { get; set; }
+    public string? PoLineItemId { get; set; }
+    public string? VendorName { get; set; }
+    public string? LotNo { get; set; }
+    public string? ExpiryDate { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -766,6 +772,11 @@ public class LogPrintedLabelRequest
     [JsonProperty("qrPayload")]    public string QrPayload { get; set; } = "";
     [JsonProperty("printedBy")]    public string? PrintedBy { get; set; }
     [JsonProperty("sn")]           public string? Sn { get; set; }
+    [JsonProperty("poId")]         public string? PoId { get; set; }
+    [JsonProperty("poLineItemId")] public string? PoLineItemId { get; set; }
+    [JsonProperty("vendorName")]   public string? VendorName { get; set; }
+    [JsonProperty("lotNo")]        public string? LotNo { get; set; }
+    [JsonProperty("expiryDate")]   public string? ExpiryDate { get; set; }
 }
 
 public class SnCounterEntity : ITableEntity
@@ -953,4 +964,18 @@ public class TransformationOption
     [JsonProperty("title")]           public string Title { get; set; } = "";
     [JsonProperty("inventoryItemId")] public string InventoryItemId { get; set; } = "";
     [JsonProperty("locationId")]      public string LocationId { get; set; } = "";
+}
+
+// ─── Webhook Registration ─────────────────────────────────────────────────────
+
+public class WebhookRegistrationResult
+{
+    [JsonProperty("topic")]  public string Topic { get; set; } = "";
+    [JsonProperty("status")] public string Status { get; set; } = ""; // registered | already_registered | error
+    [JsonProperty("error")]  public string? Error { get; set; }
+}
+
+public class RegisterWebhooksRequest
+{
+    [JsonProperty("callbackBaseUrl")] public string CallbackBaseUrl { get; set; } = "";
 }
