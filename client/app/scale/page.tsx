@@ -40,6 +40,7 @@ import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption } from '@/lib/types';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
+import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { usePrintQueue } from '@/hooks/usePrintQueue';
 import { applyMappings } from '@/lib/textMappings';
@@ -734,6 +735,11 @@ function BulkPrintResultPanel({
           Shopify inventory adjusted by {inventoryAdjusted} for the {Math.abs(inventoryAdjusted)} unit shortfall
         </p>
       )}
+      {inventoryAdjusted !== null && inventoryAdjusted > 0 && (
+        <p className="text-xs text-violet-300 bg-violet-950/40 border border-violet-900/40 rounded-lg px-2.5 py-1.5">
+          Shopify inventory adjusted by +{inventoryAdjusted} for the {inventoryAdjusted} unit overage
+        </p>
+      )}
       <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
         {results.map(r => (
           <div
@@ -1131,6 +1137,8 @@ export default function ScalePage() {
     modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem },
     quantity: number,
     weight: string,
+    lotNo: string,
+    expiryDate: string,
   ) => {
     const { item: baseItem, po, li } = modalState;
     const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
@@ -1173,7 +1181,7 @@ export default function ScalePage() {
           await createJob({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: item.itemWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
         }
         // Log each label; skip PO approval (done once after the full batch)
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true, lotNo || null, expiryDate || null);
         results.push({ index: i + 1, sn, qrPayload: encryptedPayload, printedAtEst, status: 'printed' });
       } catch (err) {
         results.push({ index: i + 1, sn: '', qrPayload: '', printedAtEst: '', status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
@@ -1193,16 +1201,16 @@ export default function ScalePage() {
       }
     }
 
-    // Shopify inventory correction: if received fewer than ordered, adjust the delta
-    const shortfall = li.quantityOrdered - printedCount;
-    if (shortfall > 0 && item.variantId) {
+    // Shopify inventory correction: adjust delta for shortfall (−) or overage (+)
+    const qtyDelta = li.quantityOrdered - printedCount; // positive = short, negative = over
+    if (qtyDelta !== 0 && item.variantId) {
       try {
         const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId)}`);
         if (invRes.ok) {
           const invData = await invRes.json();
           const { inventoryItemId, locationId } = invData.data ?? {};
           if (inventoryItemId && locationId) {
-            const adjustDelta = -shortfall;
+            const adjustDelta = -qtyDelta; // shortfall → negative, overage → positive
             await fetch('/api/scale/inventory-adjust', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1213,6 +1221,39 @@ export default function ScalePage() {
         }
       } catch (err) {
         console.error('[scale] PO inventory correction failed:', err);
+      }
+    }
+
+    // Save bulk session history
+    if (printedCount > 0) {
+      try {
+        const sessionDateEst = formatEst(new Date());
+        await fetch('/api/scale/bulk-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productTitle: item.productTitle,
+            variantTitle: item.variantTitle ?? null,
+            poId: item.poId ?? null,
+            poLineItemId: item.poLineItemId ?? null,
+            vendorName: item.vendorName ?? null,
+            lotNo: lotNo || null,
+            expiryDate: expiryDate || null,
+            quantityOrdered: li.quantityOrdered,
+            quantityPrinted: printedCount,
+            results: results.map(r => ({
+              index: r.index,
+              sn: r.sn,
+              qrPayload: r.qrPayload,
+              printedAtEst: r.printedAtEst,
+              status: r.status,
+              error: r.error ?? null,
+            })),
+            sessionDateEst,
+          }),
+        });
+      } catch (err) {
+        console.error('[scale] failed to save bulk session:', err);
       }
     }
   }, [textMappings, isPrinterDevice, triggerPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
@@ -1447,6 +1488,12 @@ export default function ScalePage() {
     );
   };
 
+  const handleHistoryReprint = useCallback((qrPayload: string, sn: string, productTitle: string, variantTitle: string | null) => {
+    const reprintSn = buildReprintSn(sn || generateSn());
+    const printedAtEst = formatEst(new Date());
+    printVerbatim({ productTitle, variantTitle, qrPayload, itemWeight: '', printedAtEst, sn: reprintSn });
+  }, [buildReprintSn, printVerbatim]);
+
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
       ? 'busy'
@@ -1455,316 +1502,383 @@ export default function ScalePage() {
       : 'off';
   const canPrint = !!currentItem;
 
+  const clearCurrentItem = () => {
+    setCurrentItem(null);
+    setManualWeight('');
+    setBulkPrintResults(null);
+    setBulkInventoryAdjusted(null);
+    setTransformationOptions(null);
+    resetPrinted();
+  };
+
   return (
     <>
       <main className="min-h-screen bg-slate-950 pb-safe">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800/60 px-4 py-3 flex items-center gap-3">
-        <button
-          onClick={() => router.push('/')}
-          className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors flex-shrink-0"
-          aria-label="Back to home"
-        >
-          <ArrowLeft className="w-4 h-4 text-slate-400" />
-        </button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-base font-bold text-slate-100 leading-tight">Scale &amp; Print</h1>
-          <p className="text-xs text-slate-500 leading-tight">Scale-to-printer label generation</p>
-        </div>
-        {/* Live status chips + settings */}
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
-            <StatusDot status={scaleStatus} />
-            <span className="text-xs text-slate-400 font-medium">Scale</span>
-          </div>
+
+        {/* ── Sticky header ─────────────────────────────────────────────────── */}
+        <div className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur border-b border-slate-800/60 px-4 py-3 flex items-center gap-3">
           <button
-            onClick={() => router.push('/scale/settings')}
-            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors"
-            aria-label="Scale settings"
+            onClick={() => router.push('/')}
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors flex-shrink-0"
+            aria-label="Back to home"
           >
-            <Settings className="w-4 h-4 text-slate-400" />
+            <ArrowLeft className="w-4 h-4 text-slate-400" />
           </button>
-        </div>
-      </div>
-
-      <div className="px-4 py-5 flex flex-col gap-4">
-        {/* PO Suggestions */}
-        <PoSuggestions
-          orders={poOrders}
-          loading={poLoading}
-          error={poError}
-          lineItemsCache={poLineItemsCache}
-          expandedPoId={expandedPoId}
-          onToggleExpand={handlePoToggle}
-          onSelectItem={handlePoItemSelect}
-        />
-
-        {/* Select Product entry point */}
-        <button
-          onClick={() => router.push('/scale/products')}
-          className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-2xl px-4 py-3.5 transition-colors active:scale-[0.99]"
-        >
-          <div className="w-9 h-9 rounded-xl bg-blue-500/40 flex items-center justify-center flex-shrink-0">
-            <ListFilter className="w-4 h-4 text-white" />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-bold text-slate-100 leading-tight">Scale &amp; Print</h1>
+            <p className="text-xs text-slate-500 leading-tight hidden sm:block">Barcode creation &amp; PO receiving</p>
           </div>
-          <div className="flex-1 min-w-0 text-left">
-            <p className="text-sm font-bold text-white leading-tight">Select Product</p>
-            <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog to print labels for any product</p>
-          </div>
-        </button>
-
-        {/* Scale monitor card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-            <span className="w-1 h-4 bg-blue-500 rounded-full" />
-            <h2 className="text-sm font-semibold text-slate-200">Scale Monitor</h2>
-          </div>
-          <ScaleMonitor
-            state={scale.state}
-            chunkCount={scale.chunkCount}
-            error={scale.error}
-          />
-        </div>
-
-        {/* Label preview card */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="px-4 pt-4 pb-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-1 h-4 bg-emerald-500 rounded-full" />
-              <h2 className="text-sm font-semibold text-slate-200">Label Preview</h2>
+          <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
+              <StatusDot status={scaleStatus} />
+              <span className="text-xs text-slate-400 font-medium">Scale</span>
             </div>
-            {currentItem && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">
-                {printedAt ? 'Printed' : 'Ready'}
-              </span>
-            )}
+            <button
+              onClick={() => router.push('/scale/settings')}
+              className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors"
+              aria-label="Scale settings"
+            >
+              <Settings className="w-4 h-4 text-slate-400" />
+            </button>
           </div>
-          {/* Label size selector */}
-          <div className="px-4 pb-3 flex items-center gap-1.5 flex-wrap">
-            {LABEL_SIZE_OPTIONS.map(({ key, label }) => (
-              <button
-                key={key}
-                onClick={() => handleSizeChange(key)}
-                className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-colors ${
-                  labelSizeKey === key
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+        </div>
+
+        {/* ── Two-column responsive body ─────────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 px-4 py-5 items-start">
+
+          {/* ── LEFT: PO suggestions sidebar ──────────────────────────────── */}
+          <div className="lg:sticky lg:top-[61px] lg:overflow-y-auto lg:max-h-[calc(100vh-81px)]">
+            <PoSuggestions
+              orders={poOrders}
+              loading={poLoading}
+              error={poError}
+              lineItemsCache={poLineItemsCache}
+              expandedPoId={expandedPoId}
+              onToggleExpand={handlePoToggle}
+              onSelectItem={handlePoItemSelect}
+            />
           </div>
-          <div className="px-4 pb-4">
-            <LabelPreview item={currentItem} lookupLoading={lookupLoading} labelSizeKey={labelSizeKey} textMappings={textMappings} />
 
-            {currentItem && (
-              <>
-                <div className="border-t border-slate-800 my-4" />
+          {/* ── RIGHT: Main work area ──────────────────────────────────────── */}
+          <div className="flex flex-col gap-4">
 
-                {/* Feedback banners */}
-                {!isPrinterDevice && remotePrintJob && (
-                  <div className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 mb-3 border text-sm ${
-                    remotePrintJob.status === 'completed'
-                      ? 'bg-emerald-950/50 border-emerald-900 text-emerald-300'
-                      : remotePrintJob.status === 'failed'
-                      ? 'bg-rose-950/50 border-rose-900 text-rose-300'
-                      : remotePrintJob.status === 'claimed'
-                      ? 'bg-blue-950/50 border-blue-900 text-blue-300'
-                      : 'bg-amber-950/50 border-amber-900 text-amber-300'
-                  }`}>
-                    <Printer className="w-4 h-4 flex-shrink-0" />
-                    <span className="flex-1 min-w-0 font-medium">
-                      {remotePrintJob.status === 'queued' && 'Waiting for printer device…'}
-                      {remotePrintJob.status === 'claimed' && `Printing on ${remotePrintJob.claimedBy ?? 'another device'}…`}
-                      {remotePrintJob.status === 'completed' && 'Printed successfully on remote device'}
-                      {remotePrintJob.status === 'failed' && `Print failed: ${remotePrintJob.failedReason ?? 'unknown error'}`}
-                    </span>
-                    {(remotePrintJob.status === 'completed' || remotePrintJob.status === 'failed') && (
-                      <button
-                        onClick={() => setRemotePrintJob(null)}
-                        className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-current opacity-60 hover:opacity-100 transition-opacity"
-                        aria-label="Dismiss"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
+            {/* ── ACTIVE WORK ZONE ─────────────────────────────────────────── */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+
+              {/* Zone header */}
+              <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                  <span className="w-1 h-4 bg-blue-500 rounded-full flex-shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    {currentItem ? (
+                      <>
+                        <p className="text-sm font-bold text-slate-100 leading-snug">
+                          {applyMappings(currentItem.productTitle, textMappings)}
+                        </p>
+                        {currentItem.variantTitle && currentItem.variantTitle !== 'Default Title' && (
+                          <p className="text-xs text-slate-400 leading-tight mt-0.5">
+                            {applyMappings(currentItem.variantTitle, textMappings)}
+                          </p>
+                        )}
+                        {currentItem.poId && (
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-950 text-blue-400 border border-blue-900 font-semibold">PO</span>
+                            <span className="text-[10px] text-slate-500">{currentItem.poQuantityOrdered} ordered</span>
+                            {currentItem.vendorName && (
+                              <span className="text-[10px] text-blue-400 font-medium">{currentItem.vendorName}</span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div>
+                        <p className="text-sm font-semibold text-slate-300">Active Print Zone</p>
+                        <p className="text-xs text-slate-500 mt-0.5">Scan from scale or select a product</p>
+                      </div>
                     )}
                   </div>
-                )}
-                {printError && (
-                  <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5 mb-3">
-                    <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                    <p className="text-sm text-rose-300 font-medium">{printError}</p>
-                  </div>
-                )}
-                {printedAt && (
-                  <div className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-900 rounded-xl px-3 py-2.5 mb-3">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                    <p className="text-sm text-emerald-300 font-medium">
-                      Sent to print dialog at {formatEst(printedAt)} EST
-                    </p>
-                  </div>
-                )}
+                </div>
 
-                {/* PO context banner */}
-                {currentItem.poId && (
-                  <div className="flex items-center gap-2 bg-blue-950/40 border border-blue-900 rounded-xl px-3 py-2.5 mb-2">
-                    <ClipboardList className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                    <p className="text-xs text-blue-300 flex-1 min-w-0">
-                      From PO · {currentItem.poQuantityOrdered} units ordered
-                      {!currentItem.itemWeight ? ' — enter weight below or weigh on scale' : ''}
-                    </p>
+                {currentItem && (
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {printedAt && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-900 font-semibold">
+                        Printed
+                      </span>
+                    )}
                     <button
-                      onClick={() => { setCurrentItem(null); setManualWeight(''); resetPrinted(); }}
-                      className="w-5 h-5 flex items-center justify-center rounded text-blue-500 hover:text-blue-300 transition-colors"
+                      onClick={clearCurrentItem}
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                      aria-label="Clear item"
                     >
-                      <X className="w-3 h-3" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
+              </div>
 
-                {/* Transformation options — shown when current variant has child transformation variants */}
-                {transformationOptions && transformationOptions.length > 0 && (
-                  <TransformationPanel options={transformationOptions} onSelect={handleTransformationSelect} />
-                )}
+              <div className="border-t border-slate-800" />
 
-                {/* Wet product / inventory mapping banner */}
-                {inventoryMapping?.found && (
-                  <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 mb-2 border ${
-                    lastAdjustment
-                      ? 'bg-emerald-950/40 border-emerald-800/60'
-                      : 'bg-amber-950/40 border-amber-800/60'
-                  }`}>
-                    <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-400' : 'text-amber-400'}`} />
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-300' : 'text-amber-300'}`}>
-                        Wet Product
-                      </p>
-                      {lastAdjustment ? (
-                        <p className="text-xs text-emerald-400/80 leading-tight mt-0.5">
-                          {Math.abs(lastAdjustment.delta)} unit{Math.abs(lastAdjustment.delta) !== 1 ? 's' : ''} deducted from {lastAdjustment.parentTitle}
-                        </p>
-                      ) : inventoryMapping.isWeighted ? (
-                        <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
-                          {currentItem.itemWeight
-                            ? `~${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit)} unit${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit) !== 1 ? 's' : ''} of ${inventoryMapping.parentProductTitle} will be deducted`
-                            : `Deducts from ${inventoryMapping.parentProductTitle} · ${inventoryMapping.weightPerUnit} lbs/unit`}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
-                          1 unit of {inventoryMapping.parentProductTitle} will be deducted
-                        </p>
+              {/* ── Empty state: scale monitor + CTAs ── */}
+              {!currentItem ? (
+                <>
+                  <ScaleMonitor state={scale.state} chunkCount={scale.chunkCount} error={scale.error} />
+                  <div className="px-4 pb-4">
+                    <button
+                      onClick={() => router.push('/scale/products')}
+                      className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-blue-500/40 flex items-center justify-center flex-shrink-0">
+                        <ListFilter className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-white leading-tight">Select Product</p>
+                        <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog</p>
+                      </div>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                /* ── Product loaded state ── */
+                <div className="px-4 pb-4 pt-3 flex flex-col gap-3">
+
+                  {/* Compact scale status when product is loaded */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                      <StatusDot status={scaleStatus} />
+                      <span>
+                        {scale.state === 'receiving'
+                          ? 'Receiving scale data…'
+                          : scale.state === 'processing'
+                          ? 'Processing…'
+                          : scale.state === 'connected'
+                          ? 'Scale ready — trigger to update weight'
+                          : 'Scale not connected'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => router.push('/scale/products')}
+                      className="text-xs text-slate-500 hover:text-slate-200 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      <ListFilter className="w-3 h-3" /> Switch
+                    </button>
+                  </div>
+
+                  {/* Label size selector */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {LABEL_SIZE_OPTIONS.map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => handleSizeChange(key)}
+                        className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-colors ${
+                          labelSizeKey === key
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Label preview */}
+                  <LabelPreview
+                    item={currentItem}
+                    lookupLoading={lookupLoading}
+                    labelSizeKey={labelSizeKey}
+                    textMappings={textMappings}
+                  />
+
+                  <div className="border-t border-slate-800" />
+
+                  {/* ── Feedback banners ── */}
+
+                  {!isPrinterDevice && remotePrintJob && (
+                    <div className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 border text-sm ${
+                      remotePrintJob.status === 'completed'
+                        ? 'bg-emerald-950/50 border-emerald-900 text-emerald-300'
+                        : remotePrintJob.status === 'failed'
+                        ? 'bg-rose-950/50 border-rose-900 text-rose-300'
+                        : remotePrintJob.status === 'claimed'
+                        ? 'bg-blue-950/50 border-blue-900 text-blue-300'
+                        : 'bg-amber-950/50 border-amber-900 text-amber-300'
+                    }`}>
+                      <Printer className="w-4 h-4 flex-shrink-0" />
+                      <span className="flex-1 min-w-0 font-medium">
+                        {remotePrintJob.status === 'queued' && 'Waiting for printer device…'}
+                        {remotePrintJob.status === 'claimed' && `Printing on ${remotePrintJob.claimedBy ?? 'another device'}…`}
+                        {remotePrintJob.status === 'completed' && 'Printed successfully on remote device'}
+                        {remotePrintJob.status === 'failed' && `Print failed: ${remotePrintJob.failedReason ?? 'unknown error'}`}
+                      </span>
+                      {(remotePrintJob.status === 'completed' || remotePrintJob.status === 'failed') && (
+                        <button onClick={() => setRemotePrintJob(null)} className="flex-shrink-0 w-5 h-5 flex items-center justify-center rounded text-current opacity-60 hover:opacity-100 transition-opacity">
+                          <X className="w-3 h-3" />
+                        </button>
                       )}
                     </div>
-                  </div>
-                )}
-
-                {/* Manual weight input for PO items without a scale reading yet */}
-                {currentItem.poId && !currentItem.itemWeight && (
-                  <div className="flex gap-2 mb-2">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="e.g. 1.25 kg"
-                      value={manualWeight}
-                      onChange={e => setManualWeight(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleManualWeightPrint(); }}
-                      className="flex-1 h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                    />
-                    <button
-                      onClick={handleManualWeightPrint}
-                      disabled={!manualWeight.trim()}
-                      className="h-10 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-semibold text-sm flex items-center gap-1.5 transition-colors active:scale-[0.98]"
-                    >
-                      <Printer className="w-3.5 h-3.5" /> Print
-                    </button>
-                  </div>
-                )}
-
-                {/* Bulk print results — shown inline after bulk print completes */}
-                {bulkPrintResults && bulkPrintResults.length > 0 && (
-                  <BulkPrintResultPanel
-                    results={bulkPrintResults}
-                    poQuantityOrdered={currentItem.poQuantityOrdered ?? bulkPrintResults.length}
-                    inventoryAdjusted={bulkInventoryAdjusted}
-                    onReprint={handleBulkReprint}
-                    onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); }}
-                  />
-                )}
-
-                {/* Action buttons */}
-                <div className="flex flex-col gap-2">
-                  {(!currentItem.poId || !!currentItem.itemWeight) && !bulkPrintResults && (
-                    <button
-                      onClick={handleManualPrint}
-                      disabled={!canPrint}
-                      className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-                    >
-                      <Printer className="w-4 h-4" />
-                      {printedAt ? 'Print Again' : 'Print Label'}
-                    </button>
                   )}
-                  <button
-                    onClick={() => {
-                      setCurrentItem(null);
-                      setManualWeight('');
-                      setBulkPrintResults(null);
-                      setBulkInventoryAdjusted(null);
-                      setTransformationOptions(null);
-                      resetPrinted();
-                    }}
-                    className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"
-                  >
-                    <ScanLine className="w-4 h-4" /> New Scan
-                  </button>
+
+                  {printError && (
+                    <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                      <p className="text-sm text-rose-300 font-medium">{printError}</p>
+                    </div>
+                  )}
+
+                  {printedAt && (
+                    <div className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-900 rounded-xl px-3 py-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      <p className="text-sm text-emerald-300 font-medium">
+                        Sent to print at {formatEst(printedAt)} EST
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Transformation options */}
+                  {transformationOptions && transformationOptions.length > 0 && (
+                    <TransformationPanel options={transformationOptions} onSelect={handleTransformationSelect} />
+                  )}
+
+                  {/* Wet product / inventory mapping */}
+                  {inventoryMapping?.found && (
+                    <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border ${
+                      lastAdjustment ? 'bg-emerald-950/40 border-emerald-800/60' : 'bg-amber-950/40 border-amber-800/60'
+                    }`}>
+                      <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-400' : 'text-amber-400'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          Wet Product
+                        </p>
+                        {lastAdjustment ? (
+                          <p className="text-xs text-emerald-400/80 leading-tight mt-0.5">
+                            {Math.abs(lastAdjustment.delta)} unit{Math.abs(lastAdjustment.delta) !== 1 ? 's' : ''} deducted from {lastAdjustment.parentTitle}
+                          </p>
+                        ) : inventoryMapping.isWeighted ? (
+                          <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                            {currentItem.itemWeight
+                              ? `~${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit)} unit${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / inventoryMapping.weightPerUnit) !== 1 ? 's' : ''} of ${inventoryMapping.parentProductTitle} will be deducted`
+                              : `Deducts from ${inventoryMapping.parentProductTitle} · ${inventoryMapping.weightPerUnit} lbs/unit`}
+                          </p>
+                        ) : (
+                          <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                            1 unit of {inventoryMapping.parentProductTitle} will be deducted
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Manual weight input for PO items without scale reading */}
+                  {currentItem.poId && !currentItem.itemWeight && (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-xs text-slate-500">Enter weight or trigger scale to print:</p>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="e.g. 1.25 kg"
+                          value={manualWeight}
+                          onChange={e => setManualWeight(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleManualWeightPrint(); }}
+                          className="flex-1 h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                        />
+                        <button
+                          onClick={handleManualWeightPrint}
+                          disabled={!manualWeight.trim()}
+                          className="h-10 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-semibold text-sm flex items-center gap-1.5 transition-colors active:scale-[0.98]"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Print
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Bulk print results */}
+                  {bulkPrintResults && bulkPrintResults.length > 0 && (
+                    <BulkPrintResultPanel
+                      results={bulkPrintResults}
+                      poQuantityOrdered={currentItem.poQuantityOrdered ?? bulkPrintResults.length}
+                      inventoryAdjusted={bulkInventoryAdjusted}
+                      onReprint={handleBulkReprint}
+                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); }}
+                    />
+                  )}
+
+                  {/* Primary action buttons */}
+                  <div className="flex flex-col gap-2">
+                    {(!currentItem.poId || !!currentItem.itemWeight) && !bulkPrintResults && (
+                      <button
+                        onClick={handleManualPrint}
+                        disabled={!canPrint}
+                        className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+                      >
+                        <Printer className="w-4 h-4" />
+                        {printedAt ? 'Print Again' : 'Print Label'}
+                      </button>
+                    )}
+                    <button
+                      onClick={clearCurrentItem}
+                      className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"
+                    >
+                      <ScanLine className="w-4 h-4" /> New Scan
+                    </button>
+                  </div>
+
                 </div>
-              </>
-            )}
+              )}
+            </div>
+            {/* end active work zone */}
+
+            {/* ── Bulk session history ──────────────────────────────────────── */}
+            <BulkSessionHistoryPanel onReprintLabel={handleHistoryReprint} />
+
+            {/* ── Print history ─────────────────────────────────────────────── */}
+            <PrintHistory
+              records={printHistory}
+              loading={historyLoading}
+              canPrint={true}
+              onReprint={handleReprint}
+            />
+
+            {/* ── Device setup ──────────────────────────────────────────────── */}
+            <DeviceSetup
+              scaleState={scale.state}
+              scaleError={scale.error}
+              onConnectScale={scale.connect}
+              onDisconnectScale={scale.disconnect}
+            />
+
+            {/* ── Diagnostics ───────────────────────────────────────────────── */}
+            <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+              <button
+                className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+                onClick={() => setDebugOpen(v => !v)}
+              >
+                <div className="flex items-center gap-2">
+                  <Bug className="w-4 h-4 text-slate-500" />
+                  <span className="text-sm font-semibold text-slate-200">Diagnostics</span>
+                </div>
+                {debugOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+              </button>
+              {debugOpen && (
+                <div className="border-t border-slate-800 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
+                  <p>state: <span className="text-slate-200">{scale.state}</span></p>
+                  <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
+                  <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
+                  <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
+                  <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
+                  <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
+                  <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
+                  <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
+                </div>
+              )}
+            </div>
+
           </div>
+          {/* end right column */}
+
         </div>
-
-        {/* Device setup */}
-        <DeviceSetup
-          scaleState={scale.state}
-          scaleError={scale.error}
-          onConnectScale={scale.connect}
-          onDisconnectScale={scale.disconnect}
-        />
-
-        {/* Print history */}
-        <PrintHistory
-          records={printHistory}
-          loading={historyLoading}
-          canPrint={true}
-          onReprint={handleReprint}
-        />
-
-        {/* Diagnostics — same fields as /scale/products/[id], for direct comparison */}
-        <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
-          <button
-            className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
-            onClick={() => setDebugOpen((v) => !v)}
-          >
-            <div className="flex items-center gap-2">
-              <Bug className="w-4 h-4 text-slate-500" />
-              <span className="text-sm font-semibold text-slate-200">Diagnostics</span>
-            </div>
-            {debugOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-          </button>
-          {debugOpen && (
-            <div className="border-t border-slate-800 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
-              <p>state: <span className="text-slate-200">{scale.state}</span></p>
-              <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
-              <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
-              <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
-              <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
-              <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
-              <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
-              <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
-            </div>
-          )}
-        </div>
-      </div>
+        {/* end two-column grid */}
 
       </main>
 
@@ -1783,7 +1897,8 @@ export default function ScalePage() {
           productTitle={bulkPrintModal.item.productTitle}
           variantTitle={bulkPrintModal.item.variantTitle ?? null}
           orderedQuantity={bulkPrintModal.li.quantityOrdered}
-          onConfirm={(qty, wt) => handleBulkPrint(bulkPrintModal, qty, wt)}
+          vendorName={bulkPrintModal.item.vendorName}
+          onConfirm={(qty, wt, lotNo, expiryDate) => handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate)}
           onClose={() => setBulkPrintModal(null)}
         />
       )}

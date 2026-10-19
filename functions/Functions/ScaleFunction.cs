@@ -682,6 +682,79 @@ public class ScaleFunction
         }
     }
 
+    // ─── Bulk Sessions ────────────────────────────────────────────────────────
+
+    [Function("ScaleBulkSessions")]
+    public async Task<HttpResponseData> BulkSessions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "options", Route = "scale/bulk-sessions")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (userId, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                var qs = ParseQueryString(req.Url.Query);
+                var limit = qs.TryGetValue("limit", out var l) && int.TryParse(l, out var lv) ? lv : 50;
+                var sessions = await _tableStorage.ListBulkSessionsAsync(userId!, limit);
+                var sessionDtos = sessions.Select(s => new
+                {
+                    id            = s.RowKey,
+                    productTitle  = s.ProductTitle,
+                    variantTitle  = s.VariantTitle,
+                    poId          = s.PoId,
+                    poLineItemId  = s.PoLineItemId,
+                    vendorName    = s.VendorName,
+                    lotNo         = s.LotNo,
+                    expiryDate    = s.ExpiryDate,
+                    quantityOrdered  = s.QuantityOrdered,
+                    quantityPrinted  = s.QuantityPrinted,
+                    results       = s.Results,
+                    sessionDateEst = s.SessionDateEst,
+                }).ToList();
+                return await ResponseHelper.WriteSuccess(req, new { sessions = sessionDtos, total = sessionDtos.Count }, _allowedOrigins);
+            }
+
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<SaveBulkSessionRequest>(body);
+            if (request == null || string.IsNullOrWhiteSpace(request.ProductTitle))
+                return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var sessionId = Guid.NewGuid().ToString("N");
+            var entity = new BulkSessionEntity
+            {
+                PartitionKey    = userId!,
+                RowKey          = sessionId,
+                ProductTitle    = request.ProductTitle,
+                VariantTitle    = request.VariantTitle,
+                PoId            = request.PoId,
+                PoLineItemId    = request.PoLineItemId,
+                VendorName      = request.VendorName,
+                LotNo           = request.LotNo,
+                ExpiryDate      = request.ExpiryDate,
+                QuantityOrdered = request.QuantityOrdered,
+                QuantityPrinted = request.QuantityPrinted,
+                Results         = JsonConvert.SerializeObject(request.Results),
+                SessionDateEst  = request.SessionDateEst,
+            };
+            await _tableStorage.SaveBulkSessionAsync(entity);
+            _logger.LogInformation("Saved bulk session {SessionId}: {Printed}/{Ordered} for {Product}",
+                sessionId, request.QuantityPrinted, request.QuantityOrdered, request.ProductTitle);
+            return await ResponseHelper.WriteSuccess(req, new { ok = true, id = sessionId }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "BulkSessions endpoint failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     private static Dictionary<string, string> ParseQueryString(string query)
     {
         return query.TrimStart('?')

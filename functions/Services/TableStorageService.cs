@@ -25,6 +25,7 @@ public class TableStorageService
     private readonly TableClient _purchaseOrders;
     private readonly TableClient _purchaseOrderLineItems;
     private readonly TableClient _printJobs;
+    private readonly TableClient _bulkSessions;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -47,6 +48,7 @@ public class TableStorageService
         _purchaseOrders            = tableServiceClient.GetTableClient("purchaseorders");
         _purchaseOrderLineItems    = tableServiceClient.GetTableClient("purchaseorderlineitems");
         _printJobs                 = tableServiceClient.GetTableClient("printjobs");
+        _bulkSessions              = tableServiceClient.GetTableClient("bulksessions");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -68,6 +70,7 @@ public class TableStorageService
         await _purchaseOrders.CreateIfNotExistsAsync();
         await _purchaseOrderLineItems.CreateIfNotExistsAsync();
         await _printJobs.CreateIfNotExistsAsync();
+        await _bulkSessions.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1277,6 +1280,37 @@ public class TableStorageService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to release print job {RowKey}", rowKey);
+        }
+    }
+
+    // ─── Bulk Sessions ───────────────────────────────────────────────────────
+
+    public async Task SaveBulkSessionAsync(BulkSessionEntity entity)
+    {
+        await _bulkSessions.AddEntityAsync(entity);
+    }
+
+    public async Task<List<BulkSessionEntity>> ListBulkSessionsAsync(string userId, int limit = 50)
+    {
+        var results = new List<BulkSessionEntity>();
+        await foreach (var e in _bulkSessions.QueryAsync<BulkSessionEntity>(e => e.PartitionKey == userId))
+            results.Add(e);
+        return results
+            .OrderByDescending(e => e.SessionDateEst, StringComparer.Ordinal)
+            .Take(limit)
+            .ToList();
+    }
+
+    public async Task<BulkSessionEntity?> GetBulkSessionAsync(string userId, string sessionId)
+    {
+        try
+        {
+            var response = await _bulkSessions.GetEntityAsync<BulkSessionEntity>(userId, sessionId);
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return null;
         }
     }
 }

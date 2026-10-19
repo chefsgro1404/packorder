@@ -966,6 +966,52 @@ public class TransformationOption
     [JsonProperty("locationId")]      public string LocationId { get; set; } = "";
 }
 
+// ─── Bulk Print Sessions ──────────────────────────────────────────────────────
+
+public class BulkSessionEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = ""; // userId
+    public string RowKey { get; set; } = "";       // session GUID
+    public string ProductTitle { get; set; } = "";
+    public string? VariantTitle { get; set; }
+    public string? PoId { get; set; }
+    public string? PoLineItemId { get; set; }
+    public string? VendorName { get; set; }
+    public string? LotNo { get; set; }
+    public string? ExpiryDate { get; set; }
+    public int QuantityOrdered { get; set; }
+    public int QuantityPrinted { get; set; }
+    public string Results { get; set; } = "[]"; // JSON: BulkSessionLabelResult[]
+    public string SessionDateEst { get; set; } = ""; // yyyy-MM-dd HH:mm:ss EST
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class BulkSessionLabelResult
+{
+    [JsonProperty("index")]        public int Index { get; set; }
+    [JsonProperty("sn")]           public string Sn { get; set; } = "";
+    [JsonProperty("qrPayload")]    public string QrPayload { get; set; } = "";
+    [JsonProperty("printedAtEst")] public string PrintedAtEst { get; set; } = "";
+    [JsonProperty("status")]       public string Status { get; set; } = ""; // printed | failed
+    [JsonProperty("error")]        public string? Error { get; set; }
+}
+
+public class SaveBulkSessionRequest
+{
+    [JsonProperty("productTitle")]    public string ProductTitle { get; set; } = "";
+    [JsonProperty("variantTitle")]    public string? VariantTitle { get; set; }
+    [JsonProperty("poId")]            public string? PoId { get; set; }
+    [JsonProperty("poLineItemId")]    public string? PoLineItemId { get; set; }
+    [JsonProperty("vendorName")]      public string? VendorName { get; set; }
+    [JsonProperty("lotNo")]           public string? LotNo { get; set; }
+    [JsonProperty("expiryDate")]      public string? ExpiryDate { get; set; }
+    [JsonProperty("quantityOrdered")] public int QuantityOrdered { get; set; }
+    [JsonProperty("quantityPrinted")] public int QuantityPrinted { get; set; }
+    [JsonProperty("results")]         public List<BulkSessionLabelResult> Results { get; set; } = new();
+    [JsonProperty("sessionDateEst")]  public string SessionDateEst { get; set; } = "";
+}
+
 // ─── Webhook Registration ─────────────────────────────────────────────────────
 
 public class WebhookRegistrationResult
