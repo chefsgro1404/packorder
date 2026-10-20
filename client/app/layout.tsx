@@ -34,9 +34,7 @@ export default function RootLayout({
         <meta name="screen-orientation" content="portrait" />
       </head>
       <body className="bg-slate-950 text-slate-100 min-h-screen antialiased">
-<div className="max-w-md mx-auto min-h-screen bg-slate-950 shadow-2xl shadow-black/50">
-          {children}
-        </div>
+{children}
       </body>
     </html>
   );
