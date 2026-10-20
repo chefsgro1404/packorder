@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { matchWeightRange, parseWeightToLbs } from './weightCategory';
+import { matchWeightRange, parseWeightToLbs, validateWeightRanges } from './weightCategory';
 import type { WeightRangeRule } from './types';
 
 const CHICKEN_RANGES: WeightRangeRule[] = [
@@ -103,6 +103,107 @@ describe('parseWeightToLbs', () => {
 
   it('returns null for zero', () => {
     expect(parseWeightToLbs('0 lbs')).toBeNull();
+  });
+});
+
+// ─── validateWeightRanges ────────────────────────────────────────────────────
+
+describe('validateWeightRanges', () => {
+  const validRanges: WeightRangeRule[] = [
+    { variantId: 'gid://shopify/ProductVariant/1001', label: 'Small',  minLbs: 1.5, maxLbs: 2.0 },
+    { variantId: 'gid://shopify/ProductVariant/1002', label: 'Medium', minLbs: 2.0, maxLbs: 2.5 },
+    { variantId: 'gid://shopify/ProductVariant/1003', label: 'Large',  minLbs: 2.5, maxLbs: null },
+  ];
+
+  it('returns no errors or warnings for a valid contiguous set', () => {
+    const result = validateWeightRanges(validRanges);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('returns empty errors/warnings for an empty rules array', () => {
+    const result = validateWeightRanges([]);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('errors when a tier label is missing', () => {
+    const rules = [{ ...validRanges[0], label: '' }, ...validRanges.slice(1)];
+    const result = validateWeightRanges(rules);
+    expect(result.errors.some(e => e.includes('label is required'))).toBe(true);
+  });
+
+  it('errors when a tier variantId is missing', () => {
+    const rules = [{ ...validRanges[0], variantId: '' }, ...validRanges.slice(1)];
+    const result = validateWeightRanges(rules);
+    expect(result.errors.some(e => e.includes('Variant ID is required'))).toBe(true);
+  });
+
+  it('errors when maxLbs <= minLbs', () => {
+    const rules = [{ variantId: 'v1', label: 'Bad', minLbs: 2.0, maxLbs: 1.5 }];
+    const result = validateWeightRanges(rules);
+    expect(result.errors.some(e => e.includes('max lbs must be greater'))).toBe(true);
+  });
+
+  it('errors when maxLbs equals minLbs (zero-width range)', () => {
+    const rules = [{ variantId: 'v1', label: 'Zero', minLbs: 2.0, maxLbs: 2.0 }];
+    const result = validateWeightRanges(rules);
+    expect(result.errors.some(e => e.includes('max lbs must be greater'))).toBe(true);
+  });
+
+  it('errors when two tiers overlap', () => {
+    const overlapping: WeightRangeRule[] = [
+      { variantId: 'v1', label: 'Small',  minLbs: 1.5, maxLbs: 2.5 },
+      { variantId: 'v2', label: 'Medium', minLbs: 2.0, maxLbs: 3.0 },
+    ];
+    const result = validateWeightRanges(overlapping);
+    expect(result.errors.some(e => e.includes('overlap'))).toBe(true);
+  });
+
+  it('errors when more than one tier has no upper bound', () => {
+    const multiUnbounded: WeightRangeRule[] = [
+      { variantId: 'v1', label: 'Large',    minLbs: 2.5, maxLbs: null },
+      { variantId: 'v2', label: 'XL',       minLbs: 3.0, maxLbs: null },
+    ];
+    const result = validateWeightRanges(multiUnbounded);
+    expect(result.errors.some(e => e.includes('no upper bound'))).toBe(true);
+  });
+
+  it('warns (not errors) when there is a gap between two tiers', () => {
+    const gapped: WeightRangeRule[] = [
+      { variantId: 'v1', label: 'Small', minLbs: 1.5, maxLbs: 2.0 },
+      { variantId: 'v2', label: 'Large', minLbs: 2.5, maxLbs: null },
+    ];
+    const result = validateWeightRanges(gapped);
+    expect(result.errors).toHaveLength(0);
+    expect(result.warnings.some(w => w.includes('Gap'))).toBe(true);
+    expect(result.warnings.some(w => w.includes('2–2.5'))).toBe(true);
+  });
+
+  it('warns with correct gap bounds when gap exists mid-range', () => {
+    const gapped: WeightRangeRule[] = [
+      { variantId: 'v1', label: 'Light', minLbs: 1.0, maxLbs: 1.5 },
+      { variantId: 'v2', label: 'Heavy', minLbs: 2.0, maxLbs: null },
+    ];
+    const result = validateWeightRanges(gapped);
+    expect(result.warnings.some(w => w.includes('1.5') && w.includes('2'))).toBe(true);
+  });
+
+  it('single unbounded tier alone is valid', () => {
+    const single: WeightRangeRule[] = [
+      { variantId: 'v1', label: 'All', minLbs: 0, maxLbs: null },
+    ];
+    const result = validateWeightRanges(single);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('detects overlap regardless of rule order in the array', () => {
+    const reversed: WeightRangeRule[] = [
+      { variantId: 'v2', label: 'Medium', minLbs: 2.0, maxLbs: 3.0 },
+      { variantId: 'v1', label: 'Small',  minLbs: 1.5, maxLbs: 2.5 },
+    ];
+    const result = validateWeightRanges(reversed);
+    expect(result.errors.some(e => e.includes('overlap'))).toBe(true);
   });
 });
 

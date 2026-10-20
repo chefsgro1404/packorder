@@ -1008,14 +1008,8 @@ export default function ScalePage() {
     return () => { cancelled = true; };
   }, [currentItem?.variantId]);
 
-  // Fetch weight ranges whenever the product changes (for categorical auto-detection)
+  // Reset auto-detect whenever the loaded variant changes (new product, transformation, clear)
   useEffect(() => {
-    const productId = currentItem?.variantId
-      ? null  // We'll get ranges from by-variant endpoint if available
-      : null;
-    // Weight ranges are fetched from by-variant in handlePoItemSelect and stored in currentItem.
-    // For scale reading flow, we need to fetch them when productId is available.
-    // Reset auto-detect when item changes.
     setAutoDetect(null);
   }, [currentItem?.variantId]);
 
@@ -1522,6 +1516,9 @@ export default function ScalePage() {
           const updated = { ...currentItem, itemWeight: reading.itemWeight };
           setCurrentItem(updated);
           setManualWeight('');
+          // Categorical mode: new weight triggers the auto-detect effect — don't print yet,
+          // let staff confirm the matched tier in the banner before pressing Print.
+          if (weightRanges.length > 0) return;
           await printItem(updated);
         } else {
           setUnmappedPrompt({ itemNumber: reading.itemNumber ?? '0', weight: reading.itemWeight });
@@ -2076,14 +2073,23 @@ export default function ScalePage() {
                   {/* Primary action buttons */}
                   <div className="flex flex-col gap-2">
                     {(!currentItem.poId || !!currentItem.itemWeight) && !bulkPrintResults && (
-                      <button
-                        onClick={handleManualPrint}
-                        disabled={!canPrint}
-                        className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
-                      >
-                        <Printer className="w-4 h-4" />
-                        {printedAt ? 'Print Again' : 'Print Label'}
-                      </button>
+                      <>
+                        {autoDetect?.noMatch && (
+                          <p className="text-[11px] text-rose-400 text-center">
+                            Select a size above before printing
+                          </p>
+                        )}
+                        <button
+                          onClick={handleManualPrint}
+                          disabled={!canPrint || autoDetect?.noMatch === true}
+                          className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+                        >
+                          <Printer className="w-4 h-4" />
+                          {autoDetect?.matched
+                            ? `Print as ${autoDetect.matched.label}`
+                            : printedAt ? 'Print Again' : 'Print Label'}
+                        </button>
+                      </>
                     )}
                     <button
                       onClick={clearCurrentItem}

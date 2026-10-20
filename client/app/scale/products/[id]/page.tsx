@@ -30,6 +30,7 @@ import { encryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { ScaleProduct, TextMapping, WeightRangeRule } from '@/lib/types';
+import { validateWeightRanges } from '@/lib/weightCategory';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, type LabelSizeKey } from '@/lib/labelSizes';
 
@@ -71,6 +72,8 @@ export default function ScaleProductDetailPage() {
   const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>([]);
   const [weightRangesSaving, setWeightRangesSaving] = useState(false);
   const [weightRangesSavedAt, setWeightRangesSavedAt] = useState<Date | null>(null);
+  const [weightRangesErrors, setWeightRangesErrors] = useState<string[]>([]);
+  const [weightRangesWarnings, setWeightRangesWarnings] = useState<string[]>([]);
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
@@ -181,6 +184,10 @@ export default function ScaleProductDetailPage() {
 
   const handleSaveWeightRanges = useCallback(async () => {
     if (!productId) return;
+    const { errors, warnings } = validateWeightRanges(weightRanges);
+    setWeightRangesErrors(errors);
+    setWeightRangesWarnings(warnings);
+    if (errors.length > 0) return; // block save on errors; warnings are allowed through
     setWeightRangesSaving(true);
     try {
       const res = await fetch('/api/scale/weight-ranges', {
@@ -558,7 +565,7 @@ export default function ScaleProductDetailPage() {
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-xs font-semibold text-violet-300">Tier {i + 1}</span>
                   <button
-                    onClick={() => setWeightRanges(prev => prev.filter((_, idx) => idx !== i))}
+                    onClick={() => { setWeightRanges(prev => prev.filter((_, idx) => idx !== i)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
                     className="text-slate-600 hover:text-rose-400 transition-colors"
                     aria-label="Remove tier"
                   >
@@ -572,7 +579,7 @@ export default function ScaleProductDetailPage() {
                       type="text"
                       placeholder="e.g. Small"
                       value={rule.label}
-                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, label: e.target.value } : r))}
+                      onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, label: e.target.value } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
                       className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
                     />
                   </div>
@@ -582,7 +589,7 @@ export default function ScaleProductDetailPage() {
                       type="text"
                       placeholder="GID or numeric ID"
                       value={rule.variantId}
-                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r))}
+                      onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
                       className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors font-mono text-[11px]"
                     />
                   </div>
@@ -594,7 +601,7 @@ export default function ScaleProductDetailPage() {
                       min="0"
                       placeholder="e.g. 1.5"
                       value={rule.minLbs}
-                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, minLbs: parseFloat(e.target.value) || 0 } : r))}
+                      onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, minLbs: parseFloat(e.target.value) || 0 } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
                       className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
                     />
                   </div>
@@ -606,7 +613,7 @@ export default function ScaleProductDetailPage() {
                       min="0"
                       placeholder="no limit"
                       value={rule.maxLbs ?? ''}
-                      onChange={e => setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, maxLbs: e.target.value ? parseFloat(e.target.value) : null } : r))}
+                      onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, maxLbs: e.target.value ? parseFloat(e.target.value) : null } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
                       className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors"
                     />
                   </div>
@@ -615,13 +622,28 @@ export default function ScaleProductDetailPage() {
             ))}
 
             <button
-              onClick={() => setWeightRanges(prev => [...prev, { variantId: '', label: '', minLbs: 0, maxLbs: null }])}
+              onClick={() => { setWeightRanges(prev => [...prev, { variantId: '', label: '', minLbs: 0, maxLbs: null }]); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
               className="flex items-center gap-2 text-xs text-violet-400 hover:text-violet-200 px-3 py-2 rounded-xl border border-violet-900/40 hover:border-violet-700 bg-violet-950/20 transition-colors"
             >
               <Plus className="w-3.5 h-3.5" /> Add Tier
             </button>
 
-            {weightRangesSavedAt && (
+            {weightRangesErrors.length > 0 && (
+              <div className="flex flex-col gap-1 bg-rose-950/40 border border-rose-800/60 rounded-xl px-3 py-2.5">
+                {weightRangesErrors.map((e, i) => (
+                  <p key={i} className="text-xs text-rose-300">• {e}</p>
+                ))}
+              </div>
+            )}
+            {weightRangesWarnings.length > 0 && (
+              <div className="flex flex-col gap-1 bg-amber-950/40 border border-amber-800/60 rounded-xl px-3 py-2.5">
+                {weightRangesWarnings.map((w, i) => (
+                  <p key={i} className="text-xs text-amber-300">• {w}</p>
+                ))}
+              </div>
+            )}
+
+            {weightRangesSavedAt && weightRangesErrors.length === 0 && (
               <p className="text-xs text-emerald-400">Saved at {formatEst(weightRangesSavedAt)} EST</p>
             )}
 
