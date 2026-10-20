@@ -74,6 +74,7 @@ export default function ScaleProductDetailPage() {
   const [weightRangesSavedAt, setWeightRangesSavedAt] = useState<Date | null>(null);
   const [weightRangesErrors, setWeightRangesErrors] = useState<string[]>([]);
   const [weightRangesWarnings, setWeightRangesWarnings] = useState<string[]>([]);
+  const [variantOptions, setVariantOptions] = useState<{ variantId: string; variantTitle: string }[]>([]);
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
@@ -114,7 +115,10 @@ export default function ScaleProductDetailPage() {
             const wr = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(saved.productId)}`);
             if (wr.ok) {
               const wrData = await wr.json();
-              if (!cancelled) setWeightRanges(Array.isArray(wrData.data?.rules) ? wrData.data.rules : []);
+              if (!cancelled) {
+                setWeightRanges(Array.isArray(wrData.data?.rules) ? wrData.data.rules : []);
+                setVariantOptions(Array.isArray(wrData.data?.variantOptions) ? wrData.data.variantOptions : []);
+              }
             }
           }
           return;
@@ -584,14 +588,29 @@ export default function ScaleProductDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Variant ID</label>
-                    <input
-                      type="text"
-                      placeholder="GID or numeric ID"
-                      value={rule.variantId}
-                      onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
-                      className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors font-mono text-[11px]"
-                    />
+                    <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Variant</label>
+                    {variantOptions.length > 0 ? (
+                      <select
+                        value={rule.variantId}
+                        onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
+                        className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 focus:outline-none focus:border-violet-500 transition-colors appearance-none"
+                      >
+                        <option value="">— select variant —</option>
+                        {variantOptions.map(v => (
+                          <option key={v.variantId} value={v.variantId}>
+                            {v.variantTitle && v.variantTitle !== 'Default Title' ? v.variantTitle : v.variantId.split('/').pop()}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="GID or numeric ID"
+                        value={rule.variantId}
+                        onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
+                        className="mt-0.5 w-full h-9 bg-slate-900 border border-slate-700 rounded-lg px-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-violet-500 transition-colors font-mono text-[11px]"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Min lbs (≥)</label>

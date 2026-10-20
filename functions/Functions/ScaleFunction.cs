@@ -798,7 +798,14 @@ public class ScaleFunction
                 try { rules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(json ?? "[]") ?? new(); }
                 catch { rules = new(); }
 
-                return await ResponseHelper.WriteSuccess(req, new { rules }, _allowedOrigins);
+                // Also return all variants for this product so the frontend can show a name dropdown
+                var variantOptions = variants.Select(v => new
+                {
+                    variantId = v.VariantId,
+                    variantTitle = v.VariantTitle,
+                }).ToList();
+
+                return await ResponseHelper.WriteSuccess(req, new { rules, variantOptions }, _allowedOrigins);
             }
 
             // PUT — save weight ranges to Shopify and update local cache

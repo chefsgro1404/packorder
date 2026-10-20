@@ -870,6 +870,9 @@ export default function ScalePage() {
   const [currentItem, setCurrentItem] = useState<CurrentItem | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [devTapCount, setDevTapCount] = useState(0);
+  const [devModeUnlocked, setDevModeUnlocked] = useState(false);
+  const devTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
@@ -1719,6 +1722,19 @@ export default function ScalePage() {
     resetPrinted();
   };
 
+  // 5-tap unlock on the scale status chip reveals the Diagnostics panel
+  const handleDevTap = () => {
+    if (devTapTimer.current) clearTimeout(devTapTimer.current);
+    const next = devTapCount + 1;
+    if (next >= 5) {
+      setDevModeUnlocked(v => !v);
+      setDevTapCount(0);
+    } else {
+      setDevTapCount(next);
+      devTapTimer.current = setTimeout(() => setDevTapCount(0), 1500);
+    }
+  };
+
   return (
     <>
       <main className="min-h-screen bg-slate-950 pb-safe">
@@ -1737,10 +1753,15 @@ export default function ScalePage() {
             <p className="text-xs text-slate-500 leading-tight hidden sm:block">Barcode creation &amp; PO receiving</p>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
+            <button
+              onClick={handleDevTap}
+              className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 select-none"
+              aria-label="Scale status"
+            >
               <StatusDot status={scaleStatus} />
               <span className="text-xs text-slate-400 font-medium">Scale</span>
-            </div>
+              {devModeUnlocked && <span className="text-[9px] text-violet-400 font-bold">DEV</span>}
+            </button>
             <button
               onClick={() => router.push('/scale/settings')}
               className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors"
@@ -1752,10 +1773,12 @@ export default function ScalePage() {
         </div>
 
         {/* ── Two-column responsive body ─────────────────────────────────────── */}
+        {/* On mobile: active zone first (order-first), PO suggestions below (order-last).
+            On lg+: two columns — PO suggestions fixed left, work area right. */}
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 px-4 py-5 items-start">
 
-          {/* ── LEFT: PO suggestions sidebar ──────────────────────────────── */}
-          <div className="lg:sticky lg:top-[61px] lg:overflow-y-auto lg:max-h-[calc(100vh-81px)]">
+          {/* ── LEFT (lg) / BOTTOM (mobile): PO suggestions sidebar ───────── */}
+          <div className="order-last lg:order-first lg:sticky lg:top-[61px] lg:overflow-y-auto lg:max-h-[calc(100vh-81px)]">
             <PoSuggestions
               orders={poOrders}
               loading={poLoading}
@@ -1767,8 +1790,8 @@ export default function ScalePage() {
             />
           </div>
 
-          {/* ── RIGHT: Main work area ──────────────────────────────────────── */}
-          <div className="flex flex-col gap-4">
+          {/* ── RIGHT (lg) / TOP (mobile): Main work area ─────────────────── */}
+          <div className="order-first lg:order-last flex flex-col gap-4">
 
             {/* ── ACTIVE WORK ZONE ─────────────────────────────────────────── */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -1827,25 +1850,75 @@ export default function ScalePage() {
 
               <div className="border-t border-slate-800" />
 
-              {/* ── Empty state: scale monitor + CTAs ── */}
+              {/* ── Empty state: step guide + CTA ── */}
               {!currentItem ? (
-                <>
-                  <ScaleMonitor state={scale.state} chunkCount={scale.chunkCount} error={scale.error} />
-                  <div className="px-4 pb-4">
-                    <button
-                      onClick={() => router.push('/scale/products')}
-                      className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
-                    >
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/40 flex items-center justify-center flex-shrink-0">
-                        <ListFilter className="w-4 h-4 text-white" />
+                <div className="px-4 py-5 flex flex-col gap-5">
+
+                  {/* 3-step guide */}
+                  <div className="flex flex-col gap-3">
+                    {/* Step 1 */}
+                    <div className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-[11px] font-bold text-slate-400">1</span>
                       </div>
-                      <div className="text-left">
-                        <p className="text-sm font-bold text-white leading-tight">Select Product</p>
-                        <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog</p>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-200 leading-tight">Open a Purchase Order</p>
+                        <p className="text-xs text-slate-500 mt-0.5 leading-snug">Tap a PO below to expand it, then select the item you&apos;re weighing</p>
                       </div>
-                    </button>
+                    </div>
+
+                    {/* connector line */}
+                    <div className="ml-3.5 w-px h-3 bg-slate-700 self-start" style={{marginLeft: '13px'}} />
+
+                    {/* Step 2 */}
+                    <div className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-[11px] font-bold text-slate-400">2</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-200 leading-tight">Place item on the scale</p>
+                        <p className="text-xs text-slate-500 mt-0.5 leading-snug">
+                          {scale.state === 'connected'
+                            ? 'Scale connected — trigger a reading to get the weight'
+                            : scale.state === 'receiving' || scale.state === 'processing'
+                            ? 'Receiving weight…'
+                            : 'Connect the scale or enter weight manually'}
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0">
+                        <StatusDot status={scaleStatus} />
+                      </div>
+                    </div>
+
+                    {/* connector line */}
+                    <div className="ml-3.5 w-px h-3 bg-slate-700 self-start" style={{marginLeft: '13px'}} />
+
+                    {/* Step 3 */}
+                    <div className="flex items-start gap-3">
+                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-[11px] font-bold text-slate-400">3</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-200 leading-tight">Print the label</p>
+                        <p className="text-xs text-slate-500 mt-0.5 leading-snug">The correct size is selected automatically — tap Print to finish</p>
+                      </div>
+                    </div>
                   </div>
-                </>
+
+                  {/* Select Product CTA */}
+                  <button
+                    onClick={() => router.push('/scale/products')}
+                    className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-blue-500/40 flex items-center justify-center flex-shrink-0">
+                      <ListFilter className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="text-left">
+                      <p className="text-sm font-bold text-white leading-tight">Select Product</p>
+                      <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog</p>
+                    </div>
+                  </button>
+                </div>
               ) : (
                 /* ── Product loaded state ── */
                 <div className="px-4 pb-4 pt-3 flex flex-col gap-3">
@@ -2125,31 +2198,34 @@ export default function ScalePage() {
               onTogglePrinterDevice={togglePrinterDevice}
             />
 
-            {/* ── Diagnostics ───────────────────────────────────────────────── */}
-            <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
-              <button
-                className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
-                onClick={() => setDebugOpen(v => !v)}
-              >
-                <div className="flex items-center gap-2">
-                  <Bug className="w-4 h-4 text-slate-500" />
-                  <span className="text-sm font-semibold text-slate-200">Diagnostics</span>
-                </div>
-                {debugOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
-              </button>
-              {debugOpen && (
-                <div className="border-t border-slate-800 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
-                  <p>state: <span className="text-slate-200">{scale.state}</span></p>
-                  <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
-                  <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
-                  <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
-                  <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
-                  <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
-                  <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
-                  <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
-                </div>
-              )}
-            </div>
+            {/* ── Diagnostics — dev mode only (tap Scale chip 5× to unlock) ── */}
+            {devModeUnlocked && (
+              <div className="border border-violet-900/50 rounded-2xl overflow-hidden bg-slate-950">
+                <button
+                  className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+                  onClick={() => setDebugOpen(v => !v)}
+                >
+                  <div className="flex items-center gap-2">
+                    <Bug className="w-4 h-4 text-violet-500" />
+                    <span className="text-sm font-semibold text-violet-300">Diagnostics</span>
+                    <span className="text-[10px] text-violet-500">dev</span>
+                  </div>
+                  {debugOpen ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                </button>
+                {debugOpen && (
+                  <div className="border-t border-violet-900/40 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
+                    <p>state: <span className="text-slate-200">{scale.state}</span></p>
+                    <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
+                    <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
+                    <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
+                    <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
+                    <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
+                    <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
+                    <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
+                  </div>
+                )}
+              </div>
+            )}
 
           </div>
           {/* end right column */}
