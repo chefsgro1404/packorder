@@ -27,12 +27,13 @@ export function PrintLabelPortal({
         <div className="print-label-inner">
           <div className="print-label-content">
             <div className="print-label-text">
-              <p className="print-label-product">{payload.productTitle}</p>
-              {payload.variantTitle && payload.variantTitle !== 'Default Title' && (
-                <p className="print-label-variant">{payload.variantTitle}</p>
-              )}
+              <p className="print-label-title">
+                {payload.productTitle}
+                {payload.variantTitle && payload.variantTitle !== 'Default Title'
+                  ? ` - ${payload.variantTitle}`
+                  : ''}
+              </p>
               {payload.itemWeight && <p className="print-label-line"><span className="print-label-field">Weight:</span> {payload.itemWeight}</p>}
-              {/* <p className="print-label-line"><span className="print-label-field">Packing Date:</span> {payload.printedAtEst}</p> */}
               <p className="print-label-line print-label-sn"><span className="print-label-field">SN:</span> {payload.sn}</p>
             </div>
             <div className="print-label-qr">

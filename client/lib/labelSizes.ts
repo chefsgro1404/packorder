@@ -16,8 +16,10 @@ interface SizeCfg {
   qrIn: number;
   titlePt: number;
   linePt: number;
+  snPt: number;
   gap: number;
   textGap: number;
+  snTopGap: number;
 }
 
 function r(n: number): number { return Math.round(n * 1000) / 1000; }
@@ -45,10 +47,12 @@ function computeCfg(pageW: number, pageH: number): SizeCfg {
     : r(Math.max(5.5, Math.min(8, availH * 6.9)));
   const linePt  = r(Math.max(4.5, titlePt * 0.83));
 
-  const gap     = r(contentW * 0.022);
-  const textGap = r(pageH * 0.013);
+  const snPt     = r(Math.max(4, linePt * 0.85));
+  const gap      = r(contentW * 0.022);
+  const textGap  = r(pageH * 0.013);
+  const snTopGap = r(pageH * 0.028);
 
-  return { pageW, pageH, contentW, layout, padding, qrIn, titlePt, linePt, gap, textGap };
+  return { pageW, pageH, contentW, layout, padding, qrIn, titlePt, linePt, snPt, gap, textGap, snTopGap };
 }
 
 export function getLabelConfig(key: LabelSizeKey): SizeCfg {
@@ -63,12 +67,11 @@ export function getQrPixelSize(key: LabelSizeKey): number {
 
 function sharedRules(c: SizeCfg): string {
   return `
-    .print-label-inner { width: ${c.pageW}in; height: ${c.pageH}in; display: flex; align-items: center; justify-content: center; }
-    .print-label-product { font-size: ${c.titlePt}pt; font-weight: 700; line-height: 1.2; color: #000; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .print-label-variant { font-size: ${c.linePt}pt; font-weight: 600; line-height: 1.2; color: #333; word-break: break-word; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-    .print-label-line { font-size: ${c.linePt}pt; line-height: 1.25; color: #000; }
+    .print-label-inner { width: ${c.pageW}in; height: ${c.pageH}in; display: flex; align-items: center; justify-content: center; font-family: Arial, Helvetica, sans-serif; }
+    .print-label-title { font-size: ${c.titlePt}pt; font-weight: 400; line-height: 1.25; color: #000; word-break: break-word; overflow-wrap: break-word; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .print-label-line { font-size: ${c.linePt}pt; line-height: 1.25; color: #000; font-family: Arial, Helvetica, sans-serif; }
     .print-label-field { font-weight: 700; color: #000; }
-    .print-label-sn { font-family: monospace; color: #000; }
+    .print-label-sn { font-family: monospace; font-size: ${c.snPt}pt; color: #000; margin-top: ${c.snTopGap}in; }
   `;
 }
 
@@ -94,7 +97,7 @@ export function getLabelWindowCSS(key: LabelSizeKey): string {
   return `
     * { box-sizing: border-box; margin: 0; padding: 0; }
     @page { size: ${c.pageW}in ${c.pageH}in; margin: 0; }
-    html, body { width: ${c.pageW}in; height: ${c.pageH}in; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    html, body { width: ${c.pageW}in; height: ${c.pageH}in; background: #fff; font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     ${sharedRules(c)}
     ${layoutRules(c)}
   `;
