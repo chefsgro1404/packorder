@@ -438,71 +438,100 @@ public class PurchaseOrderTests
         Assert.Equal(expected, result);
     }
 
-    // ─── ShopifyService REST tests ────────────────────────────────────────────
+    // ─── ShopifyService GQL inventory PO tests ───────────────────────────────
 
-    [Fact]
-    public async Task GetPurchaseOrdersAsync_ReturnsEmptyList_OnEmptyResponse()
-    {
-        var responseBody = new { purchase_orders = new object[] { } };
-        var service = CreateService(MockHandler(responseBody));
-
-        var result = await service.GetPurchaseOrdersAsync();
-
-        Assert.NotNull(result);
-        Assert.Empty(result);
-    }
-
-    [Fact]
-    public async Task GetPurchaseOrdersAsync_ReturnsOrders_OnSuccess()
-    {
-        var responseBody = new
+    private static object MakeGqlPoResponse(bool hasNextPage = false, string? endCursor = null, object[]? nodes = null) =>
+        new
         {
-            purchase_orders = new[]
+            data = new
             {
-                new
+                inventoryPurchaseOrders = new
                 {
-                    id = 123,
-                    name = "PO-1001",
-                    status = "open",
-                    vendor_name = "Test Vendor",
-                    created_at = "2024-01-15T10:00:00-05:00",
-                    updated_at = "2024-01-15T10:00:00-05:00",
-                    line_items = new[]
-                    {
-                        new { id = 456, product_title = "Test Product", quantity = 5 }
-                    }
+                    pageInfo = new { hasNextPage, endCursor },
+                    nodes    = nodes ?? Array.Empty<object>(),
                 }
             }
         };
 
-        var service = CreateService(MockHandler(responseBody));
+    [Fact]
+    public async Task GetInventoryPurchaseOrdersAsync_ReturnsEmptyList_OnEmptyResponse()
+    {
+        var service = CreateService(MockHandler(MakeGqlPoResponse()));
 
-        var result = await service.GetPurchaseOrdersAsync();
+        var result = await service.GetInventoryPurchaseOrdersAsync();
 
-        Assert.Single(result);
-        Assert.Equal(123, result[0].Id);
-        Assert.Equal("PO-1001", result[0].Name);
-        Assert.Equal("open", result[0].Status);
-        Assert.Single(result[0].LineItems);
-        Assert.Equal(5, result[0].LineItems[0].Quantity);
+        Assert.NotNull(result);
+        Assert.Empty(result);
     }
 
     [Fact]
-    public async Task GetPurchaseOrdersAsync_ReturnsEmpty_OnHttpError()
+    public async Task GetInventoryPurchaseOrdersAsync_ReturnsOrders_OnSuccess()
+    {
+        var responseBody = MakeGqlPoResponse(nodes: new object[]
+        {
+            new
+            {
+                id          = "gid://shopify/InventoryPurchaseOrder/123",
+                name        = "PO-1001",
+                status      = "ORDERED",
+                dateCreated = "2024-01-15T10:00:00-05:00",
+                origin      = new { supplierName = "Test Vendor" },
+                lineItems   = new
+                {
+                    nodes = new object[]
+                    {
+                        new
+                        {
+                            id            = "gid://shopify/InventoryPurchaseOrderLineItem/456",
+                            title         = "Test Product",
+                            variantTitle  = "Default Title",
+                            totalQuantity = 5,
+                            inventoryItem = new
+                            {
+                                id      = "gid://shopify/InventoryItem/789",
+                                sku     = "SKU-001",
+                                variant = new
+                                {
+                                    id      = "gid://shopify/ProductVariant/100",
+                                    title   = "Default Title",
+                                    product = new { id = "gid://shopify/Product/200", title = "Test Product" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        var service = CreateService(MockHandler(responseBody));
+
+        var result = await service.GetInventoryPurchaseOrdersAsync();
+
+        Assert.Single(result);
+        Assert.Equal("gid://shopify/InventoryPurchaseOrder/123", result[0].Id);
+        Assert.Equal("PO-1001", result[0].Name);
+        Assert.Equal("ORDERED", result[0].Status);
+        Assert.Equal("Test Vendor", result[0].Origin?.SupplierName);
+        Assert.Single(result[0].LineItems);
+        Assert.Equal(5, result[0].LineItems[0].TotalQuantity);
+        Assert.Equal("SKU-001", result[0].LineItems[0].InventoryItem?.Sku);
+        Assert.Equal("Test Product", result[0].LineItems[0].InventoryItem?.Variant?.Product?.Title);
+    }
+
+    [Fact]
+    public async Task GetInventoryPurchaseOrdersAsync_ReturnsEmpty_OnHttpError()
     {
         var service = CreateService(MockHandler(new { }, HttpStatusCode.InternalServerError));
 
-        // Should not throw — returns empty list gracefully
-        var result = await service.GetPurchaseOrdersAsync();
+        var result = await service.GetInventoryPurchaseOrdersAsync();
 
         Assert.NotNull(result);
         Assert.Empty(result);
     }
 
     [Fact]
-    public async Task GetPurchaseOrdersAsync_ReturnsEmpty_OnNullPayload()
+    public async Task GetInventoryPurchaseOrdersAsync_ReturnsEmpty_OnNullData()
     {
-        // Malformed JSON that can't deserialize
         var handlerMock = new Mock<HttpMessageHandler>();
         handlerMock.Protected()
             .Setup<Task<HttpResponseMessage>>("SendAsync",
@@ -510,19 +539,19 @@ public class PurchaseOrderTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content    = new StringContent("null")
+                Content    = new StringContent("{\"data\":null}")
             });
 
         var service = CreateService(handlerMock.Object);
 
-        var result = await service.GetPurchaseOrdersAsync();
+        var result = await service.GetInventoryPurchaseOrdersAsync();
 
         Assert.NotNull(result);
         Assert.Empty(result);
     }
 
     [Fact]
-    public async Task GetPurchaseOrdersAsync_SendsCorrectHeader()
+    public async Task GetInventoryPurchaseOrdersAsync_SendsCorrectHeader()
     {
         HttpRequestMessage? capturedRequest = null;
         var handlerMock = new Mock<HttpMessageHandler>();
@@ -533,37 +562,54 @@ public class PurchaseOrderTests
             .ReturnsAsync(new HttpResponseMessage
             {
                 StatusCode = HttpStatusCode.OK,
-                Content    = new StringContent(JsonConvert.SerializeObject(new { purchase_orders = new object[] { } }))
+                Content    = new StringContent(JsonConvert.SerializeObject(MakeGqlPoResponse()))
             });
 
         var service = CreateService(handlerMock.Object);
-        await service.GetPurchaseOrdersAsync("open");
+        await service.GetInventoryPurchaseOrdersAsync();
 
         Assert.NotNull(capturedRequest);
         Assert.True(capturedRequest!.Headers.Contains("X-Shopify-Access-Token"));
-        Assert.Contains("purchase_orders.json", capturedRequest.RequestUri!.ToString());
-        Assert.Contains("status=open", capturedRequest.RequestUri.ToString());
+        Assert.Contains("/graphql.json", capturedRequest.RequestUri!.ToString());
+        Assert.Contains("unstable", capturedRequest.RequestUri.ToString());
     }
 
     [Fact]
-    public async Task GetPurchaseOrdersAsync_PassesStatusFilter()
+    public async Task GetInventoryPurchaseOrdersAsync_LineItemsWithNullInventoryItem()
     {
-        HttpRequestMessage? capturedRequest = null;
-        var handlerMock = new Mock<HttpMessageHandler>();
-        handlerMock.Protected()
-            .Setup<Task<HttpResponseMessage>>("SendAsync",
-                ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-            .Callback<HttpRequestMessage, CancellationToken>((req, _) => capturedRequest = req)
-            .ReturnsAsync(new HttpResponseMessage
+        var responseBody = MakeGqlPoResponse(nodes: new object[]
+        {
+            new
             {
-                StatusCode = HttpStatusCode.OK,
-                Content    = new StringContent(JsonConvert.SerializeObject(new { purchase_orders = new object[] { } }))
-            });
+                id          = "gid://shopify/InventoryPurchaseOrder/1",
+                name        = "PO-0001",
+                status      = "ORDERED",
+                dateCreated = "2024-01-15",
+                origin      = (object?)null,
+                lineItems   = new
+                {
+                    nodes = new object[]
+                    {
+                        new
+                        {
+                            id            = "gid://shopify/InventoryPurchaseOrderLineItem/1",
+                            title         = "Unknown Product",
+                            variantTitle  = (string?)null,
+                            totalQuantity = 3,
+                            inventoryItem = (object?)null,
+                        }
+                    }
+                }
+            }
+        });
 
-        var service = CreateService(handlerMock.Object);
-        await service.GetPurchaseOrdersAsync("closed");
+        var service = CreateService(MockHandler(responseBody));
+        var result  = await service.GetInventoryPurchaseOrdersAsync();
 
-        Assert.Contains("status=closed", capturedRequest!.RequestUri!.ToString());
+        Assert.Single(result);
+        Assert.Single(result[0].LineItems);
+        Assert.Null(result[0].LineItems[0].InventoryItem);
+        Assert.Equal(3, result[0].LineItems[0].TotalQuantity);
     }
 
     // ─── Multi-line-item approval cascade ─────────────────────────────────────
@@ -706,60 +752,55 @@ public class PurchaseOrderTests
     }
 
     [Fact]
-    public async Task Live_GetPurchaseOrders_ReturnsValidShape()
+    public async Task Live_GetInventoryPurchaseOrders_ReturnsValidShape()
     {
         if (!HasLiveCredentials) return; // skipped — set SHIPSCAN_TEST_STORE_DOMAIN + SHIPSCAN_TEST_ACCESS_TOKEN
 
         var service = CreateLiveService();
-        var orders = await service.GetPurchaseOrdersAsync("open");
+        var orders  = await service.GetInventoryPurchaseOrdersAsync();
 
-        // Should not throw and should return a list (may be empty on a store with no POs)
         Assert.NotNull(orders);
 
         foreach (var po in orders)
         {
-            Assert.True(po.Id > 0, $"PO id should be positive, got {po.Id}");
+            Assert.False(string.IsNullOrEmpty(po.Id),   $"PO id should not be empty");
             Assert.False(string.IsNullOrEmpty(po.Name), "PO name should not be empty");
-            Assert.Contains(po.Status, new[] { "open", "closed" });
+            Assert.False(string.IsNullOrEmpty(po.Status), "PO status should not be empty");
 
             foreach (var li in po.LineItems)
             {
-                Assert.True(li.Id > 0, $"Line item id should be positive, got {li.Id}");
-                Assert.True(li.Quantity > 0, $"Line item quantity should be > 0, got {li.Quantity}");
+                Assert.False(string.IsNullOrEmpty(li.Id), $"Line item id should not be empty");
+                Assert.True(li.TotalQuantity >= 0, $"TotalQuantity should be >= 0, got {li.TotalQuantity}");
             }
         }
     }
 
     [Fact]
-    public async Task Live_GetPurchaseOrders_ReturnsAllStatuses()
+    public async Task Live_GetInventoryPurchaseOrders_ReturnsNonNullList()
     {
         if (!HasLiveCredentials) return;
 
         var service = CreateLiveService();
+        var orders  = await service.GetInventoryPurchaseOrdersAsync();
 
-        var openOrders   = await service.GetPurchaseOrdersAsync("open");
-        var closedOrders = await service.GetPurchaseOrdersAsync("closed");
-
-        // Both calls should succeed
-        Assert.NotNull(openOrders);
-        Assert.NotNull(closedOrders);
+        Assert.NotNull(orders);
     }
 
     [Fact]
-    public async Task Live_GetPurchaseOrders_LineItemsHaveValidSkus()
+    public async Task Live_GetInventoryPurchaseOrders_LineItemsHaveValidSkus()
     {
         if (!HasLiveCredentials) return;
 
         var service = CreateLiveService();
-        var orders = await service.GetPurchaseOrdersAsync("open");
+        var orders  = await service.GetInventoryPurchaseOrdersAsync();
 
         foreach (var po in orders)
         {
             foreach (var li in po.LineItems)
             {
-                // SKU may be null but should never be an empty string (Shopify returns null when unset)
-                if (li.Sku != null)
-                    Assert.NotEmpty(li.Sku);
+                // SKU may be null but should never be an empty string
+                if (li.InventoryItem?.Sku != null)
+                    Assert.NotEmpty(li.InventoryItem.Sku);
             }
         }
     }

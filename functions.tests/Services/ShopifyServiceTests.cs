@@ -306,8 +306,8 @@ public class ShopifyServiceTests
                                 {
                                     edges = new[]
                                     {
-                                        new { node = new { id = "gid://shopify/ProductVariant/20", sku = "G-001", barcode = "222", title = "Red", price = "12.00" } },
-                                        new { node = new { id = "gid://shopify/ProductVariant/21", sku = "G-002", barcode = (string?)null, title = "Blue", price = "12.00" } }
+                                        new { node = new { id = "gid://shopify/ProductVariant/20", sku = "G-001", barcode = (string?)"222", title = "Red", price = "12.00" } },
+                                        new { node = new { id = "gid://shopify/ProductVariant/21", sku = "G-002", barcode = (string?)null,  title = "Blue", price = "12.00" } }
                                     }
                                 }
                             }
