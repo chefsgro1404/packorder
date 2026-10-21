@@ -1249,9 +1249,9 @@ public class ShopifyService
                     var liNodes = node["lineItems"]?["nodes"] as JArray ?? new JArray();
                     var lineItems = liNodes.Select(n =>
                     {
-                        var inv = n["inventoryItem"];
-                        var vnt = inv?["variant"];
-                        var prd = vnt?["product"];
+                        var inv = n["inventoryItem"] as Newtonsoft.Json.Linq.JObject;
+                        var vnt = inv?["variant"]    as Newtonsoft.Json.Linq.JObject;
+                        var prd = vnt?["product"]    as Newtonsoft.Json.Linq.JObject;
                         return new GqlInventoryPurchaseOrderLineItem
                         {
                             Id           = n["id"]?.ToString() ?? "",
@@ -1282,8 +1282,8 @@ public class ShopifyService
                         Name        = node["name"]?.ToString() ?? "",
                         Status      = node["status"]?.ToString() ?? "",
                         DateCreated = node["dateCreated"]?.ToString() ?? "",
-                        Origin      = node["origin"] != null
-                                          ? new GqlInventorySupplierSnapshot { SupplierName = node["origin"]!["supplierName"]?.ToString() }
+                        Origin      = node["origin"] is { Type: Newtonsoft.Json.Linq.JTokenType.Object } originObj
+                                          ? new GqlInventorySupplierSnapshot { SupplierName = originObj["supplierName"]?.ToString() }
                                           : null,
                         LineItems   = lineItems,
                     });
