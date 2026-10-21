@@ -1227,17 +1227,18 @@ public class ShopifyService
 
     // ─── Webhook Registration ─────────────────────────────────────────────────
 
-    private static readonly (string Topic, string GqlTopic)[] RequiredWebhookTopics =
+    // purchase_orders/* topics are not in Shopify's GraphQL WebhookSubscriptionTopic enum — REST only
+    private static readonly string[] RestOnlyWebhookTopics = ["purchase_orders/create", "purchase_orders/update"];
+
+    private static readonly (string Topic, string GqlTopic)[] GqlWebhookTopics =
     [
-        ("products/create",          "PRODUCTS_CREATE"),
-        ("products/update",          "PRODUCTS_UPDATE"),
-        ("products/delete",          "PRODUCTS_DELETE"),
-        ("orders/create",            "ORDERS_CREATE"),
-        ("orders/updated",           "ORDERS_UPDATED"),
-        ("orders/cancelled",         "ORDERS_CANCELLED"),
-        ("orders/fulfilled",         "ORDERS_FULFILLED"),
-        ("purchase_orders/create",   "PURCHASE_ORDERS_CREATE"),
-        ("purchase_orders/update",   "PURCHASE_ORDERS_UPDATE"),
+        ("products/create",  "PRODUCTS_CREATE"),
+        ("products/update",  "PRODUCTS_UPDATE"),
+        ("products/delete",  "PRODUCTS_DELETE"),
+        ("orders/create",    "ORDERS_CREATE"),
+        ("orders/updated",   "ORDERS_UPDATED"),
+        ("orders/cancelled", "ORDERS_CANCELLED"),
+        ("orders/fulfilled", "ORDERS_FULFILLED"),
     ];
 
     private const string ListWebhooksQuery = @"
@@ -1255,32 +1256,41 @@ public class ShopifyService
           }
         }";
 
+    private async Task<JObject> RestPostAsync(string path, object body)
+    {
+        var url = $"https://{_storeDomain}/admin/api/{_apiVersion}/{path}";
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Add("X-Shopify-Access-Token", _accessToken);
+        request.Content = new StringContent(JsonConvert.SerializeObject(body), Encoding.UTF8, "application/json");
+        var response = await _http.SendAsync(request);
+        var json = await response.Content.ReadAsStringAsync();
+        response.EnsureSuccessStatusCode();
+        return JsonConvert.DeserializeObject<JObject>(json) ?? new JObject();
+    }
+
     public async Task<List<WebhookRegistrationResult>> RegisterWebhooksAsync(string callbackBaseUrl)
     {
         var results = new List<WebhookRegistrationResult>();
         var callbackUrl = $"{callbackBaseUrl.TrimEnd('/')}/api/webhooks/shopify";
 
-        // Fetch existing subscriptions to avoid duplicates
-        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Fetch existing GQL subscriptions to avoid duplicates
+        var existingGql = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             var listResult = await GraphQlAsync(ListWebhooksQuery);
             var nodes = listResult["data"]?["webhookSubscriptions"]?["nodes"] as JArray ?? new JArray();
             foreach (var node in nodes)
-            {
-                var topic = node["topic"]?.ToString() ?? "";
-                // GQL topics come back as e.g. "PRODUCTS_CREATE"; map to rest format
-                existing.Add(topic);
-            }
+                existingGql.Add(node["topic"]?.ToString() ?? "");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to list existing webhook subscriptions; will attempt to register all");
+            _logger.LogWarning(ex, "Failed to list existing GQL webhook subscriptions; will attempt to register all");
         }
 
-        foreach (var (restTopic, gqlTopic) in RequiredWebhookTopics)
+        // Register GQL topics (products/*, orders/*)
+        foreach (var (restTopic, gqlTopic) in GqlWebhookTopics)
         {
-            if (existing.Contains(gqlTopic))
+            if (existingGql.Contains(gqlTopic))
             {
                 results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "already_registered" });
                 continue;
@@ -1306,6 +1316,41 @@ public class ShopifyService
             {
                 results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "error", Error = ex.Message });
                 _logger.LogError(ex, "Failed to register webhook for {Topic}", restTopic);
+            }
+        }
+
+        // Register REST-only topics (purchase_orders/*) via REST Admin API
+        var existingRest = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            var arr = await RestGetArrayAsync("webhooks.json");
+            if (arr != null)
+                foreach (var node in arr)
+                    existingRest.Add(node["topic"]?.ToString() ?? "");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to list existing REST webhook subscriptions; will attempt to register all");
+        }
+
+        foreach (var topic in RestOnlyWebhookTopics)
+        {
+            if (existingRest.Contains(topic))
+            {
+                results.Add(new WebhookRegistrationResult { Topic = topic, Status = "already_registered" });
+                continue;
+            }
+
+            try
+            {
+                await RestPostAsync("webhooks.json", new { webhook = new { topic, address = callbackUrl, format = "json" } });
+                results.Add(new WebhookRegistrationResult { Topic = topic, Status = "registered" });
+                _logger.LogInformation("Registered REST webhook for {Topic} → {CallbackUrl}", topic, callbackUrl);
+            }
+            catch (Exception ex)
+            {
+                results.Add(new WebhookRegistrationResult { Topic = topic, Status = "error", Error = ex.Message });
+                _logger.LogError(ex, "Failed to register REST webhook for {Topic}", topic);
             }
         }
 
