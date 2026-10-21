@@ -45,6 +45,9 @@ public class SyncFunction
             {
                 var autoConfig = await _tableStorage.GetAutoSyncConfigAsync();
                 var lastSync   = await _tableStorage.GetLastSyncAsync();
+                var lastStages = !string.IsNullOrEmpty(lastSync?.LastSyncStages)
+                    ? JsonConvert.DeserializeObject<List<FullSyncStageResult>>(lastSync.LastSyncStages)
+                    : null;
                 return await ResponseHelper.WriteSuccess(req, new
                 {
                     autoSyncEnabled  = autoConfig?.AutoSyncEnabled ?? false,
@@ -53,6 +56,7 @@ public class SyncFunction
                     lastSyncedAt     = lastSync?.LastSyncedAt.ToString("o"),
                     lastSyncVendors  = lastSync?.Vendors ?? "",
                     lastSyncTags     = lastSync?.Tags ?? "",
+                    lastSyncStages   = lastStages,
                 }, _allowedOrigins);
             }
 
@@ -172,7 +176,7 @@ public class SyncFunction
         }
         stages.Add(s4);
 
-        await _tableStorage.SetLastSyncAsync(DateTimeOffset.UtcNow, "", "");
+        await _tableStorage.SetLastSyncAsync(DateTimeOffset.UtcNow, "", "", stages);
 
         _logger.LogInformation("Full sync complete. Stages: {Summary}",
             string.Join(", ", stages.Select(s => $"{s.Stage}:{(s.Ok ? s.Count.ToString() : "ERR")}")));

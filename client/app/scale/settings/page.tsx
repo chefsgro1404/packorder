@@ -31,6 +31,7 @@ interface SyncSettings {
   lastSyncedAt: string | null;
   lastSyncVendors: string;
   lastSyncTags: string;
+  lastSyncStages?: FullSyncStage[] | null;
 }
 
 interface FullSyncStage {
@@ -501,10 +502,21 @@ export default function ScaleSettingsPage() {
                 </div>
 
                 {formattedLastSync && (
-                  <p className="text-xs text-slate-500">Last sync: {formattedLastSync}
-                    {syncSettings.lastSyncVendors && <> · Vendors: {syncSettings.lastSyncVendors}</>}
-                    {syncSettings.lastSyncTags    && <> · Tags: {syncSettings.lastSyncTags}</>}
-                  </p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-slate-500">Last sync: {formattedLastSync}
+                      {syncSettings.lastSyncVendors && <> · Vendors: {syncSettings.lastSyncVendors}</>}
+                      {syncSettings.lastSyncTags    && <> · Tags: {syncSettings.lastSyncTags}</>}
+                    </p>
+                    {syncSettings.lastSyncStages && syncSettings.lastSyncStages.length > 0 && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                        {syncSettings.lastSyncStages.map(s => (
+                          <span key={s.stage} className={`text-xs ${s.ok ? 'text-slate-500' : 'text-rose-400'}`}>
+                            {s.stage}: {s.ok ? s.count : `error — ${s.error ?? 'failed'}`}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
 
                 <button

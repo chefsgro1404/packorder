@@ -306,15 +306,17 @@ public class TableStorageService
         }
     }
 
-    public async Task SetLastSyncAsync(DateTimeOffset syncedAt, string vendors, string tags)
+    public async Task SetLastSyncAsync(DateTimeOffset syncedAt, string vendors, string tags,
+        List<FullSyncStageResult>? stages = null)
     {
         var entity = new SyncSettingsEntity
         {
-            PartitionKey = "settings",
-            RowKey = "lastsync",
-            LastSyncedAt = syncedAt,
-            Vendors = vendors,
-            Tags = tags
+            PartitionKey     = "settings",
+            RowKey           = "lastsync",
+            LastSyncedAt     = syncedAt,
+            Vendors          = vendors,
+            Tags             = tags,
+            LastSyncStages   = stages != null ? JsonConvert.SerializeObject(stages) : "",
         };
         await _syncSettings.UpsertEntityAsync(entity, TableUpdateMode.Replace);
     }

@@ -415,6 +415,7 @@ public class SyncSettingsEntity : ITableEntity
     public DateTimeOffset LastSyncedAt { get; set; }
     public string Vendors { get; set; } = "";
     public string Tags { get; set; } = "";
+    public string LastSyncStages { get; set; } = ""; // JSON-encoded List<FullSyncStageResult>
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
