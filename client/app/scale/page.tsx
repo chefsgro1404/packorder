@@ -34,7 +34,7 @@ import {
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
-import { PrintLabelPortal } from '@/components/PrintLabelPortal';
+import { PrintLabelPortal, type PrintPayload } from '@/components/PrintLabelPortal';
 import { UnmappedItemModal } from '@/components/UnmappedItemModal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
@@ -1276,6 +1276,7 @@ export default function ScalePage() {
     const mappedVariant = item.variantTitle ? applyMappings(item.variantTitle, textMappings) : item.variantTitle;
 
     const results: BulkPrintLabelResult[] = [];
+    const batchPayloads: PrintPayload[] = [];
 
     for (let i = 0; i < quantity; i++) {
       try {
@@ -1298,7 +1299,8 @@ export default function ScalePage() {
 
         const printedAtEst = formatEst(new Date());
         if (isPrinterDevice) {
-          triggerPrint({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant, itemWeight: item.itemWeight }, sn, encryptedPayload);
+          // Collect for a single batch-print popup after the loop instead of opening one popup per label
+          batchPayloads.push({ productTitle: mappedTitle, variantTitle: mappedVariant ?? null, qrPayload: encryptedPayload, itemWeight: item.itemWeight, printedAtEst, sn });
         } else {
           await createJob({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: item.itemWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
         }
@@ -1311,12 +1313,18 @@ export default function ScalePage() {
       setBulkPrintResults([...results]);
     }
 
-    // Approve PO line item: weight-based (lot) uses total lbs, count-based uses printed count
+    // Open one popup/dialog with all labels rather than one per label
+    if (batchPayloads.length > 0) {
+      batchPrint(batchPayloads);
+    }
+
+    // Approve PO line item: weight-based (lot) uses total lbs, count-based uses printed count.
+    // forceApprove=true so a short session (e.g. 13/15) is marked approved, not partial.
     const printedCount = results.filter(r => r.status === 'printed').length;
     const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : printedCount;
     if (printedCount > 0) {
       try {
-        await approvePoItem(po.id, li.id, approvalQty);
+        await approvePoItem(po.id, li.id, approvalQty, true);
         const fresh = await refreshLineItems(po.id);
         setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
       } catch (err) {
@@ -1379,7 +1387,7 @@ export default function ScalePage() {
         console.error('[scale] failed to save bulk session:', err);
       }
     }
-  }, [textMappings, isPrinterDevice, triggerPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
+  }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
 
   const handleTransformationSelect = useCallback((opt: TransformationOption) => {
     if (!currentItem) return;

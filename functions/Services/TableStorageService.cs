@@ -1173,7 +1173,7 @@ public class TableStorageService
     }
 
     public async Task<PurchaseOrderLineItemEntity?> ApprovePurchaseOrderLineItemAsync(
-        string numericPoId, string numericLineItemId, int quantityReceived, string printedBy)
+        string numericPoId, string numericLineItemId, int quantityReceived, string printedBy, bool forceApprove = false)
     {
         PurchaseOrderLineItemEntity entity;
         try
@@ -1191,7 +1191,7 @@ public class TableStorageService
         entity.PrintedAt = DateTimeOffset.UtcNow;
         entity.PrintedBy = printedBy;
 
-        if (entity.QuantityReceived >= entity.QuantityOrdered)
+        if (forceApprove || entity.QuantityReceived >= entity.QuantityOrdered)
             entity.Status = "approved";
         else if (entity.QuantityReceived > 0)
             entity.Status = "partial";

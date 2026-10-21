@@ -973,6 +973,7 @@ public class ApprovePurchaseOrderLineItemRequest
     [JsonProperty("lineItemId")]       public string LineItemId { get; set; } = "";
     [JsonProperty("quantityReceived")] public int QuantityReceived { get; set; }
     [JsonProperty("printedBy")]        public string PrintedBy { get; set; } = "";
+    [JsonProperty("forceApprove")]     public bool ForceApprove { get; set; } = false;
 }
 
 public class InventoryAdjustRequest
