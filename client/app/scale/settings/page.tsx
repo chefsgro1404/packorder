@@ -32,6 +32,7 @@ interface SyncSettings {
   lastSyncVendors: string;
   lastSyncTags: string;
   lastSyncStages?: FullSyncStage[] | null;
+  poStatusCounts?: Record<string, number> | null;
 }
 
 interface FullSyncStage {
@@ -512,6 +513,16 @@ export default function ScaleSettingsPage() {
                         {syncSettings.lastSyncStages.map(s => (
                           <span key={s.stage} className={`text-xs ${s.ok ? 'text-slate-500' : 'text-rose-400'}`}>
                             {s.stage}: {s.ok ? s.count : `error — ${s.error ?? 'failed'}`}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {syncSettings.poStatusCounts && Object.keys(syncSettings.poStatusCounts).length > 0 && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                        <span className="text-xs text-slate-600">POs in DB:</span>
+                        {Object.entries(syncSettings.poStatusCounts).sort().map(([status, count]) => (
+                          <span key={status} className={`text-xs ${status === 'open' || status === 'partial' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                            {status}: {count}
                           </span>
                         ))}
                       </div>

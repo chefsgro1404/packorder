@@ -1137,6 +1137,19 @@ public class TableStorageService
         return results.OrderByDescending(e => e.ShopifyCreatedAt).ToList();
     }
 
+    public async Task<Dictionary<string, int>> GetPurchaseOrderStatusCountsAsync()
+    {
+        var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        await foreach (var e in _purchaseOrders.QueryAsync<PurchaseOrderEntity>(
+            filter: "PartitionKey eq 'po'",
+            select: new[] { "Status" }))
+        {
+            var s = string.IsNullOrEmpty(e.Status) ? "unknown" : e.Status;
+            counts[s] = counts.TryGetValue(s, out var c) ? c + 1 : 1;
+        }
+        return counts;
+    }
+
     public async Task<PurchaseOrderEntity?> GetPurchaseOrderByIdAsync(string numericPoId)
     {
         try

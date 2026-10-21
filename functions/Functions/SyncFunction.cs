@@ -48,6 +48,7 @@ public class SyncFunction
                 var lastStages = !string.IsNullOrEmpty(lastSync?.LastSyncStages)
                     ? JsonConvert.DeserializeObject<List<FullSyncStageResult>>(lastSync.LastSyncStages)
                     : null;
+                var poStatusCounts = await _tableStorage.GetPurchaseOrderStatusCountsAsync();
                 return await ResponseHelper.WriteSuccess(req, new
                 {
                     autoSyncEnabled  = autoConfig?.AutoSyncEnabled ?? false,
@@ -57,6 +58,7 @@ public class SyncFunction
                     lastSyncVendors  = lastSync?.Vendors ?? "",
                     lastSyncTags     = lastSync?.Tags ?? "",
                     lastSyncStages   = lastStages,
+                    poStatusCounts,
                 }, _allowedOrigins);
             }
 
