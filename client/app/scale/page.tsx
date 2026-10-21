@@ -898,7 +898,7 @@ export default function ScalePage() {
     if (typeof window === 'undefined') return '3x2';
     return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
   });
-  const { printPayload, printedAt, triggerPrint, printVerbatim, buildReprintSn, reset: resetPrinted } = usePrintLabel(labelSizeKey);
+  const { printPayload, batchPrintPayloads, printedAt, triggerPrint, printVerbatim, batchPrint, buildReprintSn, reset: resetPrinted } = usePrintLabel(labelSizeKey);
 
   const handleSizeChange = (key: LabelSizeKey) => {
     setLabelSizeKey(key);
@@ -1452,7 +1452,7 @@ export default function ScalePage() {
     printVerbatim({ productTitle: currentItem.productTitle, variantTitle: currentItem.variantTitle ?? null, qrPayload: newQrPayload, itemWeight: currentItem.itemWeight, printedAtEst, sn: reprintSn });
   }, [currentItem, buildReprintSn, printVerbatim]);
 
-  const printItem = useCallback(async (item: CurrentItem) => {
+  const printItem = useCallback(async (item: CurrentItem, { forceDialog = false }: { forceDialog?: boolean } = {}) => {
     if (isPrinting.current) return;
     isPrinting.current = true;
     setPrintError(null);
@@ -1475,7 +1475,7 @@ export default function ScalePage() {
       }
 
       const effectiveMapping = inventoryMappingOverride ?? inventoryMapping;
-      if (isPrinterDevice) {
+      if (isPrinterDevice || forceDialog) {
         const { printedAtEst } = triggerPrint({
           plu: item.found ? item.plu : null,
           productTitle: mappedTitle,
@@ -1636,13 +1636,13 @@ export default function ScalePage() {
     if (autoDetect?.matched && currentItem.variantId !== autoDetect.matched.variantId) {
       const itemWithVariant = { ...currentItem, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
       setCurrentItem(itemWithVariant);
-      await printItem(itemWithVariant);
+      await printItem(itemWithVariant, { forceDialog: true });
       // Reset for next item (staff places next chicken)
       setAutoDetect(null);
       setWeightRanges(prev => prev); // keep ranges for next weigh
       return;
     }
-    await printItem(currentItem);
+    await printItem(currentItem, { forceDialog: true });
     if (weightRanges.length > 0) {
       // Reset detection for next item in sequence
       setAutoDetect(null);
@@ -1653,7 +1653,7 @@ export default function ScalePage() {
     if (!currentItem || !manualWeight.trim()) return;
     const item = { ...currentItem, itemWeight: manualWeight.trim() };
     setCurrentItem(item);
-    await printItem(item);
+    await printItem(item, { forceDialog: true });
   };
 
   const handleReprint = async (record: PrintedLabel) => {
@@ -1695,11 +1695,14 @@ export default function ScalePage() {
     );
   };
 
-  const handleHistoryReprint = useCallback((qrPayload: string, sn: string, productTitle: string, variantTitle: string | null) => {
-    const reprintSn = buildReprintSn(sn || generateSn());
-    const printedAtEst = formatEst(new Date());
-    printVerbatim({ productTitle, variantTitle, qrPayload, itemWeight: '', printedAtEst, sn: reprintSn });
-  }, [buildReprintSn, printVerbatim]);
+  const handleHistoryReprint = useCallback((items: import('@/components/BulkSessionHistoryPanel').ReprintItem[]) => {
+    const payloads = items.map(item => {
+      const reprintSn = buildReprintSn(item.sn || generateSn());
+      const printedAtEst = formatEst(new Date());
+      return { productTitle: item.productTitle, variantTitle: item.variantTitle, qrPayload: item.qrPayload, itemWeight: '', printedAtEst, sn: reprintSn };
+    });
+    batchPrint(payloads);
+  }, [buildReprintSn, batchPrint]);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
@@ -2267,7 +2270,7 @@ export default function ScalePage() {
         />
       )}
 
-      <PrintLabelPortal payload={printPayload} labelSizeKey={labelSizeKey} />
+      <PrintLabelPortal payload={printPayload} batchPayloads={batchPrintPayloads} labelSizeKey={labelSizeKey} />
     </>
   );
 }

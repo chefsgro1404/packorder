@@ -103,6 +103,18 @@ export function getLabelWindowCSS(key: LabelSizeKey): string {
   `;
 }
 
+export function getBatchLabelWindowCSS(key: LabelSizeKey): string {
+  const c = getLabelConfig(key);
+  return `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    @page { size: ${c.pageW}in ${c.pageH}in; margin: 0; }
+    html, body { width: ${c.pageW}in; background: #fff; font-family: Arial, Helvetica, sans-serif; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .print-label-inner:not(:last-child) { break-after: page; }
+    ${sharedRules(c)}
+    ${layoutRules(c)}
+  `;
+}
+
 export function getLabelPrintMediaCSS(key: LabelSizeKey): string {
   const c = getLabelConfig(key);
   return `

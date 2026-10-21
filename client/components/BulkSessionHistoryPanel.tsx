@@ -31,8 +31,15 @@ interface ParsedBulkSession extends Omit<BulkSession, 'results'> {
   parsedResults: SessionLabelResult[];
 }
 
+export interface ReprintItem {
+  qrPayload: string;
+  sn: string;
+  productTitle: string;
+  variantTitle: string | null;
+}
+
 interface BulkSessionHistoryPanelProps {
-  onReprintLabel: (qrPayload: string, sn: string, productTitle: string, variantTitle: string | null) => void;
+  onReprintLabel: (items: ReprintItem[]) => void;
 }
 
 export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPanelProps) {
@@ -86,9 +93,10 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
   };
 
   const handleReprintSelected = (s: ParsedBulkSession) => {
-    s.parsedResults
+    const items = s.parsedResults
       .filter(r => selectedSns.has(r.sn) && r.qrPayload)
-      .forEach(r => onReprintLabel(r.qrPayload, r.sn, s.productTitle, s.variantTitle ?? null));
+      .map(r => ({ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }));
+    if (items.length > 0) onReprintLabel(items);
     setSelectMode(false);
     setSelectedSns(new Set());
   };
@@ -227,7 +235,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                               <div className="flex items-center justify-between">
                                 <p className="text-[10px] font-semibold text-rose-400 uppercase tracking-widest">Failed</p>
                                 <button
-                                  onClick={() => failed.forEach(r => r.qrPayload && onReprintLabel(r.qrPayload, r.sn, s.productTitle, s.variantTitle ?? null))}
+                                  onClick={() => onReprintLabel(failed.filter(r => r.qrPayload).map(r => ({ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null })))}
                                   className="text-[10px] text-rose-400 hover:text-rose-200 px-2 py-1 rounded-lg hover:bg-rose-950/40 transition-colors"
                                 >
                                   Reprint all failed
@@ -252,7 +260,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                                 <p className="text-xs text-rose-300 flex-1 min-w-0 truncate">{r.error ?? 'Print failed'}</p>
                                 {!selectMode && (
                                   <button
-                                    onClick={() => r.qrPayload && onReprintLabel(r.qrPayload, r.sn, s.productTitle, s.variantTitle ?? null)}
+                                    onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
                                     disabled={!r.qrPayload}
                                     className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
                                   >
@@ -289,7 +297,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                               <p className="text-xs text-slate-400 font-mono flex-1 min-w-0 truncate">{r.sn}</p>
                               {!selectMode && (
                                 <button
-                                  onClick={() => r.qrPayload && onReprintLabel(r.qrPayload, r.sn, s.productTitle, s.variantTitle ?? null)}
+                                  onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
                                   disabled={!r.qrPayload}
                                   className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
                                 >

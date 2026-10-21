@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { formatEst } from '@/lib/dateFormat';
-import { getLabelWindowCSS, type LabelSizeKey } from '@/lib/labelSizes';
+import { getLabelWindowCSS, getBatchLabelWindowCSS, type LabelSizeKey } from '@/lib/labelSizes';
 import type { PrintPayload } from '@/components/PrintLabelPortal';
 
 export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
   const [printPayload, setPrintPayload] = useState<PrintPayload | null>(null);
   const [printRequestId, setPrintRequestId] = useState(0);
   const [printedAt, setPrintedAt] = useState<Date | null>(null);
+  const [batchPrintPayloads, setBatchPrintPayloads] = useState<PrintPayload[] | null>(null);
 
   // Ref so the effect always reads the latest size without re-registering on size change.
   const labelSizeKeyRef = useRef(labelSizeKey);
@@ -74,6 +75,29 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
     return `${baseSn}-r${String(n).padStart(3, '0')}`;
   }, []);
 
+  // Batch print: opens a single popup window with all labels on separate pages.
+  // Falls back to single-label print when only one payload is given.
+  useEffect(() => {
+    if (!batchPrintPayloads || batchPrintPayloads.length === 0) return;
+    const id = requestAnimationFrame(() => {
+      const el = document.getElementById('batch-print-labels');
+      if (!el) return;
+      const css = getBatchLabelWindowCSS(labelSizeKeyRef.current);
+      const win = window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`);
+      if (win) {
+        win.document.write(`<!DOCTYPE html><html><head><style>${css}</style></head><body>${el.innerHTML}</body></html>`);
+        win.document.close();
+        win.focus();
+        win.onafterprint = () => win.close();
+        win.print();
+      } else {
+        window.print();
+      }
+      setBatchPrintPayloads(null);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [batchPrintPayloads]);
+
   // Renders a fully-assembled payload directly. Callers are responsible for building
   // the reprint SN (via buildReprintSn) and re-encrypting the QR payload before calling.
   const printVerbatim = useCallback((payload: PrintPayload) => {
@@ -82,7 +106,13 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
     setPrintedAt(new Date());
   }, []);
 
+  const batchPrint = useCallback((payloads: PrintPayload[]) => {
+    if (payloads.length === 0) return;
+    if (payloads.length === 1) { printVerbatim(payloads[0]); return; }
+    setBatchPrintPayloads(payloads);
+  }, [printVerbatim]);
+
   const reset = useCallback(() => setPrintedAt(null), []);
 
-  return { printPayload, printedAt, triggerPrint, printVerbatim, buildReprintSn, reset };
+  return { printPayload, batchPrintPayloads, printedAt, triggerPrint, printVerbatim, batchPrint, buildReprintSn, reset };
 }
