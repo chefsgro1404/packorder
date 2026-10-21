@@ -237,9 +237,17 @@ export default function ScaleSettingsPage() {
     setFullSyncError(null);
     try {
       const res = await fetch('/api/sync/full', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Full sync failed');
-      setFullSyncResult(data);
+      let data: unknown;
+      try {
+        data = await res.json();
+      } catch {
+        // SWA imposes a ~30s timeout on API routes; if sync runs long, SWA drops the
+        // connection and returns a non-JSON error. The sync likely completed in the
+        // background — reload after a minute to verify.
+        throw new Error('Sync is taking longer than the browser can wait. It may still be running — reload this page in a minute to check the last-synced time.');
+      }
+      if (!res.ok) throw new Error((data as { error?: string })?.error || 'Full sync failed');
+      setFullSyncResult(data as FullSyncResult);
     } catch (err) {
       setFullSyncError(err instanceof Error ? err.message : 'Full sync failed');
     } finally {
