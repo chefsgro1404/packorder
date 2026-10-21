@@ -118,6 +118,9 @@ export default function ScaleSettingsPage() {
   const [webhookRegistering, setWebhookRegistering] = useState(false);
   const [webhookResult, setWebhookResult] = useState<WebhookResult | null>(null);
   const [webhookError, setWebhookError] = useState<string | null>(null);
+  const [registeredWebhooks, setRegisteredWebhooks] = useState<{ id: string; topic: string; address: string }[]>([]);
+  const [webhooksLoading, setWebhooksLoading] = useState(false);
+  const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null);
 
   const fetchMappings = useCallback(async () => {
     setMappingsLoading(true);
@@ -291,8 +294,35 @@ export default function ScaleSettingsPage() {
     }
   };
 
+  const fetchRegisteredWebhooks = useCallback(async () => {
+    setWebhooksLoading(true);
+    try {
+      const res = await fetch('/api/webhooks');
+      const data = await res.json();
+      if (res.ok) {
+        setRegisteredWebhooks(data.webhooks ?? []);
+        if (data.callbackBaseUrl && !webhookCallbackUrl) setWebhookCallbackUrl(data.callbackBaseUrl);
+      }
+    } catch {
+      // silent
+    } finally {
+      setWebhooksLoading(false);
+    }
+  }, [webhookCallbackUrl]);
+
+  const handleDeleteWebhook = async (id: string) => {
+    setDeletingWebhookId(id);
+    try {
+      const res = await fetch(`/api/webhooks/${id}`, { method: 'DELETE' });
+      if (res.ok) setRegisteredWebhooks(prev => prev.filter(w => w.id !== id));
+    } catch {
+      // silent
+    } finally {
+      setDeletingWebhookId(null);
+    }
+  };
+
   const handleRegisterWebhooks = async () => {
-    if (!webhookCallbackUrl.trim()) return;
     setWebhookRegistering(true);
     setWebhookResult(null);
     setWebhookError(null);
@@ -300,11 +330,12 @@ export default function ScaleSettingsPage() {
       const res = await fetch('/api/webhooks/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callbackBaseUrl: webhookCallbackUrl.trim() }),
+        body: JSON.stringify({ callbackBaseUrl: webhookCallbackUrl.trim() || undefined }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Registration failed');
       setWebhookResult(data);
+      await fetchRegisteredWebhooks();
     } catch (err) {
       setWebhookError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
@@ -682,15 +713,48 @@ export default function ScaleSettingsPage() {
 
         {/* ── Shopify webhook registration ─────────────────────────────────── */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
-          <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-            <Webhook className="w-4 h-4 text-purple-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Shopify Webhooks</h2>
+          <div className="px-4 pt-4 pb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Webhook className="w-4 h-4 text-purple-400" />
+              <h2 className="text-sm font-semibold text-slate-200">Shopify Webhooks</h2>
+            </div>
+            <button
+              onClick={fetchRegisteredWebhooks}
+              disabled={webhooksLoading}
+              className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+              title="Load registered webhooks"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${webhooksLoading ? 'animate-spin' : ''}`} />
+            </button>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
-              Auto-register all required webhook subscriptions in Shopify. Enter your Azure Functions base URL below.
-              Topics: products/create, products/update, products/delete, orders/*, purchase_orders/*.
+              Auto-register webhook subscriptions in Shopify. Topics: products/create, products/update,
+              products/delete, orders/*. Purchase orders sync via manual full-sync (no Shopify webhook support).
             </p>
+
+            {/* Registered webhooks list */}
+            {registeredWebhooks.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-xs text-slate-500 font-medium">{registeredWebhooks.length} registered webhook{registeredWebhooks.length !== 1 ? 's' : ''}:</p>
+                {registeredWebhooks.map(w => (
+                  <div key={w.id} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/60 rounded-lg group">
+                    <Tag className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                    <span className="text-xs font-mono text-slate-300 flex-1 min-w-0 truncate">{w.topic}</span>
+                    <button
+                      onClick={() => handleDeleteWebhook(w.id)}
+                      disabled={deletingWebhookId === w.id}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-rose-400 hover:bg-rose-950/30"
+                      title={`Delete ${w.topic}`}
+                    >
+                      {deletingWebhookId === w.id
+                        ? <RefreshCw className="w-3 h-3 animate-spin" />
+                        : <Trash2 className="w-3 h-3" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {webhookError && (
               <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
@@ -726,32 +790,9 @@ export default function ScaleSettingsPage() {
               />
             </div>
 
-            <div className="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs font-mono text-slate-400">
-              <p className="text-slate-500 text-[10px] uppercase tracking-widest font-sans mb-1">Callback endpoint</p>
-              <p className="text-slate-200 break-all">
-                {webhookCallbackUrl.trim()
-                  ? `${webhookCallbackUrl.trim().replace(/\/$/, '')}/api/webhooks/shopify`
-                  : '{base-url}/api/webhooks/shopify'}
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <p className="text-xs text-slate-500 font-medium">Topics to subscribe:</p>
-              {[
-                'products/create', 'products/update', 'products/delete',
-                'orders/create', 'orders/updated', 'orders/fulfilled',
-                'orders/cancelled', 'purchase_orders/create', 'purchase_orders/update',
-              ].map(topic => (
-                <div key={topic} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/60 rounded-lg">
-                  <Tag className="w-3 h-3 text-slate-500 flex-shrink-0" />
-                  <span className="text-xs font-mono text-slate-300">{topic}</span>
-                </div>
-              ))}
-            </div>
-
             <button
               onClick={handleRegisterWebhooks}
-              disabled={webhookRegistering || !webhookCallbackUrl.trim()}
+              disabled={webhookRegistering}
               className="w-full h-11 flex items-center justify-center gap-2 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
             >
               {webhookRegistering ? (
@@ -763,7 +804,7 @@ export default function ScaleSettingsPage() {
 
             <p className="text-xs text-slate-500">
               The <span className="font-mono text-slate-400">ShopifyWebhookSecret</span> in Key Vault must match
-              the signing secret Shopify shows when creating the first webhook.
+              your Shopify app&apos;s API secret key (admin → Apps → develop apps → your app → API credentials).
             </p>
           </div>
         </div>
