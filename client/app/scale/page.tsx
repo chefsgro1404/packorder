@@ -982,7 +982,7 @@ export default function ScalePage() {
         const res = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(variantId)}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
-        if (!cancelled) setInventoryMapping(data.data ?? null);
+        if (!cancelled) setInventoryMapping(data ?? null);
       } catch {
         if (!cancelled) setInventoryMapping(null);
       }
@@ -1001,7 +1001,7 @@ export default function ScalePage() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (!cancelled) {
-          const opts = data.data?.options;
+          const opts = data?.options;
           setTransformationOptions(Array.isArray(opts) && opts.length > 0 ? opts : null);
         }
       } catch {
@@ -1208,13 +1208,13 @@ export default function ScalePage() {
         const res = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(numericVariantId)}`);
         if (res.ok) {
           const data = await res.json();
-          isLotReceiving = !!data.data?.isLotReceiving;
-          ranges = Array.isArray(data.data?.weightRanges) ? data.data.weightRanges : [];
-          if (data.data?.found) {
-            plu = data.data.plu ?? '';
-            productTitle = data.data.productTitle ?? li.productTitle;
-            variantTitle = (data.data.variantTitle && data.data.variantTitle !== 'Default Title')
-              ? data.data.variantTitle : variantTitle;
+          isLotReceiving = !!data?.isLotReceiving;
+          ranges = Array.isArray(data?.weightRanges) ? data.weightRanges : [];
+          if (data?.found) {
+            plu = data.plu ?? '';
+            productTitle = data.productTitle ?? li.productTitle;
+            variantTitle = (data.variantTitle && data.variantTitle !== 'Default Title')
+              ? data.variantTitle : variantTitle;
             found = true;
           }
         }

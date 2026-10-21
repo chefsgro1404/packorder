@@ -22,7 +22,7 @@ export function usePurchaseOrders() {
       const res = await fetch('/api/purchase-orders');
       if (!res.ok) throw new Error('Failed to load purchase orders');
       const data = await res.json();
-      const list: PurchaseOrder[] = Array.isArray(data.data) ? data.data : [];
+      const list: PurchaseOrder[] = Array.isArray(data) ? data : (Array.isArray(data.data) ? data.data : []);
       setOrders(list);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
@@ -38,7 +38,7 @@ export function usePurchaseOrders() {
       const res = await fetch(`/api/purchase-orders/${poId}`);
       if (!res.ok) return [];
       const data = await res.json();
-      const items: PurchaseOrderLineItem[] = Array.isArray(data.data?.lineItems) ? data.data.lineItems : [];
+      const items: PurchaseOrderLineItem[] = Array.isArray(data.lineItems) ? data.lineItems : (Array.isArray(data.data?.lineItems) ? data.data.lineItems : []);
       setLineItemsCache(prev => ({ ...prev, [poId]: items }));
       return items;
     } catch {
@@ -51,7 +51,7 @@ export function usePurchaseOrders() {
       const res = await fetch(`/api/purchase-orders/${poId}`);
       if (!res.ok) return [];
       const data = await res.json();
-      const items: PurchaseOrderLineItem[] = Array.isArray(data.data?.lineItems) ? data.data.lineItems : [];
+      const items: PurchaseOrderLineItem[] = Array.isArray(data.lineItems) ? data.lineItems : (Array.isArray(data.data?.lineItems) ? data.data.lineItems : []);
       setLineItemsCache(prev => ({ ...prev, [poId]: items }));
       return items;
     } catch {
