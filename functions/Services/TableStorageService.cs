@@ -1426,6 +1426,72 @@ public class TableStorageService
         return pos.Count;
     }
 
+    private static string NumericGid(string gid) => gid.Contains('/') ? gid.Split('/').Last() : gid;
+
+    private static string MapPoStatus(string gqlStatus) => gqlStatus.ToUpperInvariant() switch
+    {
+        "ORDERED"             => "open",
+        "PARTIALLY_RECEIVED"  => "partial",
+        "RECEIVED"            => "fulfilled",
+        "CANCELLED"           => "cancelled",
+        _                     => "open",
+    };
+
+    public async Task<int> SyncInventoryPurchaseOrdersAsync(List<GqlInventoryPurchaseOrder> pos)
+    {
+        foreach (var po in pos)
+        {
+            var numericPoId = NumericGid(po.Id);
+
+            var poEntity = new PurchaseOrderEntity
+            {
+                PartitionKey      = "po",
+                RowKey            = numericPoId,
+                PoId              = po.Id,
+                PoName            = po.Name,
+                Status            = MapPoStatus(po.Status),
+                Vendor            = po.Origin?.SupplierName ?? "",
+                TotalLineItems    = po.LineItems.Count,
+                ApprovedLineItems = 0,
+                ShopifyCreatedAt  = DateTimeOffset.TryParse(po.DateCreated, out var created) ? created : DateTimeOffset.UtcNow,
+                ShopifyUpdatedAt  = DateTimeOffset.UtcNow,
+            };
+
+            var existing = await GetPurchaseOrderByIdAsync(numericPoId);
+            if (existing != null)
+            {
+                poEntity.Status            = existing.Status;
+                poEntity.ApprovedLineItems = existing.ApprovedLineItems;
+            }
+
+            await UpsertPurchaseOrderAsync(poEntity);
+
+            var existingItems = await GetPurchaseOrderLineItemsAsync(numericPoId);
+            foreach (var li in po.LineItems)
+            {
+                var numericLiId = NumericGid(li.Id);
+                var existingLi  = existingItems.FirstOrDefault(x => x.RowKey == numericLiId);
+                var liEntity    = new PurchaseOrderLineItemEntity
+                {
+                    PartitionKey     = numericPoId,
+                    RowKey           = numericLiId,
+                    LineItemId       = li.Id,
+                    ProductTitle     = li.InventoryItem?.Variant?.Product?.Title ?? li.Title,
+                    VariantTitle     = li.InventoryItem?.Variant?.Title ?? li.VariantTitle,
+                    VariantId        = li.InventoryItem?.Variant?.Id,
+                    Sku              = li.InventoryItem?.Sku,
+                    QuantityOrdered  = li.TotalQuantity,
+                    QuantityReceived = existingLi?.QuantityReceived ?? 0,
+                    Status           = existingLi?.Status ?? "pending",
+                    PrintedAt        = existingLi?.PrintedAt,
+                    PrintedBy        = existingLi?.PrintedBy,
+                };
+                await UpsertPurchaseOrderLineItemAsync(liEntity);
+            }
+        }
+        return pos.Count;
+    }
+
     // Backfill PrintedLabelEntity records that are missing PoId/VendorName
     // by matching against known PO line items via PoLineItemId.
     public async Task<int> BackfillPrintedLabelPoLinksAsync()

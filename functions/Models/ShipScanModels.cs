@@ -891,6 +891,58 @@ public class PurchaseOrderLineItemEntity : ITableEntity
     public ETag ETag { get; set; }
 }
 
+// GQL InventoryPurchaseOrder (Shopify unstable API — native PO feature)
+public class GqlInventoryPurchaseOrder
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string DateCreated { get; set; } = "";
+    public GqlInventorySupplierSnapshot? Origin { get; set; }
+    public List<GqlInventoryPurchaseOrderLineItem> LineItems { get; set; } = new();
+}
+
+public class GqlInventorySupplierSnapshot
+{
+    public string? SupplierName { get; set; }
+}
+
+public class GqlInventoryPurchaseOrderLineItem
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string? VariantTitle { get; set; }
+    public int TotalQuantity { get; set; }
+    public GqlInventoryItemRef? InventoryItem { get; set; }
+}
+
+public class GqlInventoryItemRef
+{
+    public string Id { get; set; } = "";
+    public string? Sku { get; set; }
+    public GqlVariantRef? Variant { get; set; }
+}
+
+public class GqlVariantRef
+{
+    public string Id { get; set; } = "";
+    public string? Title { get; set; }
+    public GqlProductRef? Product { get; set; }
+}
+
+public class GqlProductRef
+{
+    public string Id { get; set; } = "";
+    public string Title { get; set; } = "";
+}
+
+public class WebhookResult
+{
+    public string Id { get; set; } = "";
+    public string Topic { get; set; } = "";
+    public string Address { get; set; } = "";
+}
+
 // Webhook REST payload for purchase_orders/create and purchase_orders/update
 public class WebhookPurchaseOrder
 {

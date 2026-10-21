@@ -26,9 +26,10 @@ public class ShopifyService
 
     // ─── Core GraphQL request ────────────────────────────────────────────────
 
-    private async Task<JObject> GraphQlAsync(string query, object? variables = null, int retries = 3)
+    private async Task<JObject> GraphQlAsync(string query, object? variables = null, int retries = 3, string? apiVersionOverride = null)
     {
-        var url = $"https://{_storeDomain}/admin/api/{_apiVersion}/graphql.json";
+        var version = apiVersionOverride ?? _apiVersion;
+        var url = $"https://{_storeDomain}/admin/api/{version}/graphql.json";
         var body = JsonConvert.SerializeObject(new { query, variables });
 
         var delay = TimeSpan.FromSeconds(1);
@@ -1210,35 +1211,105 @@ public class ShopifyService
         throw new Exception($"REST GET {path} failed after {retries} retries");
     }
 
-    public async Task<List<WebhookPurchaseOrder>> GetPurchaseOrdersAsync(string status = "open")
+    // Shopify's native inventory POs are only in the 'unstable' GQL API.
+    // REST purchase_orders.json and stable GQL purchaseOrders do not exist for this store type.
+    private const string ListInventoryPurchaseOrdersQuery = @"
+        query ListInventoryPOs($cursor: String) {
+          inventoryPurchaseOrders(first: 100, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id name status dateCreated
+              origin { supplierName }
+              lineItems(first: 100) {
+                nodes {
+                  id title variantTitle totalQuantity
+                  inventoryItem { id sku variant { id title product { id title } } }
+                }
+              }
+            }
+          }
+        }";
+
+    public async Task<List<GqlInventoryPurchaseOrder>> GetInventoryPurchaseOrdersAsync()
     {
+        var results = new List<GqlInventoryPurchaseOrder>();
+        string? cursor = null;
+
         try
         {
-            var arr = await RestGetArrayAsync($"purchase_orders.json?status={status}&limit=250");
-            if (arr == null) return new List<WebhookPurchaseOrder>();
-            return arr.ToObject<List<WebhookPurchaseOrder>>() ?? new List<WebhookPurchaseOrder>();
+            do
+            {
+                var data = await GraphQlAsync(ListInventoryPurchaseOrdersQuery, new { cursor }, apiVersionOverride: "unstable");
+                var conn  = data["inventoryPurchaseOrders"];
+                if (conn == null) break;
+
+                var nodes = conn["nodes"] as JArray ?? new JArray();
+                foreach (var node in nodes)
+                {
+                    var liNodes = node["lineItems"]?["nodes"] as JArray ?? new JArray();
+                    var lineItems = liNodes.Select(n =>
+                    {
+                        var inv = n["inventoryItem"];
+                        var vnt = inv?["variant"];
+                        var prd = vnt?["product"];
+                        return new GqlInventoryPurchaseOrderLineItem
+                        {
+                            Id           = n["id"]?.ToString() ?? "",
+                            Title        = n["title"]?.ToString() ?? "",
+                            VariantTitle = n["variantTitle"]?.ToString(),
+                            TotalQuantity = n["totalQuantity"]?.Value<int>() ?? 0,
+                            InventoryItem = inv != null ? new GqlInventoryItemRef
+                            {
+                                Id      = inv["id"]?.ToString() ?? "",
+                                Sku     = inv["sku"]?.ToString(),
+                                Variant = vnt != null ? new GqlVariantRef
+                                {
+                                    Id      = vnt["id"]?.ToString() ?? "",
+                                    Title   = vnt["title"]?.ToString(),
+                                    Product = prd != null ? new GqlProductRef
+                                    {
+                                        Id    = prd["id"]?.ToString() ?? "",
+                                        Title = prd["title"]?.ToString() ?? "",
+                                    } : null,
+                                } : null,
+                            } : null,
+                        };
+                    }).ToList();
+
+                    results.Add(new GqlInventoryPurchaseOrder
+                    {
+                        Id          = node["id"]?.ToString() ?? "",
+                        Name        = node["name"]?.ToString() ?? "",
+                        Status      = node["status"]?.ToString() ?? "",
+                        DateCreated = node["dateCreated"]?.ToString() ?? "",
+                        Origin      = node["origin"] != null
+                                          ? new GqlInventorySupplierSnapshot { SupplierName = node["origin"]!["supplierName"]?.ToString() }
+                                          : null,
+                        LineItems   = lineItems,
+                    });
+                }
+
+                var pageInfo = conn["pageInfo"];
+                var hasNext  = pageInfo?["hasNextPage"]?.Value<bool>() ?? false;
+                cursor       = hasNext ? pageInfo?["endCursor"]?.ToString() : null;
+            }
+            while (cursor != null);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to fetch purchase orders from Shopify");
-            return new List<WebhookPurchaseOrder>();
+            _logger.LogError(ex, "Failed to fetch inventory purchase orders from Shopify");
         }
+
+        return results;
     }
 
     // ─── Webhook Registration ─────────────────────────────────────────────────
 
-    // purchase_orders/* topics are not in Shopify's GraphQL WebhookSubscriptionTopic enum — REST only
-    private static readonly string[] RestOnlyWebhookTopics = ["purchase_orders/create", "purchase_orders/update"];
-
-    private static readonly (string Topic, string GqlTopic)[] GqlWebhookTopics =
+    // purchase_orders/* do not exist as Shopify webhook topics; PO sync is polled via GQL only.
+    private static readonly string[] RequiredWebhookTopics =
     [
-        ("products/create",  "PRODUCTS_CREATE"),
-        ("products/update",  "PRODUCTS_UPDATE"),
-        ("products/delete",  "PRODUCTS_DELETE"),
-        ("orders/create",    "ORDERS_CREATE"),
-        ("orders/updated",   "ORDERS_UPDATED"),
-        ("orders/cancelled", "ORDERS_CANCELLED"),
-        ("orders/fulfilled", "ORDERS_FULFILLED"),
+        "products/create", "products/update", "products/delete",
+        "orders/create", "orders/updated", "orders/cancelled", "orders/fulfilled",
     ];
 
     private const string ListWebhooksQuery = @"
@@ -1268,74 +1339,66 @@ public class ShopifyService
         return JsonConvert.DeserializeObject<JObject>(json) ?? new JObject();
     }
 
-    public async Task<List<WebhookRegistrationResult>> RegisterWebhooksAsync(string callbackBaseUrl)
+    public async Task<List<WebhookResult>> ListWebhooksAsync()
     {
-        var results = new List<WebhookRegistrationResult>();
-        var callbackUrl = $"{callbackBaseUrl.TrimEnd('/')}/api/webhooks/shopify";
-
-        // Fetch existing GQL subscriptions to avoid duplicates
-        var existingGql = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            var listResult = await GraphQlAsync(ListWebhooksQuery);
-            var nodes = listResult["data"]?["webhookSubscriptions"]?["nodes"] as JArray ?? new JArray();
-            foreach (var node in nodes)
-                existingGql.Add(node["topic"]?.ToString() ?? "");
+            var arr = await RestGetArrayAsync("webhooks.json");
+            if (arr == null) return new List<WebhookResult>();
+            return arr.Select(w => new WebhookResult
+            {
+                Id      = w["id"]?.ToString() ?? "",
+                Topic   = w["topic"]?.ToString() ?? "",
+                Address = w["address"]?.ToString() ?? "",
+            }).ToList();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to list existing GQL webhook subscriptions; will attempt to register all");
+            _logger.LogError(ex, "Failed to list webhooks");
+            return new List<WebhookResult>();
         }
+    }
 
-        // Register GQL topics (products/*, orders/*)
-        foreach (var (restTopic, gqlTopic) in GqlWebhookTopics)
+    public async Task<bool> DeleteWebhookAsync(string webhookId)
+    {
+        try
         {
-            if (existingGql.Contains(gqlTopic))
-            {
-                results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "already_registered" });
-                continue;
-            }
-
-            try
-            {
-                var mutation = await GraphQlAsync(CreateWebhookMutation, new { topic = gqlTopic, callbackUrl });
-                var userErrors = mutation["data"]?["webhookSubscriptionCreate"]?["userErrors"] as JArray;
-                if (userErrors != null && userErrors.Count > 0)
-                {
-                    var msg = string.Join("; ", userErrors.Select(e => e["message"]?.ToString()));
-                    results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "error", Error = msg });
-                    _logger.LogWarning("Webhook registration error for {Topic}: {Errors}", restTopic, msg);
-                }
-                else
-                {
-                    results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "registered" });
-                    _logger.LogInformation("Registered webhook for {Topic} → {CallbackUrl}", restTopic, callbackUrl);
-                }
-            }
-            catch (Exception ex)
-            {
-                results.Add(new WebhookRegistrationResult { Topic = restTopic, Status = "error", Error = ex.Message });
-                _logger.LogError(ex, "Failed to register webhook for {Topic}", restTopic);
-            }
+            var url = $"https://{_storeDomain}/admin/api/{_apiVersion}/webhooks/{webhookId}.json";
+            var req = new HttpRequestMessage(HttpMethod.Delete, url);
+            req.Headers.Add("X-Shopify-Access-Token", _accessToken);
+            var res = await _http.SendAsync(req);
+            return res.IsSuccessStatusCode;
         }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete webhook {WebhookId}", webhookId);
+            return false;
+        }
+    }
 
-        // Register REST-only topics (purchase_orders/*) via REST Admin API
-        var existingRest = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    public async Task<List<WebhookRegistrationResult>> RegisterWebhooksAsync(string callbackBaseUrl)
+    {
+        var results    = new List<WebhookRegistrationResult>();
+        var callbackUrl = $"{callbackBaseUrl.TrimEnd('/')}/api/webhooks/shopify";
+
+        // Use REST webhook list for dedup — covers both REST and GQL registered webhooks
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
             var arr = await RestGetArrayAsync("webhooks.json");
             if (arr != null)
-                foreach (var node in arr)
-                    existingRest.Add(node["topic"]?.ToString() ?? "");
+                foreach (var w in arr)
+                    if ((w["address"]?.ToString() ?? "") == callbackUrl)
+                        existing.Add(w["topic"]?.ToString() ?? "");
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to list existing REST webhook subscriptions; will attempt to register all");
+            _logger.LogWarning(ex, "Failed to list existing webhooks; will attempt to register all");
         }
 
-        foreach (var topic in RestOnlyWebhookTopics)
+        foreach (var topic in RequiredWebhookTopics)
         {
-            if (existingRest.Contains(topic))
+            if (existing.Contains(topic))
             {
                 results.Add(new WebhookRegistrationResult { Topic = topic, Status = "already_registered" });
                 continue;
@@ -1345,12 +1408,12 @@ public class ShopifyService
             {
                 await RestPostAsync("webhooks.json", new { webhook = new { topic, address = callbackUrl, format = "json" } });
                 results.Add(new WebhookRegistrationResult { Topic = topic, Status = "registered" });
-                _logger.LogInformation("Registered REST webhook for {Topic} → {CallbackUrl}", topic, callbackUrl);
+                _logger.LogInformation("Registered webhook for {Topic} → {CallbackUrl}", topic, callbackUrl);
             }
             catch (Exception ex)
             {
                 results.Add(new WebhookRegistrationResult { Topic = topic, Status = "error", Error = ex.Message });
-                _logger.LogError(ex, "Failed to register REST webhook for {Topic}", topic);
+                _logger.LogError(ex, "Failed to register webhook for {Topic}", topic);
             }
         }
 

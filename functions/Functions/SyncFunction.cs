@@ -125,10 +125,8 @@ public class SyncFunction
         try
         {
             _logger.LogInformation("Full sync — Stage 2: purchase orders");
-            var pos = await _shopify.GetPurchaseOrdersAsync("open");
-            var partial = await _shopify.GetPurchaseOrdersAsync("partial");
-            pos.AddRange(partial);
-            var synced = await _tableStorage.SyncPurchaseOrdersAsync(pos);
+            var pos    = await _shopify.GetInventoryPurchaseOrdersAsync();
+            var synced = await _tableStorage.SyncInventoryPurchaseOrdersAsync(pos);
             s2.Count = synced;
             s2.Ok    = true;
         }

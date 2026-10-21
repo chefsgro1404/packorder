@@ -32,6 +32,41 @@ public class WebhookRegisterFunction
         _defaultCallbackBaseUrl = config["WebhookCallbackBaseUrl"] ?? "";
     }
 
+    [Function("WebhookList")]
+    public async Task<HttpResponseData> List(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "webhooks")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        var webhooks = await _shopify.ListWebhooksAsync();
+        return await ResponseHelper.WriteSuccess(req, new { webhooks, callbackBaseUrl = _defaultCallbackBaseUrl }, _allowedOrigins);
+    }
+
+    [Function("WebhookDelete")]
+    public async Task<HttpResponseData> Delete(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", "options", Route = "webhooks/{id}")]
+        HttpRequestData req, string id)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        var ok = await _shopify.DeleteWebhookAsync(id);
+        if (!ok)
+            return await ResponseHelper.WriteError(req, "Failed to delete webhook", HttpStatusCode.InternalServerError, _allowedOrigins);
+
+        return await ResponseHelper.WriteSuccess(req, new { deleted = id }, _allowedOrigins);
+    }
+
     [Function("WebhookRegister")]
     public async Task<HttpResponseData> Register(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "webhooks/register")]
@@ -60,21 +95,15 @@ public class WebhookRegisterFunction
 
             var results = await _shopify.RegisterWebhooksAsync(callbackBaseUrl);
 
-            var registered = results.Count(r => r.Status == "registered");
+            var registered      = results.Count(r => r.Status == "registered");
             var alreadyRegistered = results.Count(r => r.Status == "already_registered");
-            var errors = results.Count(r => r.Status == "error");
+            var errors          = results.Count(r => r.Status == "error");
 
             _logger.LogInformation(
-                "Webhook registration complete: {Registered} registered, {AlreadyRegistered} already registered, {Errors} errors",
+                "Webhook registration complete: {Registered} registered, {Already} already registered, {Errors} errors",
                 registered, alreadyRegistered, errors);
 
-            return await ResponseHelper.WriteSuccess(req, new
-            {
-                registered,
-                alreadyRegistered,
-                errors,
-                results,
-            }, _allowedOrigins);
+            return await ResponseHelper.WriteSuccess(req, new { registered, alreadyRegistered, errors, results }, _allowedOrigins);
         }
         catch (Exception ex)
         {

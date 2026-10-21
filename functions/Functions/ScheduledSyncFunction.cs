@@ -62,10 +62,8 @@ public class ScheduledSyncFunction
         try
         {
             _logger.LogInformation("Scheduled sync — purchase orders");
-            var pos = await _shopify.GetPurchaseOrdersAsync("open");
-            var partial = await _shopify.GetPurchaseOrdersAsync("partial");
-            pos.AddRange(partial);
-            var synced = await _tableStorage.SyncPurchaseOrdersAsync(pos);
+            var pos    = await _shopify.GetInventoryPurchaseOrdersAsync();
+            var synced = await _tableStorage.SyncInventoryPurchaseOrdersAsync(pos);
             _logger.LogInformation("Scheduled sync — POs complete. {Count} POs synced", synced);
         }
         catch (Exception ex)
