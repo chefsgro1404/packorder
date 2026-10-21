@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { History, ChevronDown, ChevronUp, RefreshCw, RotateCcw, CheckCircle2, AlertTriangle, Package, CheckSquare } from 'lucide-react';
+import { History, ChevronDown, ChevronUp, RefreshCw, RotateCcw, CheckCircle2, AlertTriangle, Package } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 
 interface SessionLabelResult {
@@ -49,12 +49,9 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [fetchedOnce, setFetchedOnce] = useState(false);
 
-  // Multi-select state — reset whenever the expanded session changes
-  const [selectMode, setSelectMode] = useState(false);
   const [selectedSns, setSelectedSns] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    setSelectMode(false);
     setSelectedSns(new Set());
   }, [expandedId]);
 
@@ -97,7 +94,6 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
       .filter(r => selectedSns.has(r.sn) && r.qrPayload)
       .map(r => ({ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }));
     if (items.length > 0) onReprintLabel(items);
-    setSelectMode(false);
     setSelectedSns(new Set());
   };
 
@@ -190,83 +186,37 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                     {isExpanded && (
                       <div className="px-4 pb-3 flex flex-col gap-1.5">
 
-                        {/* Toolbar: select mode toggle */}
-                        <div className="flex items-center justify-between mb-0.5">
-                          {selectMode ? (
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {failed.length > 0 && (
-                                <button
-                                  onClick={() => setSelectedSns(new Set(failed.filter(r => r.qrPayload).map(r => r.sn)))}
-                                  className="text-[11px] text-rose-400 hover:text-rose-200 px-2 py-1 rounded-lg hover:bg-rose-950/40 transition-colors"
-                                >
-                                  Select all failed
-                                </button>
-                              )}
-                              <button
-                                onClick={() => setSelectedSns(new Set(s.parsedResults.filter(r => r.qrPayload).map(r => r.sn)))}
-                                className="text-[11px] text-slate-400 hover:text-slate-200 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
-                              >
-                                Select all
-                              </button>
-                              <button
-                                onClick={() => { setSelectMode(false); setSelectedSns(new Set()); }}
-                                className="text-[11px] text-slate-500 hover:text-slate-300 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
-                            <div />
-                          )}
-                          {!selectMode && (
-                            <button
-                              onClick={() => setSelectMode(true)}
-                              className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-300 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors ml-auto"
-                            >
-                              <CheckSquare className="w-3 h-3" /> Select
-                            </button>
-                          )}
-                        </div>
-
                         {/* Failed labels */}
                         {failed.length > 0 && (
                           <div className="flex flex-col gap-1 mb-1">
-                            {!selectMode && (
-                              <div className="flex items-center justify-between">
-                                <p className="text-[10px] font-semibold text-rose-400 uppercase tracking-widest">Failed</p>
-                                <button
-                                  onClick={() => onReprintLabel(failed.filter(r => r.qrPayload).map(r => ({ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null })))}
-                                  className="text-[10px] text-rose-400 hover:text-rose-200 px-2 py-1 rounded-lg hover:bg-rose-950/40 transition-colors"
-                                >
-                                  Reprint all failed
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex items-center justify-between">
+                              <p className="text-[10px] font-semibold text-rose-400 uppercase tracking-widest">Failed</p>
+                              <button
+                                onClick={() => onReprintLabel(failed.filter(r => r.qrPayload).map(r => ({ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null })))}
+                                className="text-[10px] text-rose-400 hover:text-rose-200 px-2 py-1 rounded-lg hover:bg-rose-950/40 transition-colors"
+                              >
+                                Reprint all failed
+                              </button>
+                            </div>
                             {failed.map(r => (
                               <div
                                 key={r.index}
                                 className={`flex items-center gap-2 bg-rose-950/30 border rounded-xl px-3 py-2 transition-colors ${
-                                  selectMode && selectedSns.has(r.sn) ? 'border-rose-500/70' : 'border-rose-900/40'
+                                  selectedSns.has(r.sn) ? 'border-rose-500/70' : 'border-rose-900/40'
                                 }`}
                               >
-                                {selectMode ? (
-                                  <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-rose-700 flex items-center justify-center bg-rose-950/60 hover:border-rose-400 transition-colors">
-                                    {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-rose-400" />}
-                                  </button>
-                                ) : (
-                                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400 flex-shrink-0" />
-                                )}
+                                <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-rose-700 flex items-center justify-center bg-rose-950/60 hover:border-rose-400 transition-colors">
+                                  {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-rose-400" />}
+                                </button>
                                 <span className="text-[10px] text-slate-500 font-bold w-5">#{r.index}</span>
                                 <p className="text-xs text-rose-300 flex-1 min-w-0 truncate">{r.error ?? 'Print failed'}</p>
-                                {!selectMode && (
-                                  <button
-                                    onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
-                                    disabled={!r.qrPayload}
-                                    className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
-                                  >
-                                    <RotateCcw className="w-3 h-3" /> Reprint
-                                  </button>
-                                )}
+                                <button
+                                  onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
+                                  disabled={!r.qrPayload}
+                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
+                                >
+                                  <RotateCcw className="w-3 h-3" /> Reprint
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -278,45 +228,38 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                             <div
                               key={r.index}
                               className={`flex items-center gap-2 rounded-xl px-3 py-2 transition-colors ${
-                                selectMode && selectedSns.has(r.sn)
+                                selectedSns.has(r.sn)
                                   ? 'bg-blue-950/30 border border-blue-600/50'
                                   : 'bg-slate-800/50 border border-transparent'
                               }`}
                             >
-                              {selectMode ? (
-                                <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-slate-600 flex items-center justify-center bg-slate-800 hover:border-blue-400 transition-colors">
-                                  {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-blue-400" />}
-                                </button>
-                              ) : (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                              )}
+                              <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-slate-600 flex items-center justify-center bg-slate-800 hover:border-blue-400 transition-colors">
+                                {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-blue-400" />}
+                              </button>
                               <span className="text-[10px] text-slate-500 font-bold w-5">#{r.index}</span>
                               <div className="flex-shrink-0 bg-white rounded p-0.5">
                                 <QRCodeSVG value={r.qrPayload || 'N/A'} size={20} level="M" bgColor="#ffffff" fgColor="#0f172a" />
                               </div>
                               <p className="text-xs text-slate-400 font-mono flex-1 min-w-0 truncate">{r.sn}</p>
-                              {!selectMode && (
-                                <button
-                                  onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
-                                  disabled={!r.qrPayload}
-                                  className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
-                                >
-                                  <RotateCcw className="w-3 h-3" /> Reprint
-                                </button>
-                              )}
+                              <button
+                                onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
+                                disabled={!r.qrPayload}
+                                className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
+                              >
+                                <RotateCcw className="w-3 h-3" /> Reprint
+                              </button>
                             </div>
                           ))}
                         </div>
 
-                        {/* Multi-select reprint CTA */}
-                        {selectMode && (
+                        {/* Batch reprint CTA — visible when any labels are checked */}
+                        {selectedSns.size > 0 && (
                           <button
                             onClick={() => handleReprintSelected(s)}
-                            disabled={selectedSns.size === 0}
-                            className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-500 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors active:scale-[0.99]"
+                            className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors active:scale-[0.99]"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
-                            {selectedSns.size === 0 ? 'Select labels to reprint' : `Reprint Selected (${selectedSns.size})`}
+                            Reprint Selected ({selectedSns.size})
                           </button>
                         )}
                       </div>

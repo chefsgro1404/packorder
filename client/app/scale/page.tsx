@@ -1636,9 +1636,15 @@ export default function ScalePage() {
       console.warn('[scale] manual print requested with no current item');
       return;
     }
+    // Merge manual weight if the user typed one before clicking Print
+    const item = manualWeight.trim() ? { ...currentItem, itemWeight: manualWeight.trim() } : currentItem;
+    if (manualWeight.trim()) {
+      setCurrentItem(item);
+      setManualWeight('');
+    }
     // When auto-detect has a match, apply the matched variant before printing
-    if (autoDetect?.matched && currentItem.variantId !== autoDetect.matched.variantId) {
-      const itemWithVariant = { ...currentItem, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
+    if (autoDetect?.matched && item.variantId !== autoDetect.matched.variantId) {
+      const itemWithVariant = { ...item, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
       setCurrentItem(itemWithVariant);
       await printItem(itemWithVariant, { forceDialog: true });
       // Reset for next item (staff places next chicken)
@@ -1646,18 +1652,11 @@ export default function ScalePage() {
       setWeightRanges(prev => prev); // keep ranges for next weigh
       return;
     }
-    await printItem(currentItem, { forceDialog: true });
+    await printItem(item, { forceDialog: true });
     if (weightRanges.length > 0) {
       // Reset detection for next item in sequence
       setAutoDetect(null);
     }
-  };
-
-  const handleManualWeightPrint = async () => {
-    if (!currentItem || !manualWeight.trim()) return;
-    const item = { ...currentItem, itemWeight: manualWeight.trim() };
-    setCurrentItem(item);
-    await printItem(item, { forceDialog: true });
   };
 
   const handleReprint = async (record: PrintedLabel) => {
@@ -2192,28 +2191,19 @@ export default function ScalePage() {
                     );
                   })()}
 
-                  {/* Manual weight input for PO items without scale reading */}
-                  {currentItem.poId && !currentItem.itemWeight && (
-                    <div className="flex flex-col gap-2">
-                      <p className="text-xs text-slate-500">Enter weight or trigger scale to print:</p>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          placeholder="e.g. 1.25 kg"
-                          value={manualWeight}
-                          onChange={e => setManualWeight(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') handleManualWeightPrint(); }}
-                          className="flex-1 h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
-                        />
-                        <button
-                          onClick={handleManualWeightPrint}
-                          disabled={!manualWeight.trim()}
-                          className="h-10 px-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-semibold text-sm flex items-center gap-1.5 transition-colors active:scale-[0.98]"
-                        >
-                          <Printer className="w-3.5 h-3.5" /> Print
-                        </button>
-                      </div>
+                  {/* Manual weight input — optional for PO items */}
+                  {currentItem.poId && (
+                    <div className="flex flex-col gap-1.5">
+                      <p className="text-xs text-slate-500">Weight <span className="text-slate-600">(optional — or trigger scale)</span></p>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="e.g. 1.25 kg"
+                        value={manualWeight}
+                        onChange={e => setManualWeight(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleManualPrint(); }}
+                        className="h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                      />
                     </div>
                   )}
 
@@ -2230,7 +2220,7 @@ export default function ScalePage() {
 
                   {/* Primary action buttons */}
                   <div className="flex flex-col gap-2">
-                    {(!currentItem.poId || !!currentItem.itemWeight) && !bulkPrintResults && (
+                    {!bulkPrintResults && (
                       <>
                         {autoDetect?.noMatch && (
                           <p className="text-[11px] text-rose-400 text-center">
