@@ -127,7 +127,7 @@ export default function ScaleSettingsPage() {
     try {
       const res = await fetch('/api/scale/text-mappings');
       const data = await res.json();
-      setMappings(data.mappings ?? []);
+      setMappings((data.data ?? data).mappings ?? []);
     } catch {
       setMappingsError('Failed to load mappings');
     } finally {
@@ -140,7 +140,7 @@ export default function ScaleSettingsPage() {
     try {
       const res = await fetch('/api/sync/settings');
       const data = await res.json();
-      setSyncSettings(data);
+      setSyncSettings(data.data ?? data);
     } catch {
       setSyncError('Failed to load sync settings');
     } finally {
@@ -153,7 +153,8 @@ export default function ScaleSettingsPage() {
     try {
       const res = await fetch('/api/vendors');
       const data = await res.json();
-      setVendors(data.vendors ?? []);
+      const payload = data.data ?? data;
+      setVendors(payload.vendors ?? []);
     } catch {
       setVendorError('Failed to load vendors');
     } finally {
@@ -249,8 +250,8 @@ export default function ScaleSettingsPage() {
         // background — reload after a minute to verify.
         throw new Error('Sync is taking longer than the browser can wait. It may still be running — reload this page in a minute to check the last-synced time.');
       }
-      if (!res.ok) throw new Error((data as { error?: string })?.error || 'Full sync failed');
-      setFullSyncResult(data as FullSyncResult);
+      if (!res.ok) throw new Error((data as { error?: string; data?: { error?: string } })?.error || (data as { data?: { error?: string } })?.data?.error || 'Full sync failed');
+      setFullSyncResult(((data as { data?: FullSyncResult })?.data ?? data) as FullSyncResult);
     } catch (err) {
       setFullSyncError(err instanceof Error ? err.message : 'Full sync failed');
     } finally {
@@ -300,8 +301,9 @@ export default function ScaleSettingsPage() {
       const res = await fetch('/api/webhooks');
       const data = await res.json();
       if (res.ok) {
-        setRegisteredWebhooks(data.webhooks ?? []);
-        if (data.callbackBaseUrl && !webhookCallbackUrl) setWebhookCallbackUrl(data.callbackBaseUrl);
+        const payload = data.data ?? data;
+        setRegisteredWebhooks(payload.webhooks ?? []);
+        if (payload.callbackBaseUrl && !webhookCallbackUrl) setWebhookCallbackUrl(payload.callbackBaseUrl);
       }
     } catch {
       // silent
@@ -333,8 +335,8 @@ export default function ScaleSettingsPage() {
         body: JSON.stringify({ callbackBaseUrl: webhookCallbackUrl.trim() || undefined }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Registration failed');
-      setWebhookResult(data);
+      if (!res.ok) throw new Error(data.error || data.data?.error || 'Registration failed');
+      setWebhookResult(data.data ?? data);
       await fetchRegisteredWebhooks();
     } catch (err) {
       setWebhookError(err instanceof Error ? err.message : 'Registration failed');
