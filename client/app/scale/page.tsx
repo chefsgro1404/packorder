@@ -29,6 +29,7 @@ import {
   X,
   Droplets,
   Zap,
+  QrCode,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -43,6 +44,7 @@ import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, Invent
 import { matchWeightRange, parseWeightToLbs } from '@/lib/weightCategory';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
 import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
+import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { ManualTransformModal } from '@/components/ManualTransformModal';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { usePrintQueue } from '@/hooks/usePrintQueue';
@@ -629,7 +631,7 @@ function PoSuggestions({
               <p className="text-sm text-slate-600">No open purchase orders</p>
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-slate-800/60">
+            <div className="flex flex-col divide-y divide-slate-800/60 max-h-72 overflow-y-auto lg:max-h-none">
               {orders.map(po => {
                 const isExpanded = expandedPoId === po.id;
                 const items = lineItemsCache[po.id] ?? [];
@@ -889,6 +891,8 @@ export default function ScalePage() {
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
+  const [qrScanOpen, setQrScanOpen] = useState(false);
+  const [qrScanError, setQrScanError] = useState<string | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
@@ -1704,6 +1708,49 @@ export default function ScalePage() {
     batchPrint(payloads);
   }, [buildReprintSn, batchPrint]);
 
+  const handleQrScan = useCallback(async (scanned: string) => {
+    setQrScanOpen(false);
+    setQrScanError(null);
+    setLookupLoading(true);
+
+    let plaintext = scanned;
+    if (isEncryptedQr(scanned)) {
+      try {
+        plaintext = await decryptQrPayload(scanned);
+      } catch {
+        setQrScanError('Failed to decrypt label — was it printed by ShipScan?');
+        setLookupLoading(false);
+        setQrScanOpen(true);
+        return;
+      }
+    }
+
+    // Payload: "PLU | Title | weight | SN:xxx" or "PLU | Title | SN:xxx"
+    const parts = plaintext.split(' | ');
+    if (parts.length < 2) {
+      setQrScanError('Unrecognized label format — only ShipScan labels can be processed here');
+      setLookupLoading(false);
+      setQrScanOpen(true);
+      return;
+    }
+
+    const plu = parts[0].trim();
+    const titlePart = parts[1].trim();
+    const weightPart = parts.slice(2).find(p => !p.startsWith('SN:')) ?? '';
+
+    const item = await lookupProduct({
+      itemNumber: plu !== 'N/A' ? plu : '',
+      itemName: titlePart,
+      itemWeight: weightPart,
+      qrPayload: '',
+      rawBuffer: '',
+      timestamp: new Date(),
+    });
+
+    setCurrentItem(item);
+    setLookupLoading(false);
+  }, [lookupProduct]);
+
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
       ? 'busy'
@@ -1780,8 +1827,8 @@ export default function ScalePage() {
             On lg+: two columns — PO suggestions fixed left, work area right. */}
         <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-5 px-4 py-5 items-start">
 
-          {/* ── LEFT (lg) / BOTTOM (mobile): PO suggestions sidebar ───────── */}
-          <div className="order-last lg:order-first lg:sticky lg:top-[61px] lg:overflow-y-auto lg:max-h-[calc(100vh-81px)]">
+          {/* ── LEFT (lg) / TOP (mobile): PO suggestions sidebar ────────── */}
+          <div className="order-first lg:sticky lg:top-[61px] lg:overflow-y-auto lg:max-h-[calc(100vh-81px)]">
             <PoSuggestions
               orders={poOrders}
               loading={poLoading}
@@ -1793,8 +1840,8 @@ export default function ScalePage() {
             />
           </div>
 
-          {/* ── RIGHT (lg) / TOP (mobile): Main work area ─────────────────── */}
-          <div className="order-first lg:order-last flex flex-col gap-4">
+          {/* ── RIGHT (lg) / BOTTOM (mobile): Main work area ──────────────── */}
+          <div className="order-last lg:order-last flex flex-col gap-4">
 
             {/* ── ACTIVE WORK ZONE ─────────────────────────────────────────── */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
@@ -1921,6 +1968,41 @@ export default function ScalePage() {
                       <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog</p>
                     </div>
                   </button>
+
+                  {/* Process Label CTA — scan a previously printed label to reprocess/transform */}
+                  {!qrScanOpen ? (
+                    <button
+                      onClick={() => { setQrScanError(null); setQrScanOpen(true); }}
+                      className="w-full flex items-center gap-3 bg-amber-950/60 hover:bg-amber-900/50 border border-amber-800/40 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                        <QrCode className="w-4 h-4 text-amber-400" />
+                      </div>
+                      <div className="text-left">
+                        <p className="text-sm font-bold text-amber-200 leading-tight">Process Label</p>
+                        <p className="text-xs text-amber-400/70 leading-tight">Scan a printed label to transform or reprocess</p>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2 rounded-xl border border-amber-800/40 bg-amber-950/30 px-3 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <QrCode className="w-3.5 h-3.5 text-amber-400" />
+                          <p className="text-sm font-semibold text-amber-200">Scan the label QR code</p>
+                        </div>
+                        <button
+                          onClick={() => { setQrScanOpen(false); setQrScanError(null); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                      {qrScanError && (
+                        <p className="text-xs text-rose-400 bg-rose-950/40 rounded-lg px-2 py-1.5">{qrScanError}</p>
+                      )}
+                      <BarcodeScanner onScan={handleQrScan} active={qrScanOpen} />
+                    </div>
+                  )}
                 </div>
               ) : (
                 /* ── Product loaded state ── */
