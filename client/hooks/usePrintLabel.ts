@@ -14,6 +14,10 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
   const labelSizeKeyRef = useRef(labelSizeKey);
   labelSizeKeyRef.current = labelSizeKey;
 
+  // Pre-opened window passed in from bulk-print flows where window.open must fire
+  // before async work begins (user gesture activation expires after ~5 s).
+  const preOpenedBatchWin = useRef<Window | null>(null);
+
   // Tracks how many times each base SN has been reprinted this session.
   const reprintCounts = useRef(new Map<string, number>());
 
@@ -83,7 +87,9 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
       const el = document.getElementById('batch-print-labels');
       if (!el) return;
       const css = getBatchLabelWindowCSS(labelSizeKeyRef.current);
-      const win = window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`);
+      // Use a pre-opened window when available (avoids popup-block after long async work).
+      const win = preOpenedBatchWin.current ?? window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`);
+      preOpenedBatchWin.current = null;
       if (win) {
         win.document.write(`<!DOCTYPE html><html><head><style>${css}</style></head><body>${el.innerHTML}</body></html>`);
         win.document.close();
@@ -106,8 +112,9 @@ export function usePrintLabel(labelSizeKey: LabelSizeKey = '3x2') {
     setPrintedAt(new Date());
   }, []);
 
-  const batchPrint = useCallback((payloads: PrintPayload[]) => {
+  const batchPrint = useCallback((payloads: PrintPayload[], preOpened?: Window | null) => {
     if (payloads.length === 0) return;
+    if (preOpened) preOpenedBatchWin.current = preOpened;
     if (payloads.length === 1) { printVerbatim(payloads[0]); return; }
     setBatchPrintPayloads(payloads);
   }, [printVerbatim]);

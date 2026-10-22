@@ -1265,6 +1265,12 @@ export default function ScalePage() {
     const { item: baseItem, po, li } = modalState;
     const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
 
+    // Pre-open the popup NOW, while still inside the button-click user gesture.
+    // window.open is popup-blocked after the first await, so we must open it here.
+    const preOpenedWin = typeof window !== 'undefined'
+      ? window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`)
+      : null;
+
     setBulkPrintModal(null);
     resetPrinted();
     setCurrentItem(item);
@@ -1313,9 +1319,12 @@ export default function ScalePage() {
       setBulkPrintResults([...results]);
     }
 
-    // Open one popup/dialog with all labels rather than one per label
+    // Open one popup/dialog with all labels rather than one per label.
+    // Pass preOpenedWin so the hook uses it instead of calling window.open again.
     if (batchPayloads.length > 0) {
-      batchPrint(batchPayloads);
+      batchPrint(batchPayloads, preOpenedWin);
+    } else if (preOpenedWin) {
+      preOpenedWin.close();
     }
 
     // Approve PO line item: weight-based (lot) uses total lbs, count-based uses printed count.
