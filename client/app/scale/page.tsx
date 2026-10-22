@@ -1376,6 +1376,7 @@ export default function ScalePage() {
         if (invRes.ok) {
           const invData = await invRes.json();
           const { inventoryItemId, locationId } = invData.data ?? {};
+          console.log('[scale] inventory lookup:', { inventoryItemId, locationId, qtyDelta });
           if (inventoryItemId && locationId) {
             // Store pending — user must confirm before Shopify is touched
             setPendingInventoryAdjust({ delta: -qtyDelta, inventoryItemId, locationId });
