@@ -740,13 +740,17 @@ function BulkPrintResultPanel({
   results,
   poQuantityOrdered,
   inventoryAdjusted,
+  pendingPrintCount,
   onReprint,
+  onPrintAll,
   onDismiss,
 }: {
   results: BulkPrintLabelResult[];
   poQuantityOrdered: number;
   inventoryAdjusted: number | null;
+  pendingPrintCount: number;
   onReprint: (r: BulkPrintLabelResult) => void;
+  onPrintAll: () => void;
   onDismiss: () => void;
 }) {
   const printed = results.filter(r => r.status === 'printed').length;
@@ -773,6 +777,15 @@ function BulkPrintResultPanel({
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
+      {pendingPrintCount > 0 && (
+        <button
+          onClick={onPrintAll}
+          className="w-full h-10 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+        >
+          <Printer className="w-4 h-4" />
+          Print {pendingPrintCount} label{pendingPrintCount !== 1 ? 's' : ''}
+        </button>
+      )}
       {inventoryAdjusted !== null && inventoryAdjusted < 0 && (
         <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-1.5">
           Shopify inventory adjusted by {inventoryAdjusted} for the {Math.abs(inventoryAdjusted)} unit shortfall
@@ -891,6 +904,7 @@ export default function ScalePage() {
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
+  const [pendingBulkPayloads, setPendingBulkPayloads] = useState<PrintPayload[] | null>(null);
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState<string | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
@@ -1195,6 +1209,7 @@ export default function ScalePage() {
     setLookupLoading(true);
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
+    setPendingBulkPayloads(null);
     setWeightRanges([]);
     setAutoDetect(null);
 
@@ -1265,12 +1280,6 @@ export default function ScalePage() {
     const { item: baseItem, po, li } = modalState;
     const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
 
-    // Pre-open the popup NOW, while still inside the button-click user gesture.
-    // window.open is popup-blocked after the first await, so we must open it here.
-    const preOpenedWin = typeof window !== 'undefined'
-      ? window.open('', '_blank', `width=${screen.availWidth},height=${screen.availHeight},left=0,top=0`)
-      : null;
-
     setBulkPrintModal(null);
     resetPrinted();
     setCurrentItem(item);
@@ -1319,12 +1328,11 @@ export default function ScalePage() {
       setBulkPrintResults([...results]);
     }
 
-    // Open one popup/dialog with all labels rather than one per label.
-    // Pass preOpenedWin so the hook uses it instead of calling window.open again.
+    // Store payloads for the user to trigger printing with a button click.
+    // window.open is popup-blocked after long async work, so printing must
+    // happen from a fresh gesture — the "Print X labels" button provides that.
     if (batchPayloads.length > 0) {
-      batchPrint(batchPayloads, preOpenedWin);
-    } else if (preOpenedWin) {
-      preOpenedWin.close();
+      setPendingBulkPayloads(batchPayloads);
     }
 
     // Approve PO line item: weight-based (lot) uses total lbs, count-based uses printed count.
@@ -1781,6 +1789,7 @@ export default function ScalePage() {
     setManualWeight('');
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
+    setPendingBulkPayloads(null);
     setTransformationOptions(null);
     setInventoryMappingOverride(null);
     setManualTransformModal(false);
@@ -2231,8 +2240,10 @@ export default function ScalePage() {
                       results={bulkPrintResults}
                       poQuantityOrdered={currentItem.poQuantityOrdered ?? bulkPrintResults.length}
                       inventoryAdjusted={bulkInventoryAdjusted}
+                      pendingPrintCount={pendingBulkPayloads?.length ?? 0}
                       onReprint={handleBulkReprint}
-                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); }}
+                      onPrintAll={() => { if (pendingBulkPayloads) { batchPrint(pendingBulkPayloads); setPendingBulkPayloads(null); } }}
+                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); setPendingBulkPayloads(null); }}
                     />
                   )}
 
