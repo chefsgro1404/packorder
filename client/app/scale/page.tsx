@@ -1630,6 +1630,7 @@ export default function ScalePage() {
   const scale = useScale(handleReading);
 
   useEffect(() => {
+    fetch('/api/auth').then(r => { if (r.status === 401) router.replace('/'); });
     scale.autoConnect();
     fetchHistory();
     fetch('/api/scale/text-mappings')
