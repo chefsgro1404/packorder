@@ -741,16 +741,22 @@ function BulkPrintResultPanel({
   poQuantityOrdered,
   inventoryAdjusted,
   pendingPrintCount,
+  pendingAdjustDelta,
   onReprint,
   onPrintAll,
+  onConfirmAdjust,
+  onSkipAdjust,
   onDismiss,
 }: {
   results: BulkPrintLabelResult[];
   poQuantityOrdered: number;
   inventoryAdjusted: number | null;
   pendingPrintCount: number;
+  pendingAdjustDelta: number | null;
   onReprint: (r: BulkPrintLabelResult) => void;
   onPrintAll: () => void;
+  onConfirmAdjust: () => void;
+  onSkipAdjust: () => void;
   onDismiss: () => void;
 }) {
   const printed = results.filter(r => r.status === 'printed').length;
@@ -785,6 +791,16 @@ function BulkPrintResultPanel({
           <Printer className="w-4 h-4" />
           Print {pendingPrintCount} label{pendingPrintCount !== 1 ? 's' : ''}
         </button>
+      )}
+      {pendingAdjustDelta !== null && (
+        <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+          <span className="flex-1 text-xs text-amber-300">
+            Update Shopify inventory by {pendingAdjustDelta > 0 ? `+${pendingAdjustDelta}` : pendingAdjustDelta}?
+          </span>
+          <button onClick={onConfirmAdjust} className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-emerald-950/40 transition-colors">Yes</button>
+          <button onClick={onSkipAdjust} className="text-[11px] text-slate-500 hover:text-slate-300 px-2 py-1 rounded hover:bg-slate-700 transition-colors">Skip</button>
+        </div>
       )}
       {inventoryAdjusted !== null && inventoryAdjusted < 0 && (
         <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-1.5">
@@ -905,6 +921,7 @@ export default function ScalePage() {
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
   const [pendingBulkPayloads, setPendingBulkPayloads] = useState<PrintPayload[] | null>(null);
+  const [pendingInventoryAdjust, setPendingInventoryAdjust] = useState<{ delta: number; inventoryItemId: string; locationId: string } | null>(null);
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState<string | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
@@ -1210,6 +1227,7 @@ export default function ScalePage() {
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
     setPendingBulkPayloads(null);
+    setPendingInventoryAdjust(null);
     setWeightRanges([]);
     setAutoDetect(null);
 
@@ -1349,7 +1367,8 @@ export default function ScalePage() {
       }
     }
 
-    // Shopify inventory correction: count-based only (lot products skip this — no unit qty to correct)
+    // Shopify inventory adjustment: prompt the user when received ≠ ordered.
+    // count-based only — lot/weight products have no unit qty to correct.
     const qtyDelta = li.quantityOrdered - printedCount; // positive = short, negative = over
     if (qtyDelta !== 0 && item.variantId && lotTotalWeightLbs === undefined) {
       try {
@@ -1358,17 +1377,12 @@ export default function ScalePage() {
           const invData = await invRes.json();
           const { inventoryItemId, locationId } = invData.data ?? {};
           if (inventoryItemId && locationId) {
-            const adjustDelta = -qtyDelta; // shortfall → negative, overage → positive
-            await fetch('/api/scale/inventory-adjust', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ inventoryItemId, locationId, delta: adjustDelta, reason: 'correction' }),
-            });
-            setBulkInventoryAdjusted(adjustDelta);
+            // Store pending — user must confirm before Shopify is touched
+            setPendingInventoryAdjust({ delta: -qtyDelta, inventoryItemId, locationId });
           }
         }
       } catch (err) {
-        console.error('[scale] PO inventory correction failed:', err);
+        console.error('[scale] PO inventory lookup failed:', err);
       }
     }
 
@@ -1657,6 +1671,16 @@ export default function ScalePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-print on printer devices: when payloads are ready, trigger batchPrint
+  // automatically. window.open will be blocked (no gesture) so it falls back to
+  // window.print() on the main window — which works because PrintLabelPortal
+  // now injects @media print CSS that shows #batch-print-labels.
+  useEffect(() => {
+    if (!isPrinterDevice || !pendingBulkPayloads || pendingBulkPayloads.length === 0) return;
+    batchPrint(pendingBulkPayloads);
+    setPendingBulkPayloads(null);
+  }, [isPrinterDevice, pendingBulkPayloads, batchPrint]);
+
   const handleManualPrint = async () => {
     if (!currentItem) {
       console.warn('[scale] manual print requested with no current item');
@@ -1790,6 +1814,7 @@ export default function ScalePage() {
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
     setPendingBulkPayloads(null);
+    setPendingInventoryAdjust(null);
     setTransformationOptions(null);
     setInventoryMappingOverride(null);
     setManualTransformModal(false);
@@ -2241,9 +2266,26 @@ export default function ScalePage() {
                       poQuantityOrdered={currentItem.poQuantityOrdered ?? bulkPrintResults.length}
                       inventoryAdjusted={bulkInventoryAdjusted}
                       pendingPrintCount={pendingBulkPayloads?.length ?? 0}
+                      pendingAdjustDelta={pendingInventoryAdjust?.delta ?? null}
                       onReprint={handleBulkReprint}
                       onPrintAll={() => { if (pendingBulkPayloads) { batchPrint(pendingBulkPayloads); setPendingBulkPayloads(null); } }}
-                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); setPendingBulkPayloads(null); }}
+                      onConfirmAdjust={async () => {
+                        if (!pendingInventoryAdjust) return;
+                        const { delta, inventoryItemId, locationId } = pendingInventoryAdjust;
+                        setPendingInventoryAdjust(null);
+                        try {
+                          await fetch('/api/scale/inventory-adjust', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ inventoryItemId, locationId, delta, reason: 'correction' }),
+                          });
+                          setBulkInventoryAdjusted(delta);
+                        } catch (err) {
+                          console.error('[scale] inventory adjust failed:', err);
+                        }
+                      }}
+                      onSkipAdjust={() => setPendingInventoryAdjust(null)}
+                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); setPendingBulkPayloads(null); setPendingInventoryAdjust(null); }}
                     />
                   )}
 

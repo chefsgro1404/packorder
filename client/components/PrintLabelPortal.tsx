@@ -1,7 +1,7 @@
 'use client';
 
 import { QRCodeSVG } from 'qrcode.react';
-import { getLabelPrintMediaCSS, getQrPixelSize, type LabelSizeKey } from '@/lib/labelSizes';
+import { getLabelPrintMediaCSS, getBatchLabelPrintMediaCSS, getQrPixelSize, type LabelSizeKey } from '@/lib/labelSizes';
 
 export interface PrintPayload {
   productTitle: string;
@@ -54,13 +54,16 @@ export function PrintLabelPortal({
         </>
       )}
       {batchPayloads && batchPayloads.length > 0 && (
-        <div id="batch-print-labels" aria-hidden="true" style={{ display: 'none' }}>
-          {batchPayloads.map((p, i) => (
-            <div key={i} className="print-label-inner">
-              <LabelContent payload={p} labelSizeKey={labelSizeKey} />
-            </div>
-          ))}
-        </div>
+        <>
+          <div id="batch-print-labels" aria-hidden="true" style={{ display: 'none' }}>
+            {batchPayloads.map((p, i) => (
+              <div key={i} className="print-label-inner">
+                <LabelContent payload={p} labelSizeKey={labelSizeKey} />
+              </div>
+            ))}
+          </div>
+          <style dangerouslySetInnerHTML={{ __html: getBatchLabelPrintMediaCSS(labelSizeKey) }} />
+        </>
       )}
     </>
   );

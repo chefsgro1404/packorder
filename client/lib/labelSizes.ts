@@ -130,4 +130,20 @@ export function getLabelPrintMediaCSS(key: LabelSizeKey): string {
   `;
 }
 
+export function getBatchLabelPrintMediaCSS(key: LabelSizeKey): string {
+  const c = getLabelConfig(key);
+  return `
+    #batch-print-labels { display: none; }
+    @media print {
+      *, *::before, *::after { box-sizing: border-box; }
+      @page { size: ${c.pageW}in ${c.pageH}in; margin: 0; }
+      body > *:not(#batch-print-labels) { display: none !important; }
+      #batch-print-labels { display: block !important; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .print-label-inner:not(:last-child) { break-after: page; }
+      ${sharedRules(c)}
+      ${layoutRules(c)}
+    }
+  `;
+}
+
 export const LABEL_SIZE_STORAGE_KEY = 'shipscan-label-size';
