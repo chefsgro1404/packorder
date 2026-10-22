@@ -375,9 +375,12 @@ export interface TransformationOption {
   variantId: string;
   title: string;
   inventoryItemId: string;
+  parentInventoryItemId: string;
   locationId: string;
   parentUnits?: number;
   childUnits?: number;
+  isWeighted?: boolean;
+  weightPerUnit?: number;
 }
 
 export interface PurchaseOrder {

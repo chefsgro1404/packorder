@@ -464,8 +464,13 @@ public class ShopifyService
                   edges { node { title } }
                 }
                 weightRanges: metafield(namespace: ""custom"", key: ""weight_ranges"") { id value }
+                productAdj: metafield(namespace: ""custom"", key: ""adjustments"") { value }
                 variants(first: 100) {
-                  edges { node { id sku barcode title price } }
+                  edges { node {
+                    id sku barcode title price
+                    inventoryItem { id }
+                    variantAdj: metafield(namespace: ""custom"", key: ""adjustments"") { value }
+                  } }
                 }
               }
             }
@@ -515,10 +520,22 @@ public class ShopifyService
                     catch { }
                 }
 
+                // Product-level custom.adjustments — used as fallback when variant has none
+                var productAdjMeta = product["productAdj"];
+                var productAdjRaw = productAdjMeta != null && productAdjMeta.Type != JTokenType.Null
+                    ? productAdjMeta["value"]?.ToString() : null;
+
                 foreach (var ve in (product["variants"]?["edges"] as JArray) ?? new JArray())
                 {
                     var v = ve["node"]!;
                     var variantId = v["id"]!.ToString();
+
+                    // Prefer variant-level adjustments; fall back to product-level
+                    var variantAdjMeta = v["variantAdj"];
+                    var variantAdjRaw = variantAdjMeta != null && variantAdjMeta.Type != JTokenType.Null
+                        ? variantAdjMeta["value"]?.ToString() : null;
+                    var effectiveAdj = !string.IsNullOrWhiteSpace(variantAdjRaw) ? variantAdjRaw : productAdjRaw;
+
                     results.Add(new Models.ProductVariantEntity
                     {
                         PartitionKey = numericProductId,
@@ -534,6 +551,8 @@ public class ShopifyService
                         Tags = tagsJson,
                         Collections = collectionsJson,
                         WeightRanges = weightRangesJson,
+                        Adjustments = string.IsNullOrWhiteSpace(effectiveAdj) ? null : effectiveAdj,
+                        InventoryItemId = v["inventoryItem"]?["id"]?.ToString(),
                         ImageUrl = imageUrl,
                         Price = v["price"]?.ToString() ?? "0.00"
                     });
@@ -1114,12 +1133,15 @@ public class ShopifyService
 
                 results.Add(new Models.TransformationOption
                 {
-                    VariantId       = v["id"]!.ToString(),
-                    Title           = v["title"]?.ToString() ?? "",
-                    InventoryItemId = v["inventoryItem"]?["id"]?.ToString() ?? "",
-                    LocationId      = adjustments["parent_location_id"]?.ToString() ?? "",
-                    ParentUnits     = adjustments["parent_units"]?.ToObject<int>() ?? 1,
-                    ChildUnits      = adjustments["child_units"]?.ToObject<int>() ?? 1,
+                    VariantId             = v["id"]!.ToString(),
+                    Title                 = v["title"]?.ToString() ?? "",
+                    InventoryItemId       = v["inventoryItem"]?["id"]?.ToString() ?? "",
+                    ParentInventoryItemId = parentInventoryItemId,
+                    LocationId            = adjustments["parent_location_id"]?.ToString() ?? "",
+                    ParentUnits           = adjustments["parent_units"]?.ToObject<int>() ?? 1,
+                    ChildUnits            = adjustments["child_units"]?.ToObject<int>() ?? 1,
+                    IsWeighted            = adjustments["is_weighted"]?.ToObject<bool>() ?? false,
+                    WeightPerUnit         = adjustments["weight_per_unit"]?.ToObject<double>() ?? 0.0,
                 });
             }
             return results;

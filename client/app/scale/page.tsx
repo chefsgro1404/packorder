@@ -1375,9 +1375,10 @@ export default function ScalePage() {
         const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId)}`);
         if (invRes.ok) {
           const invData = await invRes.json();
-          const { inventoryItemId, locationId } = invData.data ?? {};
+          const { inventoryItemId, locationId: rawLocationId } = invData.data ?? {};
+          const locationId = rawLocationId || 'gid://shopify/Location/82125062435';
           console.log('[scale] inventory lookup:', { inventoryItemId, locationId, qtyDelta });
-          if (inventoryItemId && locationId) {
+          if (inventoryItemId) {
             // Store pending — user must confirm before Shopify is touched
             setPendingInventoryAdjust({ delta: -qtyDelta, inventoryItemId, locationId });
           }
@@ -1423,12 +1424,37 @@ export default function ScalePage() {
 
   const handleTransformationSelect = useCallback((opt: TransformationOption) => {
     if (!currentItem) return;
+
+    const DEFAULT_LOCATION = 'gid://shopify/Location/82125062435';
+    const locId = opt.locationId || DEFAULT_LOCATION;
+
+    // Build an inventory mapping override from the child option's metafield data.
+    // The parent's inventoryItemId, isWeighted, and weightPerUnit all come from
+    // the child variant's metafield (returned by the transformation-options endpoint).
+    // We must capture this now — once currentItem.variantId switches to the child,
+    // the inventory-mapping effect would re-fetch for the child (which has no parent
+    // metafield) and overwrite inventoryMapping with { found: false }.
+    const override: InventoryMappingInfo = {
+      found: true,
+      isWeighted: opt.isWeighted ?? false,
+      weightPerUnit: opt.weightPerUnit ?? 0,
+      parentInventoryId: opt.parentInventoryItemId || '',
+      parentProductHandle: '',
+      parentProductTitle: currentItem.productTitle,
+      parentLocationId: locId,
+      childInventoryItemId: opt.inventoryItemId || '',
+      parentUnits: opt.parentUnits ?? 1,
+      childUnits: opt.childUnits ?? 1,
+    };
+
+    skipNextInventoryFetch.current = true;
+    setInventoryMappingOverride(override);
+    setInventoryMapping(override);
     setCurrentItem({
       ...currentItem,
       variantId: opt.variantId,
       variantTitle: opt.title !== 'Default Title' ? opt.title : null,
     });
-    setInventoryMappingOverride(null); // ratio comes from child metafield, not override
     setTransformationOptions(null);
     resetPrinted();
   }, [currentItem, resetPrinted]);
@@ -1459,7 +1485,7 @@ export default function ScalePage() {
       parentInventoryId:    parentData?.data?.inventoryItemId ?? '',
       parentProductHandle:  '',
       parentProductTitle:   currentItem.productTitle,
-      parentLocationId:     parentData?.data?.locationId ?? '',
+      parentLocationId:     parentData?.data?.locationId || 'gid://shopify/Location/82125062435',
       childInventoryItemId: childData?.data?.inventoryItemId || childVariant.inventoryItemId || '',
       parentUnits,
       childUnits,

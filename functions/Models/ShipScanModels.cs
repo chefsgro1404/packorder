@@ -401,6 +401,8 @@ public class ProductVariantEntity : ITableEntity
     public string Tags { get; set; } = "[]";       // JSON-encoded string array
     public string Collections { get; set; } = "[]"; // JSON-encoded string array of collection titles
     public string WeightRanges { get; set; } = "[]"; // JSON-encoded WeightRangeRule[] — per-product, same on all variants
+    public string? Adjustments { get; set; }          // custom.adjustments metafield JSON (null if absent)
+    public string? InventoryItemId { get; set; }      // gid://shopify/InventoryItem/xxx — for transformation child lookups
     public string? ImageUrl { get; set; }
     public string Price { get; set; } = "0.00";
     public string Status { get; set; } = "ACTIVE"; // ACTIVE | DRAFT | ARCHIVED
@@ -1023,12 +1025,15 @@ public class FailPrintJobRequest
 
 public class TransformationOption
 {
-    [JsonProperty("variantId")]       public string VariantId { get; set; } = "";
-    [JsonProperty("title")]           public string Title { get; set; } = "";
-    [JsonProperty("inventoryItemId")] public string InventoryItemId { get; set; } = "";
-    [JsonProperty("locationId")]      public string LocationId { get; set; } = "";
-    [JsonProperty("parentUnits")]     public int ParentUnits { get; set; } = 1;
-    [JsonProperty("childUnits")]      public int ChildUnits { get; set; } = 1;
+    [JsonProperty("variantId")]             public string VariantId { get; set; } = "";
+    [JsonProperty("title")]                 public string Title { get; set; } = "";
+    [JsonProperty("inventoryItemId")]       public string InventoryItemId { get; set; } = "";
+    [JsonProperty("parentInventoryItemId")] public string ParentInventoryItemId { get; set; } = "";
+    [JsonProperty("locationId")]            public string LocationId { get; set; } = "";
+    [JsonProperty("parentUnits")]           public int ParentUnits { get; set; } = 1;
+    [JsonProperty("childUnits")]            public int ChildUnits { get; set; } = 1;
+    [JsonProperty("isWeighted")]            public bool IsWeighted { get; set; } = false;
+    [JsonProperty("weightPerUnit")]         public double WeightPerUnit { get; set; } = 0.0;
 }
 
 // ─── Bulk Print Sessions ──────────────────────────────────────────────────────

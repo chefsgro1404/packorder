@@ -247,6 +247,33 @@ public class TableStorageService
         return all.FirstOrDefault(e => e.RowKey == rk);
     }
 
+    // Returns all synced variants whose custom.adjustments.parent_inventory_id matches.
+    // Handles both GID and numeric forms of the parent ID.
+    // Relies on synced Adjustments field — returns empty if sync hasn't run since the field was added.
+    public async Task<List<ProductVariantEntity>> GetVariantsByParentInventoryIdAsync(string parentInventoryItemId)
+    {
+        var target = parentInventoryItemId.StartsWith("gid://")
+            ? parentInventoryItemId
+            : $"gid://shopify/InventoryItem/{parentInventoryItemId}";
+
+        var all = await GetAllProductVariantsAsync();
+        var results = new List<ProductVariantEntity>();
+        foreach (var v in all)
+        {
+            if (string.IsNullOrEmpty(v.Adjustments)) continue;
+            try
+            {
+                var adj = Newtonsoft.Json.Linq.JObject.Parse(v.Adjustments);
+                var pid = adj["parent_inventory_id"]?.ToString() ?? "";
+                var normalizedPid = pid.StartsWith("gid://") ? pid : $"gid://shopify/InventoryItem/{pid}";
+                if (normalizedPid == target)
+                    results.Add(v);
+            }
+            catch { }
+        }
+        return results;
+    }
+
     public async Task<List<ProductVariantEntity>> GetProductVariantsByProductIdAsync(string productId)
     {
         var pk = StripGid(productId);

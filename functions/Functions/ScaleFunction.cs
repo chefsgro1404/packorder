@@ -691,7 +691,45 @@ public class ScaleFunction
             if (string.IsNullOrWhiteSpace(variantId))
                 return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
 
-            var options = await _shopify.GetChildTransformationVariantsAsync(variantId);
+            // Primary: query Azure for synced children across ALL products (cross-product support).
+            // These are populated during sync and handle both product-level and variant-level metafields.
+            var (parentInventoryItemId, _) = await _shopify.GetVariantInventoryAsync(variantId);
+            var azureOptions = new List<TransformationOption>();
+            if (!string.IsNullOrEmpty(parentInventoryItemId))
+            {
+                var azureVariants = await _tableStorage.GetVariantsByParentInventoryIdAsync(parentInventoryItemId);
+                foreach (var av in azureVariants)
+                {
+                    if (string.IsNullOrEmpty(av.Adjustments) || string.IsNullOrEmpty(av.InventoryItemId)) continue;
+                    try
+                    {
+                        var adj = Newtonsoft.Json.Linq.JObject.Parse(av.Adjustments);
+                        azureOptions.Add(new TransformationOption
+                        {
+                            VariantId             = av.VariantId,
+                            Title                 = av.VariantTitle,
+                            InventoryItemId       = av.InventoryItemId,
+                            ParentInventoryItemId = parentInventoryItemId,
+                            LocationId            = adj["parent_location_id"]?.ToString() ?? "",
+                            ParentUnits           = adj["parent_units"]?.ToObject<int>() ?? 1,
+                            ChildUnits            = adj["child_units"]?.ToObject<int>() ?? 1,
+                            IsWeighted            = adj["is_weighted"]?.ToObject<bool>() ?? false,
+                            WeightPerUnit         = adj["weight_per_unit"]?.ToObject<double>() ?? 0.0,
+                        });
+                    }
+                    catch { }
+                }
+            }
+
+            // Supplement: real-time Shopify query for same-product children (catches un-synced variants).
+            var shopifyOptions = await _shopify.GetChildTransformationVariantsAsync(variantId);
+
+            // Merge — Shopify real-time data wins for any shared variantId.
+            var merged = azureOptions.ToDictionary(o => o.VariantId);
+            foreach (var opt in shopifyOptions)
+                merged[opt.VariantId] = opt;
+
+            var options = merged.Values.ToList();
 
             return await ResponseHelper.WriteSuccess(req, new
             {
