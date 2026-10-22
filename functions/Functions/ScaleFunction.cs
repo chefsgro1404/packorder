@@ -637,6 +637,51 @@ public class ScaleFunction
         }
     }
 
+    // Looks up a Shopify variant from the synced productVariants table by exact product title.
+    // Used as a fallback when a scanned QR has PLU "N/A" (unmapped product) so the
+    // transformation-options flow can still get a variantId.
+    [Function("ScaleLookupByTitle")]
+    public async Task<HttpResponseData> LookupByTitle(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/lookup-by-title")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = ParseQueryString(req.Url.Query);
+            var title = qs.TryGetValue("title", out var t) ? t?.Trim() : "";
+            if (string.IsNullOrWhiteSpace(title))
+                return await ResponseHelper.WriteError(req, "title is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var all = await _tableStorage.GetAllProductVariantsAsync();
+            var match = all.FirstOrDefault(v =>
+                string.Equals(v.ProductTitle, title, StringComparison.OrdinalIgnoreCase));
+
+            if (match == null)
+                return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found         = true,
+                variantId     = match.VariantId,
+                productTitle  = match.ProductTitle,
+                variantTitle  = match.VariantTitle,
+                inventoryItemId = match.InventoryItemId,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LookupByTitle failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     [Function("ScaleVariantInventory")]
     public async Task<HttpResponseData> VariantInventory(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/variant-inventory")]

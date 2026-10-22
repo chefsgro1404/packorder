@@ -1814,7 +1814,7 @@ export default function ScalePage() {
     const titlePart = parts[1].trim();
     const weightPart = parts.slice(2).find(p => !p.startsWith('SN:')) ?? '';
 
-    const item = await lookupProduct({
+    let item = await lookupProduct({
       itemNumber: plu !== 'N/A' ? plu : '',
       itemName: titlePart,
       itemWeight: weightPart,
@@ -1822,6 +1822,28 @@ export default function ScalePage() {
       rawBuffer: '',
       timestamp: new Date(),
     });
+
+    // When PLU is "N/A" (unmapped product), the PLU lookup returns no variantId.
+    // Do a secondary title-based lookup against the synced variants table so
+    // transformation-options can still fire for unmapped products.
+    if (!item.variantId && titlePart) {
+      try {
+        const titleRes = await fetch(`/api/scale/lookup-by-title?title=${encodeURIComponent(titlePart)}`);
+        if (titleRes.ok) {
+          const titleData = await titleRes.json();
+          if (titleData.data?.found && titleData.data?.variantId) {
+            item = {
+              ...item,
+              variantId: titleData.data.variantId,
+              variantTitle: titleData.data.variantTitle && titleData.data.variantTitle !== 'Default Title'
+                ? titleData.data.variantTitle : null,
+            };
+          }
+        }
+      } catch {
+        // non-fatal — item still loads without variantId
+      }
+    }
 
     setCurrentItem(item);
     setLookupLoading(false);
