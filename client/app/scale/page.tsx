@@ -1509,6 +1509,7 @@ export default function ScalePage() {
     };
 
     skipNextInventoryFetch.current = true;
+    setWasQrScanned(false);  // transformation applied — suppress panel re-appearing for the output product
     setInventoryMappingOverride(override);
     setInventoryMapping(override);
     setCurrentItem({
@@ -1553,6 +1554,7 @@ export default function ScalePage() {
     };
 
     skipNextInventoryFetch.current = true;
+    setWasQrScanned(false);
     setInventoryMappingOverride(override);
     setInventoryMapping(override);
     setCurrentItem({
