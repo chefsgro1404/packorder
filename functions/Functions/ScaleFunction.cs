@@ -474,6 +474,7 @@ public class ScaleFunction
                 VendorName = request.VendorName,
                 LotNo = request.LotNo,
                 ExpiryDate = request.ExpiryDate,
+                VariantId = request.VariantId,
             };
             await _tableStorage.LogPrintedLabelAsync(entityToSave);
 
@@ -678,6 +679,55 @@ public class ScaleFunction
         catch (Exception ex)
         {
             _logger.LogError(ex, "LookupByTitle failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("ScaleLookupBySn")]
+    public async Task<HttpResponseData> LookupBySn(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/lookup-by-sn")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var qs = ParseQueryString(req.Url.Query);
+            var sn = qs.TryGetValue("sn", out var s) ? s?.Trim() : "";
+            if (string.IsNullOrWhiteSpace(sn))
+                return await ResponseHelper.WriteError(req, "sn is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var label = await _tableStorage.GetPrintedLabelBySnAsync(sn);
+            if (label == null)
+                return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+
+            var variantId = label.VariantId;
+
+            // Fall back to title-based lookup for older rows without a stored variantId
+            if (string.IsNullOrEmpty(variantId) && !string.IsNullOrEmpty(label.ProductTitle))
+            {
+                var all = await _tableStorage.GetAllProductVariantsAsync();
+                var match = all.FirstOrDefault(v =>
+                    string.Equals(v.ProductTitle, label.ProductTitle, StringComparison.OrdinalIgnoreCase));
+                variantId = match?.VariantId;
+            }
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found        = true,
+                variantId    = variantId,
+                productTitle = label.ProductTitle,
+                plu          = label.Plu,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LookupBySn failed");
             return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
     }

@@ -770,6 +770,7 @@ public class PrintedLabelEntity : ITableEntity
     public string? VendorName { get; set; }
     public string? LotNo { get; set; }
     public string? ExpiryDate { get; set; }
+    public string? VariantId { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -789,6 +790,7 @@ public class LogPrintedLabelRequest
     [JsonProperty("vendorName")]   public string? VendorName { get; set; }
     [JsonProperty("lotNo")]        public string? LotNo { get; set; }
     [JsonProperty("expiryDate")]   public string? ExpiryDate { get; set; }
+    [JsonProperty("variantId")]    public string? VariantId { get; set; }
 }
 
 public class SnCounterEntity : ITableEntity

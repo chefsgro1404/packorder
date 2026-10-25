@@ -30,6 +30,7 @@ import {
   Droplets,
   Zap,
   QrCode,
+  ArrowRight,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -843,50 +844,96 @@ function BulkPrintResultPanel({
   );
 }
 
-// ─── Transformation options panel ─────────────────────────────────────────────
+// ─── Transformation panel (two-panel FROM → TO) ────────────────────────────────
 
 function TransformationPanel({
   options,
+  currentItem,
   onSelect,
   onManualTransform,
 }: {
   options: TransformationOption[];
+  currentItem: CurrentItem;
   onSelect: (opt: TransformationOption) => void;
   onManualTransform?: () => void;
 }) {
+  const [toIdx, setToIdx] = useState(0);
+  const toOpt = options.length > 0 ? options[Math.min(toIdx, options.length - 1)] : null;
+
   return (
-    <div className="flex flex-col gap-2 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-2.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Droplets className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-          <p className="text-xs font-semibold text-violet-300">
-            {options.length > 0 ? 'Transformation Options' : 'No auto-detected transforms'}
-          </p>
-        </div>
-        {onManualTransform && (
-          <button
-            onClick={onManualTransform}
-            className="text-[11px] text-violet-400 hover:text-violet-200 px-2 py-1 rounded-lg hover:bg-violet-900/40 transition-colors"
-          >
-            Manual →
-          </button>
-        )}
+    <div className="flex flex-col gap-2.5 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-3">
+      <div className="flex items-center gap-1.5">
+        <Droplets className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
+        <p className="text-xs font-semibold text-violet-300">Transformation Ready</p>
       </div>
-      {options.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {options.map(opt => (
-            <button
-              key={opt.variantId}
-              onClick={() => onSelect(opt)}
-              className="flex flex-col text-left text-xs bg-violet-900/50 hover:bg-violet-800/60 border border-violet-800/60 text-violet-200 rounded-lg px-2.5 py-1.5 transition-colors"
-            >
-              <span className="font-semibold">→ {opt.title}</span>
-              {(opt.parentUnits !== undefined && opt.childUnits !== undefined) && (opt.parentUnits !== 1 || opt.childUnits !== 1) && (
-                <span className="text-violet-400/70 text-[10px] mt-0.5">{opt.parentUnits}:{opt.childUnits} ratio</span>
-              )}
-            </button>
-          ))}
+
+      <div className="flex items-stretch gap-2">
+        {/* FROM panel */}
+        <div className="flex-1 bg-violet-900/20 rounded-lg px-2.5 py-2 min-w-0">
+          <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Source</p>
+          <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
+          {currentItem.plu && currentItem.plu !== 'N/A' && (
+            <p className="text-[10px] text-violet-400/50 mt-0.5">{currentItem.plu}</p>
+          )}
         </div>
+
+        <div className="flex items-center text-violet-500 flex-shrink-0">
+          <ArrowRight className="w-4 h-4" />
+        </div>
+
+        {/* TO panel */}
+        <div className="flex-1 bg-violet-900/20 rounded-lg px-2.5 py-2 min-w-0">
+          <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Output</p>
+          {toOpt ? (
+            <>
+              {options.length > 1 ? (
+                <select
+                  value={toIdx}
+                  onChange={e => setToIdx(Number(e.target.value))}
+                  className="w-full bg-transparent text-xs font-semibold text-violet-200 outline-none cursor-pointer leading-tight"
+                >
+                  {options.map((opt, i) => (
+                    <option key={opt.variantId} value={i} className="bg-violet-950 text-violet-200">
+                      {opt.title}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{toOpt.title}</p>
+              )}
+              {(toOpt.weightPerUnit ?? 0) > 0 && (
+                <p className="text-[10px] text-violet-400/50 mt-0.5">
+                  {toOpt.weightPerUnit} unit{(toOpt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
+                </p>
+              )}
+            </>
+          ) : (
+            <button
+              onClick={onManualTransform}
+              className="text-xs text-violet-400 hover:text-violet-200 transition-colors leading-tight"
+            >
+              Select product ▾
+            </button>
+          )}
+        </div>
+      </div>
+
+      {toOpt ? (
+        <button
+          onClick={() => onSelect(toOpt)}
+          className="w-full text-xs font-semibold bg-violet-700/50 hover:bg-violet-600/60 active:bg-violet-600/80 text-violet-200 rounded-lg py-2 transition-colors"
+        >
+          Apply →
+        </button>
+      ) : null}
+
+      {options.length > 0 && onManualTransform && (
+        <button
+          onClick={onManualTransform}
+          className="w-full text-[11px] text-violet-500 hover:text-violet-300 transition-colors"
+        >
+          Use different product
+        </button>
       )}
     </div>
   );
@@ -1128,6 +1175,7 @@ export default function ScalePage() {
           printedAtEst,
           qrPayload,
           sn,
+          variantId: item.variantId ?? null,
           poId: item.poId ?? null,
           poLineItemId: item.poLineItemId ?? null,
           vendorName: item.vendorName ?? null,
@@ -1166,14 +1214,12 @@ export default function ScalePage() {
         if (rawWeight > 0 && mapping.weightPerUnit > 0) {
           const consumed = Math.round(rawWeight / mapping.weightPerUnit);
           parentDelta = -consumed;
-          childDelta = consumed * (mapping.childUnits ?? 1);
+          childDelta = consumed;
         }
       } else {
-        // Count-based: use configured ratio (default 1:1)
-        const pUnits = mapping.parentUnits ?? 1;
-        const cUnits = mapping.childUnits ?? 1;
-        parentDelta = -pUnits;
-        childDelta = cUnits;
+        // Count-based: per label, source decreases by weightPerUnit, output increases by 1
+        parentDelta = -(mapping.weightPerUnit || mapping.parentUnits || 1);
+        childDelta = 1;
       }
 
       if (parentDelta !== 0) {
@@ -1760,19 +1806,6 @@ export default function ScalePage() {
     }
 
     printVerbatim({ productTitle: record.productTitle, variantTitle: null, qrPayload: newQrPayload, itemWeight: record.itemWeight, printedAtEst, sn: reprintSn });
-    await logPrintedLabel(
-      {
-        itemNumber: record.itemNumber,
-        itemName: record.productTitle,
-        itemWeight: record.itemWeight,
-        plu: record.plu,
-        productTitle: record.productTitle,
-        found: true,
-      },
-      newQrPayload,
-      printedAtEst,
-      reprintSn
-    );
   };
 
   const handleHistoryReprint = useCallback((items: import('@/components/BulkSessionHistoryPanel').ReprintItem[]) => {
@@ -1813,6 +1846,8 @@ export default function ScalePage() {
     const plu = parts[0].trim();
     const titlePart = parts[1].trim();
     const weightPart = parts.slice(2).find(p => !p.startsWith('SN:')) ?? '';
+    const snPart = parts.find(p => p.startsWith('SN:'));
+    const sn = snPart ? snPart.replace('SN:', '').trim() : null;
 
     let item = await lookupProduct({
       itemNumber: plu !== 'N/A' ? plu : '',
@@ -1823,9 +1858,23 @@ export default function ScalePage() {
       timestamp: new Date(),
     });
 
-    // When PLU is "N/A" (unmapped product), the PLU lookup returns no variantId.
-    // Do a secondary title-based lookup against the synced variants table so
-    // transformation-options can still fire for unmapped products.
+    // Primary: SN-based lookup — resolves variantId from the original print log entry.
+    // This works for both mapped and unmapped products, including PLU "N/A" items.
+    if (!item.variantId && sn) {
+      try {
+        const snRes = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(sn)}`);
+        if (snRes.ok) {
+          const snData = await snRes.json();
+          if (snData.data?.found && snData.data?.variantId) {
+            item = { ...item, variantId: snData.data.variantId };
+          }
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
+    // Tertiary fallback: title-based lookup for unmapped products without a logged SN variantId
     if (!item.variantId && titlePart) {
       try {
         const titleRes = await fetch(`/api/scale/lookup-by-title?title=${encodeURIComponent(titlePart)}`);
@@ -2251,6 +2300,7 @@ export default function ScalePage() {
                   {(transformationOptions !== null) && (
                     <TransformationPanel
                       options={transformationOptions}
+                      currentItem={currentItem}
                       onSelect={handleTransformationSelect}
                       onManualTransform={() => setManualTransformModal(true)}
                     />
