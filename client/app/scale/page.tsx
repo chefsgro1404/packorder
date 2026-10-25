@@ -1449,7 +1449,7 @@ export default function ScalePage() {
         console.log('[bulk] variant-inventory status:', invRes.status);
         if (invRes.ok) {
           const invData = await invRes.json();
-          const { inventoryItemId, locationId: rawLocationId } = invData.data ?? {};
+          const { inventoryItemId, locationId: rawLocationId } = invData ?? {};
           const locationId = rawLocationId || 'gid://shopify/Location/82125062435';
           console.log('[bulk] inventory lookup result:', { inventoryItemId: inventoryItemId || 'EMPTY', locationId, qtyDelta });
           if (inventoryItemId) {
@@ -1565,11 +1565,11 @@ export default function ScalePage() {
       found: true,
       isWeighted: false,
       weightPerUnit: 0,
-      parentInventoryId:    parentData?.data?.inventoryItemId ?? '',
+      parentInventoryId:    parentData?.inventoryItemId ?? '',
       parentProductHandle:  '',
       parentProductTitle:   currentItem.productTitle,
-      parentLocationId:     parentData?.data?.locationId || 'gid://shopify/Location/82125062435',
-      childInventoryItemId: childData?.data?.inventoryItemId || childVariant.inventoryItemId || '',
+      parentLocationId:     parentData?.locationId || 'gid://shopify/Location/82125062435',
+      childInventoryItemId: childData?.inventoryItemId || childVariant.inventoryItemId || '',
       parentUnits,
       childUnits,
     };
@@ -1703,7 +1703,7 @@ export default function ScalePage() {
           const rulesRes = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(numericId)}`);
           if (rulesRes.ok) {
             const rulesData = await rulesRes.json();
-            const rules: WeightRangeRule[] = Array.isArray(rulesData.data?.rules) ? rulesData.data.rules : [];
+            const rules: WeightRangeRule[] = Array.isArray(rulesData?.rules) ? rulesData.rules : [];
             if (rules.length > 0) {
               setWeightRanges(rules);
               // Don't auto-print — show confirmation UI
@@ -1906,9 +1906,9 @@ export default function ScalePage() {
         console.log('[qr] SN lookup status:', snRes.status);
         if (snRes.ok) {
           const snData = await snRes.json();
-          console.log('[qr] SN lookup result:', snData.data);
-          if (snData.data?.found && snData.data?.variantId) {
-            item = { ...item, variantId: snData.data.variantId };
+          console.log('[qr] SN lookup result:', snData);
+          if (snData?.found && snData?.variantId) {
+            item = { ...item, variantId: snData.variantId };
             console.log('[qr] variantId resolved via SN:', item.variantId);
           } else {
             console.warn('[qr] SN lookup found=false or no variantId — sn:', sn);
@@ -1930,13 +1930,13 @@ export default function ScalePage() {
         const titleRes = await fetch(`/api/scale/lookup-by-title?title=${encodeURIComponent(titlePart)}`);
         if (titleRes.ok) {
           const titleData = await titleRes.json();
-          console.log('[qr] title lookup result:', titleData.data);
-          if (titleData.data?.found && titleData.data?.variantId) {
+          console.log('[qr] title lookup result:', titleData);
+          if (titleData?.found && titleData?.variantId) {
             item = {
               ...item,
-              variantId: titleData.data.variantId,
-              variantTitle: titleData.data.variantTitle && titleData.data.variantTitle !== 'Default Title'
-                ? titleData.data.variantTitle : null,
+              variantId: titleData.variantId,
+              variantTitle: titleData.variantTitle && titleData.variantTitle !== 'Default Title'
+                ? titleData.variantTitle : null,
             };
             console.log('[qr] variantId resolved via title:', item.variantId);
           }
