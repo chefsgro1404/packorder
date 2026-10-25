@@ -908,12 +908,11 @@ function TransformationPanel({
               )}
             </>
           ) : (
-            <button
-              onClick={onManualTransform}
-              className="text-xs text-violet-400 hover:text-violet-200 transition-colors leading-tight"
-            >
-              Select product ▾
-            </button>
+            // No configured children — default to same product (A→A), allow searching
+            <>
+              <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
+              <p className="text-[10px] text-violet-400/50 mt-0.5">same product</p>
+            </>
           )}
         </div>
       </div>
@@ -925,7 +924,15 @@ function TransformationPanel({
         >
           Apply →
         </button>
-      ) : null}
+      ) : (
+        // A→A: open manual search so staff can confirm ratio or switch product
+        <button
+          onClick={onManualTransform}
+          className="w-full text-xs font-semibold bg-violet-700/50 hover:bg-violet-600/60 active:bg-violet-600/80 text-violet-200 rounded-lg py-2 transition-colors"
+        >
+          Set ratio / change product →
+        </button>
+      )}
 
       {options.length > 0 && onManualTransform && (
         <button
@@ -972,6 +979,7 @@ export default function ScalePage() {
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState<string | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
+  const [wasQrScanned, setWasQrScanned] = useState(false);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
@@ -1072,7 +1080,9 @@ export default function ScalePage() {
     return () => { cancelled = true; };
   }, [currentItem?.variantId]);
 
-  // Fetch transformation options (parent → children) when variant changes
+  // Fetch transformation options (source → output) when variant changes.
+  // After a QR scan, always show the panel (even with empty options) so staff
+  // can search for an output product manually, including A→A transformations.
   useEffect(() => {
     const variantId = currentItem?.variantId;
     if (!variantId) { setTransformationOptions(null); return; }
@@ -1084,14 +1094,19 @@ export default function ScalePage() {
         const data = await res.json();
         if (!cancelled) {
           const opts = data?.options;
-          setTransformationOptions(Array.isArray(opts) && opts.length > 0 ? opts : null);
+          if (Array.isArray(opts) && opts.length > 0) {
+            setTransformationOptions(opts);
+          } else {
+            // Keep panel visible after a QR scan even with no configured children
+            setTransformationOptions(wasQrScanned ? [] : null);
+          }
         }
       } catch {
-        if (!cancelled) setTransformationOptions(null);
+        if (!cancelled) setTransformationOptions(wasQrScanned ? [] : null);
       }
     })();
     return () => { cancelled = true; };
-  }, [currentItem?.variantId]);
+  }, [currentItem?.variantId, wasQrScanned]);
 
   // Reset auto-detect whenever the loaded variant changes (new product, transformation, clear)
   useEffect(() => {
@@ -1894,6 +1909,7 @@ export default function ScalePage() {
       }
     }
 
+    setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
   }, [lookupProduct]);
@@ -1918,6 +1934,7 @@ export default function ScalePage() {
     setManualTransformModal(false);
     setWeightRanges([]);
     setAutoDetect(null);
+    setWasQrScanned(false);
     resetPrinted();
   };
 

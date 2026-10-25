@@ -799,10 +799,12 @@ public class ScaleFunction
                     try
                     {
                         var adj = Newtonsoft.Json.Linq.JObject.Parse(av.Adjustments);
+                        var displayTitle = string.IsNullOrWhiteSpace(av.VariantTitle) || av.VariantTitle == "Default Title"
+                            ? av.ProductTitle : av.VariantTitle;
                         azureOptions.Add(new TransformationOption
                         {
                             VariantId             = av.VariantId,
-                            Title                 = av.VariantTitle,
+                            Title                 = displayTitle,
                             InventoryItemId       = av.InventoryItemId,
                             ParentInventoryItemId = parentInventoryItemId,
                             LocationId            = adj["parent_location_id"]?.ToString() ?? "",

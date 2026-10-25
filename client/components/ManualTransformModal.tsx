@@ -73,9 +73,9 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-slate-100">Manual Transformation</p>
+            <p className="text-sm font-bold text-slate-100">Select Output Product</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              From: <span className="text-violet-300">{parentProductTitle}</span>
+              Source: <span className="text-violet-300">{parentProductTitle}</span>
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors">
@@ -146,11 +146,11 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
         {/* Ratio */}
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-            Conversion ratio
+            Units per label
           </label>
           <div className="flex items-center gap-2">
             <div className="flex flex-col gap-1 flex-1">
-              <p className="text-[10px] text-slate-500">Parent units consumed</p>
+              <p className="text-[10px] text-slate-500">Source units deducted</p>
               <input
                 type="number"
                 min={1}
@@ -161,7 +161,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
             </div>
             <ArrowRight className="w-4 h-4 text-slate-600 flex-shrink-0 mt-4" />
             <div className="flex flex-col gap-1 flex-1">
-              <p className="text-[10px] text-slate-500">Child units created</p>
+              <p className="text-[10px] text-slate-500">Output units added</p>
               <input
                 type="number"
                 min={1}
@@ -172,7 +172,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
             </div>
           </div>
           <p className="text-[11px] text-slate-600">
-            e.g. 1 → 2 means 1 parent unit yields 2 child units (splitting)
+            e.g. 3 → 1: each label printed deducts 3 from source, adds 1 to output
           </p>
         </div>
 
