@@ -1020,11 +1020,7 @@ export default function ScalePage() {
         return fallback;
       }
       const data = await res.json();
-      if (!data.found) {
-        console.warn('[scale] no product mapping for item number', reading.itemNumber, '— printing with placeholder PLU');
-        return fallback;
-      }
-      console.log('[scale] product lookup hit:', reading.itemNumber, '->', data.plu, data.productTitle);
+      if (!data.found) return fallback;
       return {
         ...fallback,
         plu: data.plu,
@@ -1071,7 +1067,6 @@ export default function ScalePage() {
   // can search for an output product manually, including A→A transformations.
   useEffect(() => {
     const variantId = currentItem?.variantId;
-    console.log('[transform] effect fired — variantId:', variantId ?? 'NULL', '| wasQrScanned:', wasQrScanned);
     if (!variantId) { setTransformationOptions(null); return; }
     let cancelled = false;
     (async () => {
@@ -1079,7 +1074,6 @@ export default function ScalePage() {
         const res = await fetch(`/api/scale/transformation-options?variantId=${encodeURIComponent(variantId)}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
-        console.log('[transform] api response — opts:', data?.options, '| wasQrScanned (closure):', wasQrScanned);
         if (!cancelled) {
           const opts = data?.options;
           if (Array.isArray(opts) && opts.length > 0) {
@@ -1332,8 +1326,6 @@ export default function ScalePage() {
       return;
     }
 
-    console.log('[po] item selected — variantId:', resolvedItem.variantId ?? 'NULL', '| ordered:', li.quantityOrdered, '| title:', resolvedItem.productTitle);
-
     // Fetch inventoryItemId now so the modal can show the adjustment checkbox before printing
     let inventoryItemId: string | undefined;
     let locationId: string | undefined;
@@ -1451,7 +1443,6 @@ export default function ScalePage() {
         });
         if (adjRes.ok) {
           setBulkInventoryAdjusted(-qtyDelta);
-          console.log('[bulk] inventory adjusted:', -qtyDelta);
         } else {
           console.error('[bulk] inventory adjust failed:', adjRes.status);
         }
@@ -1819,7 +1810,6 @@ export default function ScalePage() {
   };
 
   const handleReprint = async (record: PrintedLabel) => {
-    console.log('[scale] reprinting:', record.productTitle, record.printedAtEst);
     const baseSn = record.sn ?? generateSn();
     const reprintSn = buildReprintSn(baseSn);
     const printedAtEst = formatEst(new Date());
@@ -1894,41 +1884,28 @@ export default function ScalePage() {
       timestamp: new Date(),
     });
 
-    console.log('[qr] parsed — plu:', plu, '| title:', titlePart, '| sn:', sn, '| after PLU lookup variantId:', item.variantId ?? 'NULL');
-
     // Primary: SN-based lookup — resolves variantId from the original print log entry.
     // This works for both mapped and unmapped products, including PLU "N/A" items.
     if (!item.variantId && sn) {
       try {
         const snRes = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(sn)}`);
-        console.log('[qr] SN lookup status:', snRes.status);
         if (snRes.ok) {
           const snData = await snRes.json();
-          console.log('[qr] SN lookup result:', snData);
           if (snData?.found && snData?.variantId) {
             item = { ...item, variantId: snData.variantId };
-            console.log('[qr] variantId resolved via SN:', item.variantId);
-          } else {
-            console.warn('[qr] SN lookup found=false or no variantId — sn:', sn);
           }
         }
       } catch (err) {
         console.error('[qr] SN lookup error:', err);
       }
-    } else if (item.variantId) {
-      console.log('[qr] variantId already set from PLU lookup:', item.variantId);
-    } else {
-      console.warn('[qr] no SN in QR payload — skipping SN lookup');
     }
 
     // Tertiary fallback: title-based lookup for unmapped products without a logged SN variantId
     if (!item.variantId && titlePart) {
-      console.log('[qr] trying title fallback for:', titlePart);
       try {
         const titleRes = await fetch(`/api/scale/lookup-by-title?title=${encodeURIComponent(titlePart)}`);
         if (titleRes.ok) {
           const titleData = await titleRes.json();
-          console.log('[qr] title lookup result:', titleData);
           if (titleData?.found && titleData?.variantId) {
             item = {
               ...item,
@@ -1936,15 +1913,12 @@ export default function ScalePage() {
               variantTitle: titleData.variantTitle && titleData.variantTitle !== 'Default Title'
                 ? titleData.variantTitle : null,
             };
-            console.log('[qr] variantId resolved via title:', item.variantId);
           }
         }
       } catch {
         // non-fatal — item still loads without variantId
       }
     }
-
-    console.log('[qr] FINAL — variantId:', item.variantId ?? 'NULL', '| title:', item.productTitle);
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
