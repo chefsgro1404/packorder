@@ -1091,6 +1091,7 @@ export default function ScalePage() {
   // can search for an output product manually, including A→A transformations.
   useEffect(() => {
     const variantId = currentItem?.variantId;
+    console.log('[transform] effect fired — variantId:', variantId ?? 'NULL', '| wasQrScanned:', wasQrScanned);
     if (!variantId) { setTransformationOptions(null); return; }
     let cancelled = false;
     (async () => {
@@ -1098,6 +1099,7 @@ export default function ScalePage() {
         const res = await fetch(`/api/scale/transformation-options?variantId=${encodeURIComponent(variantId)}`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
+        console.log('[transform] api response — opts:', data?.options, '| wasQrScanned (closure):', wasQrScanned);
         if (!cancelled) {
           const opts = data?.options;
           if (Array.isArray(opts) && opts.length > 0) {
@@ -1351,6 +1353,7 @@ export default function ScalePage() {
       return;
     }
 
+    console.log('[po] item selected — variantId:', resolvedItem.variantId ?? 'NULL', '| ordered:', li.quantityOrdered, '| title:', resolvedItem.productTitle);
     setBulkPrintModal({ item: resolvedItem, po, li, isLotReceiving });
     setLookupLoading(false);
   }, []);
@@ -1438,22 +1441,33 @@ export default function ScalePage() {
     // Shopify inventory adjustment: prompt the user when received ≠ ordered.
     // count-based only — lot/weight products have no unit qty to correct.
     const qtyDelta = li.quantityOrdered - printedCount; // positive = short, negative = over
+    console.log('[bulk] post-print — variantId:', item.variantId ?? 'NULL', '| ordered:', li.quantityOrdered, '| printed:', printedCount, '| delta:', qtyDelta, '| isLot:', lotTotalWeightLbs !== undefined);
     if (qtyDelta !== 0 && item.variantId && lotTotalWeightLbs === undefined) {
       try {
+        console.log('[bulk] fetching variant-inventory for adjustment check...');
         const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId)}`);
+        console.log('[bulk] variant-inventory status:', invRes.status);
         if (invRes.ok) {
           const invData = await invRes.json();
           const { inventoryItemId, locationId: rawLocationId } = invData.data ?? {};
           const locationId = rawLocationId || 'gid://shopify/Location/82125062435';
-          console.log('[scale] inventory lookup:', { inventoryItemId, locationId, qtyDelta });
+          console.log('[bulk] inventory lookup result:', { inventoryItemId: inventoryItemId || 'EMPTY', locationId, qtyDelta });
           if (inventoryItemId) {
-            // Store pending — user must confirm before Shopify is touched
             setPendingInventoryAdjust({ delta: -qtyDelta, inventoryItemId, locationId });
+            console.log('[bulk] pendingInventoryAdjust set — delta:', -qtyDelta);
+          } else {
+            console.warn('[bulk] inventoryItemId empty — checkbox will NOT show');
           }
+        } else {
+          console.error('[bulk] variant-inventory call failed:', invRes.status);
         }
       } catch (err) {
         console.error('[scale] PO inventory lookup failed:', err);
       }
+    } else if (qtyDelta === 0) {
+      console.log('[bulk] qty matches ordered — no adjustment needed');
+    } else if (!item.variantId) {
+      console.warn('[bulk] no variantId on item — cannot check inventory');
     }
 
     // Save bulk session history
@@ -1882,28 +1896,41 @@ export default function ScalePage() {
       timestamp: new Date(),
     });
 
+    console.log('[qr] parsed — plu:', plu, '| title:', titlePart, '| sn:', sn, '| after PLU lookup variantId:', item.variantId ?? 'NULL');
+
     // Primary: SN-based lookup — resolves variantId from the original print log entry.
     // This works for both mapped and unmapped products, including PLU "N/A" items.
     if (!item.variantId && sn) {
       try {
         const snRes = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(sn)}`);
+        console.log('[qr] SN lookup status:', snRes.status);
         if (snRes.ok) {
           const snData = await snRes.json();
+          console.log('[qr] SN lookup result:', snData.data);
           if (snData.data?.found && snData.data?.variantId) {
             item = { ...item, variantId: snData.data.variantId };
+            console.log('[qr] variantId resolved via SN:', item.variantId);
+          } else {
+            console.warn('[qr] SN lookup found=false or no variantId — sn:', sn);
           }
         }
-      } catch {
-        // non-fatal
+      } catch (err) {
+        console.error('[qr] SN lookup error:', err);
       }
+    } else if (item.variantId) {
+      console.log('[qr] variantId already set from PLU lookup:', item.variantId);
+    } else {
+      console.warn('[qr] no SN in QR payload — skipping SN lookup');
     }
 
     // Tertiary fallback: title-based lookup for unmapped products without a logged SN variantId
     if (!item.variantId && titlePart) {
+      console.log('[qr] trying title fallback for:', titlePart);
       try {
         const titleRes = await fetch(`/api/scale/lookup-by-title?title=${encodeURIComponent(titlePart)}`);
         if (titleRes.ok) {
           const titleData = await titleRes.json();
+          console.log('[qr] title lookup result:', titleData.data);
           if (titleData.data?.found && titleData.data?.variantId) {
             item = {
               ...item,
@@ -1911,6 +1938,7 @@ export default function ScalePage() {
               variantTitle: titleData.data.variantTitle && titleData.data.variantTitle !== 'Default Title'
                 ? titleData.data.variantTitle : null,
             };
+            console.log('[qr] variantId resolved via title:', item.variantId);
           }
         }
       } catch {
@@ -1918,6 +1946,7 @@ export default function ScalePage() {
       }
     }
 
+    console.log('[qr] FINAL — variantId:', item.variantId ?? 'NULL', '| title:', item.productTitle);
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
