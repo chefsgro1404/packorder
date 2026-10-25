@@ -742,23 +742,18 @@ function BulkPrintResultPanel({
   poQuantityOrdered,
   inventoryAdjusted,
   pendingPrintCount,
-  pendingAdjustDelta,
   onReprint,
   onPrintAll,
-  onConfirmAdjust,
   onDismiss,
 }: {
   results: BulkPrintLabelResult[];
   poQuantityOrdered: number;
   inventoryAdjusted: number | null;
   pendingPrintCount: number;
-  pendingAdjustDelta: number | null;
   onReprint: (r: BulkPrintLabelResult) => void;
   onPrintAll: () => void;
-  onConfirmAdjust: () => void;
   onDismiss: () => void;
 }) {
-  const [applyAdjust, setApplyAdjust] = useState(false);
   const printed = results.filter(r => r.status === 'printed').length;
   const failed = results.filter(r => r.status === 'failed').length;
 
@@ -777,7 +772,7 @@ function BulkPrintResultPanel({
           </span>
         </div>
         <button
-          onClick={() => { if (applyAdjust && pendingAdjustDelta !== null) onConfirmAdjust(); onDismiss(); }}
+          onClick={onDismiss}
           className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
@@ -791,23 +786,6 @@ function BulkPrintResultPanel({
           <Printer className="w-4 h-4" />
           Print {pendingPrintCount} label{pendingPrintCount !== 1 ? 's' : ''}
         </button>
-      )}
-      {pendingAdjustDelta !== null && (
-        <label className="flex items-center gap-2.5 cursor-pointer select-none bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-2">
-          <input
-            type="checkbox"
-            checked={applyAdjust}
-            onChange={e => setApplyAdjust(e.target.checked)}
-            className="w-4 h-4 rounded accent-violet-500 flex-shrink-0 cursor-pointer"
-          />
-          <span className="text-xs text-slate-300">
-            Adjust Shopify inventory by{' '}
-            <span className={pendingAdjustDelta < 0 ? 'text-amber-300' : 'text-emerald-300'}>
-              {pendingAdjustDelta > 0 ? `+${pendingAdjustDelta}` : pendingAdjustDelta}
-            </span>
-            {' '}({Math.abs(pendingAdjustDelta)}-unit {pendingAdjustDelta < 0 ? 'shortfall' : 'overage'})
-          </span>
-        </label>
       )}
       {inventoryAdjusted !== null && inventoryAdjusted < 0 && (
         <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-1.5">
@@ -977,11 +955,11 @@ export default function ScalePage() {
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>([]);
   const [autoDetect, setAutoDetect] = useState<{ matched: WeightRangeRule | null; noMatch: boolean; weightLbs: number } | null>(null);
-  const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean } | null>(null);
+  const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
   const [pendingBulkPayloads, setPendingBulkPayloads] = useState<PrintPayload[] | null>(null);
-  const [pendingInventoryAdjust, setPendingInventoryAdjust] = useState<{ delta: number; inventoryItemId: string; locationId: string } | null>(null);
+
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState<string | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
@@ -1297,7 +1275,6 @@ export default function ScalePage() {
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
     setPendingBulkPayloads(null);
-    setPendingInventoryAdjust(null);
     setWeightRanges([]);
     setAutoDetect(null);
 
@@ -1354,17 +1331,33 @@ export default function ScalePage() {
     }
 
     console.log('[po] item selected — variantId:', resolvedItem.variantId ?? 'NULL', '| ordered:', li.quantityOrdered, '| title:', resolvedItem.productTitle);
-    setBulkPrintModal({ item: resolvedItem, po, li, isLotReceiving });
+
+    // Fetch inventoryItemId now so the modal can show the adjustment checkbox before printing
+    let inventoryItemId: string | undefined;
+    let locationId: string | undefined;
+    if (resolvedItem.variantId && !isLotReceiving) {
+      try {
+        const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(resolvedItem.variantId)}`);
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          inventoryItemId = invData?.inventoryItemId || undefined;
+          locationId = invData?.locationId || 'gid://shopify/Location/82125062435';
+        }
+      } catch { /* non-fatal — modal opens without checkbox */ }
+    }
+
+    setBulkPrintModal({ item: resolvedItem, po, li, isLotReceiving, inventoryItemId, locationId });
     setLookupLoading(false);
   }, []);
 
   const handleBulkPrint = useCallback(async (
-    modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem },
+    modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; inventoryItemId?: string; locationId?: string },
     quantity: number,
     weight: string,
     lotNo: string,
     expiryDate: string,
     lotTotalWeightLbs?: number,
+    applyAdjust?: boolean,
   ) => {
     const { item: baseItem, po, li } = modalState;
     const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
@@ -1438,36 +1431,31 @@ export default function ScalePage() {
       }
     }
 
-    // Shopify inventory adjustment: prompt the user when received ≠ ordered.
+    // Shopify inventory adjustment: apply immediately if user opted in from the modal.
     // count-based only — lot/weight products have no unit qty to correct.
     const qtyDelta = li.quantityOrdered - printedCount; // positive = short, negative = over
-    console.log('[bulk] post-print — variantId:', item.variantId ?? 'NULL', '| ordered:', li.quantityOrdered, '| printed:', printedCount, '| delta:', qtyDelta, '| isLot:', lotTotalWeightLbs !== undefined);
-    if (qtyDelta !== 0 && item.variantId && lotTotalWeightLbs === undefined) {
+    const { inventoryItemId: modalInvItemId, locationId: modalLocationId } = modalState;
+    if (applyAdjust && qtyDelta !== 0 && modalInvItemId && lotTotalWeightLbs === undefined) {
       try {
-        console.log('[bulk] fetching variant-inventory for adjustment check...');
-        const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId)}`);
-        console.log('[bulk] variant-inventory status:', invRes.status);
-        if (invRes.ok) {
-          const invData = await invRes.json();
-          const { inventoryItemId, locationId: rawLocationId } = invData ?? {};
-          const locationId = rawLocationId || 'gid://shopify/Location/82125062435';
-          console.log('[bulk] inventory lookup result:', { inventoryItemId: inventoryItemId || 'EMPTY', locationId, qtyDelta });
-          if (inventoryItemId) {
-            setPendingInventoryAdjust({ delta: -qtyDelta, inventoryItemId, locationId });
-            console.log('[bulk] pendingInventoryAdjust set — delta:', -qtyDelta);
-          } else {
-            console.warn('[bulk] inventoryItemId empty — checkbox will NOT show');
-          }
+        const adjRes = await fetch('/api/scale/inventory-adjust', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inventoryItemId: modalInvItemId,
+            locationId: modalLocationId || 'gid://shopify/Location/82125062435',
+            delta: -qtyDelta,
+            reason: 'correction',
+          }),
+        });
+        if (adjRes.ok) {
+          setBulkInventoryAdjusted(-qtyDelta);
+          console.log('[bulk] inventory adjusted:', -qtyDelta);
         } else {
-          console.error('[bulk] variant-inventory call failed:', invRes.status);
+          console.error('[bulk] inventory adjust failed:', adjRes.status);
         }
       } catch (err) {
-        console.error('[scale] PO inventory lookup failed:', err);
+        console.error('[bulk] inventory adjust error:', err);
       }
-    } else if (qtyDelta === 0) {
-      console.log('[bulk] qty matches ordered — no adjustment needed');
-    } else if (!item.variantId) {
-      console.warn('[bulk] no variantId on item — cannot check inventory');
     }
 
     // Save bulk session history
@@ -1966,7 +1954,6 @@ export default function ScalePage() {
     setBulkPrintResults(null);
     setBulkInventoryAdjusted(null);
     setPendingBulkPayloads(null);
-    setPendingInventoryAdjust(null);
     setTransformationOptions(null);
     setInventoryMappingOverride(null);
     setManualTransformModal(false);
@@ -2420,25 +2407,9 @@ export default function ScalePage() {
                       poQuantityOrdered={currentItem.poQuantityOrdered ?? bulkPrintResults.length}
                       inventoryAdjusted={bulkInventoryAdjusted}
                       pendingPrintCount={pendingBulkPayloads?.length ?? 0}
-                      pendingAdjustDelta={pendingInventoryAdjust?.delta ?? null}
                       onReprint={handleBulkReprint}
                       onPrintAll={() => { if (pendingBulkPayloads) { batchPrint(pendingBulkPayloads); setPendingBulkPayloads(null); } }}
-                      onConfirmAdjust={async () => {
-                        if (!pendingInventoryAdjust) return;
-                        const { delta, inventoryItemId, locationId } = pendingInventoryAdjust;
-                        setPendingInventoryAdjust(null);
-                        try {
-                          await fetch('/api/scale/inventory-adjust', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ inventoryItemId, locationId, delta, reason: 'correction' }),
-                          });
-                          setBulkInventoryAdjusted(delta);
-                        } catch (err) {
-                          console.error('[scale] inventory adjust failed:', err);
-                        }
-                      }}
-                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); setPendingBulkPayloads(null); setPendingInventoryAdjust(null); }}
+                      onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); setPendingBulkPayloads(null); }}
                     />
                   )}
 
@@ -2559,8 +2530,9 @@ export default function ScalePage() {
           orderedQuantity={bulkPrintModal.li.quantityOrdered}
           vendorName={bulkPrintModal.item.vendorName}
           isLotReceiving={bulkPrintModal.isLotReceiving}
-          onConfirm={(qty, wt, lotNo, expiryDate, lotTotalWeightLbs) =>
-            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, lotTotalWeightLbs)
+          inventoryItemId={bulkPrintModal.inventoryItemId ?? null}
+          onConfirm={(qty, wt, lotNo, expiryDate, lotTotalWeightLbs, applyAdjust) =>
+            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, lotTotalWeightLbs, applyAdjust)
           }
           onClose={() => setBulkPrintModal(null)}
         />

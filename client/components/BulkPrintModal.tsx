@@ -9,7 +9,8 @@ export interface BulkPrintModalProps {
   orderedQuantity: number;
   vendorName?: string | null;
   isLotReceiving?: boolean;
-  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, lotTotalWeightLbs?: number) => void;
+  inventoryItemId?: string | null;
+  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, lotTotalWeightLbs?: number, applyAdjust?: boolean) => void;
   onClose: () => void;
 }
 
@@ -19,6 +20,7 @@ export function BulkPrintModal({
   orderedQuantity,
   vendorName,
   isLotReceiving = false,
+  inventoryItemId,
   onConfirm,
   onClose,
 }: BulkPrintModalProps) {
@@ -26,6 +28,7 @@ export function BulkPrintModal({
   const [weight, setWeight] = useState('');
   const [lotNo, setLotNo] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [applyAdjust, setApplyAdjust] = useState(false);
 
   // Lot receiving state (weight-based products: beef, goat, lamb)
   const [totalWeightLbs, setTotalWeightLbs] = useState('');
@@ -45,9 +48,9 @@ export function BulkPrintModal({
     if (!isValid) return;
     if (isLotReceiving) {
       const labelWeight = `${weightPerLabel} lbs (LOT)`;
-      onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), parsedWeight);
+      onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), parsedWeight, false);
     } else {
-      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim());
+      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim(), undefined, applyAdjust);
     }
   };
 
@@ -155,23 +158,36 @@ export function BulkPrintModal({
               autoFocus
               className="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-base font-semibold text-slate-100 focus:outline-none focus:border-blue-500 transition-colors"
             />
-            {isCountValid && delta > 0 && (
-              <p className="text-xs text-amber-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                {delta} unit{delta !== 1 ? 's' : ''} short — you can opt to adjust Shopify inventory by −{delta} after printing
-              </p>
-            )}
-            {isCountValid && delta < 0 && (
-              <p className="text-xs text-violet-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
-                {Math.abs(delta)} extra unit{Math.abs(delta) !== 1 ? 's' : ''} — you can opt to adjust Shopify inventory by +{Math.abs(delta)} after printing
-              </p>
-            )}
             {isCountValid && delta === 0 && (
               <p className="text-xs text-emerald-400 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
                 Full quantity received
               </p>
+            )}
+            {isCountValid && delta !== 0 && !inventoryItemId && (
+              <p className={`text-xs flex items-center gap-1.5 ${delta > 0 ? 'text-amber-400' : 'text-violet-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full inline-block ${delta > 0 ? 'bg-amber-400' : 'bg-violet-400'}`} />
+                {delta > 0
+                  ? `${delta} unit${delta !== 1 ? 's' : ''} short vs PO`
+                  : `${Math.abs(delta)} extra unit${Math.abs(delta) !== 1 ? 's' : ''} vs PO`}
+              </p>
+            )}
+            {isCountValid && delta !== 0 && inventoryItemId && (
+              <label className="flex items-center gap-2.5 cursor-pointer select-none bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-2 mt-1">
+                <input
+                  type="checkbox"
+                  checked={applyAdjust}
+                  onChange={e => setApplyAdjust(e.target.checked)}
+                  className="w-4 h-4 rounded accent-violet-500 flex-shrink-0 cursor-pointer"
+                />
+                <span className="text-xs text-slate-300">
+                  Adjust Shopify inventory by{' '}
+                  <span className={delta > 0 ? 'text-amber-300 font-semibold' : 'text-emerald-300 font-semibold'}>
+                    {delta > 0 ? `−${delta}` : `+${Math.abs(delta)}`}
+                  </span>
+                  {' '}({delta > 0 ? `${delta}-unit shortfall` : `${Math.abs(delta)}-unit overage`})
+                </span>
+              </label>
             )}
           </div>
         )}
