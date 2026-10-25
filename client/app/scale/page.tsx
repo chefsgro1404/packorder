@@ -1095,7 +1095,8 @@ export default function ScalePage() {
         if (!cancelled) {
           const opts = data?.options;
           if (Array.isArray(opts) && opts.length > 0) {
-            setTransformationOptions(opts);
+            // Only show after a QR scan — not when a PO item is selected
+            setTransformationOptions(wasQrScanned ? opts : null);
           } else {
             // Keep panel visible after a QR scan even with no configured children
             setTransformationOptions(wasQrScanned ? [] : null);

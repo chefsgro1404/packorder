@@ -228,7 +228,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
           <div
             id="barcode-scanner-container"
             ref={containerRef}
-            className="scanner-container w-full h-72 bg-slate-900"
+            className="scanner-container w-full h-72 sm:h-96 bg-slate-900"
           />
           <div className="absolute inset-0 pointer-events-none">
             {/* Full-area flash on scan */}
