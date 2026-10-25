@@ -815,6 +815,7 @@ public class ScaleFunction
                         {
                             VariantId             = av.VariantId,
                             Title                 = displayTitle,
+                            ProductTitle          = av.ProductTitle,
                             InventoryItemId       = av.InventoryItemId,
                             ParentInventoryItemId = parentInventoryItemId,
                             LocationId            = adj["parent_location_id"]?.ToString() ?? "",

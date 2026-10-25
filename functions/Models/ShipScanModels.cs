@@ -1029,6 +1029,7 @@ public class TransformationOption
 {
     [JsonProperty("variantId")]             public string VariantId { get; set; } = "";
     [JsonProperty("title")]                 public string Title { get; set; } = "";
+    [JsonProperty("productTitle")]          public string ProductTitle { get; set; } = "";
     [JsonProperty("inventoryItemId")]       public string InventoryItemId { get; set; } = "";
     [JsonProperty("parentInventoryItemId")] public string ParentInventoryItemId { get; set; } = "";
     [JsonProperty("locationId")]            public string LocationId { get; set; } = "";

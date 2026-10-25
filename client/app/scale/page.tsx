@@ -213,11 +213,13 @@ function LabelPreview({
   lookupLoading,
   labelSizeKey,
   textMappings,
+  hideUnmappedWarning,
 }: {
   item: CurrentItem | null;
   lookupLoading: boolean;
   labelSizeKey: LabelSizeKey;
   textMappings: TextMapping[];
+  hideUnmappedWarning?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const cfg = getLabelConfig(labelSizeKey);
@@ -253,7 +255,7 @@ function LabelPreview({
 
   return (
     <div className="flex flex-col gap-4">
-      {!item.found && (
+      {!item.found && !hideUnmappedWarning && (
         <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-900 rounded-xl px-3 py-2.5">
           <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
           <p className="text-xs text-amber-300">
@@ -1517,6 +1519,12 @@ export default function ScalePage() {
       childUnits: opt.childUnits ?? 1,
     };
 
+    // Derive child product/variant titles from the option.
+    // opt.productTitle = actual product title (always); opt.title = display title (may be variant title).
+    const childProductTitle = opt.productTitle || opt.title;
+    const childVariantTitle = (opt.productTitle && opt.title !== opt.productTitle && opt.title !== 'Default Title')
+      ? opt.title : null;
+
     skipNextInventoryFetch.current = true;
     setWasQrScanned(false);  // transformation applied — suppress panel re-appearing for the output product
     setInventoryMappingOverride(override);
@@ -1524,7 +1532,9 @@ export default function ScalePage() {
     setCurrentItem({
       ...currentItem,
       variantId: opt.variantId,
-      variantTitle: opt.title !== 'Default Title' ? opt.title : null,
+      productTitle: childProductTitle,
+      itemName: childProductTitle,
+      variantTitle: childVariantTitle,
     });
     setTransformationOptions(null);
     resetPrinted();
@@ -2244,6 +2254,7 @@ export default function ScalePage() {
                     lookupLoading={lookupLoading}
                     labelSizeKey={labelSizeKey}
                     textMappings={textMappings}
+                    hideUnmappedWarning={transformationOptions !== null || inventoryMappingOverride !== null}
                   />
 
                   <div className="border-t border-slate-800" />
@@ -2384,8 +2395,8 @@ export default function ScalePage() {
                     );
                   })()}
 
-                  {/* Manual weight input — optional for PO items */}
-                  {currentItem.poId && (
+                  {/* Manual weight input — for PO items and post-transformation */}
+                  {(currentItem.poId || inventoryMappingOverride !== null) && (
                     <div className="flex flex-col gap-1.5">
                       <p className="text-xs text-slate-500">Weight <span className="text-slate-600">(optional — or trigger scale)</span></p>
                       <input
@@ -2415,7 +2426,7 @@ export default function ScalePage() {
 
                   {/* Primary action buttons */}
                   <div className="flex flex-col gap-2">
-                    {!bulkPrintResults && (
+                    {!bulkPrintResults && transformationOptions === null && (
                       <>
                         {autoDetect?.noMatch && (
                           <p className="text-[11px] text-rose-400 text-center">

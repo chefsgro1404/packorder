@@ -374,6 +374,7 @@ export interface InventoryMappingInfo {
 export interface TransformationOption {
   variantId: string;
   title: string;
+  productTitle?: string;
   inventoryItemId: string;
   parentInventoryItemId: string;
   locationId: string;
