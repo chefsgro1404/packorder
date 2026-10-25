@@ -1187,8 +1187,9 @@ public class ShopifyService
             input = new
             {
                 reason,
-                name    = "available",
-                changes = new[]
+                name                 = "available",
+                referenceDocumentUri = "app://shipscan/inventory-adjust",
+                changes              = new[]
                 {
                     new { inventoryItemId = itemGid, locationId = locationGid, delta }
                 }
