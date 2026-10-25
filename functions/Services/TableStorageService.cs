@@ -283,6 +283,17 @@ public class TableStorageService
         return results;
     }
 
+    /// <summary>
+    /// Returns the InventoryItemId for a variant using the cached productvariants table.
+    /// Faster and more reliable than a live Shopify call for products without inventory levels.
+    /// </summary>
+    public async Task<string?> GetInventoryItemIdByVariantIdAsync(string variantId)
+    {
+        var all = await GetAllProductVariantsAsync();
+        var numeric = StripGid(variantId);
+        return all.FirstOrDefault(v => v.RowKey == numeric || v.VariantId == variantId)?.InventoryItemId;
+    }
+
     public async Task UpdateProductVariantWeightRangesAsync(string productId, string weightRangesJson)
     {
         var pk = StripGid(productId);

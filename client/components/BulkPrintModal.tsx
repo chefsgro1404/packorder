@@ -158,13 +158,13 @@ export function BulkPrintModal({
             {isCountValid && delta > 0 && (
               <p className="text-xs text-amber-400 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
-                {delta} unit{delta !== 1 ? 's' : ''} short — Shopify inventory will be adjusted by −{delta}
+                {delta} unit{delta !== 1 ? 's' : ''} short — you can opt to adjust Shopify inventory by −{delta} after printing
               </p>
             )}
             {isCountValid && delta < 0 && (
               <p className="text-xs text-violet-400 flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-violet-400 inline-block" />
-                {Math.abs(delta)} extra unit{Math.abs(delta) !== 1 ? 's' : ''} — Shopify inventory will be adjusted by +{Math.abs(delta)}
+                {Math.abs(delta)} extra unit{Math.abs(delta) !== 1 ? 's' : ''} — you can opt to adjust Shopify inventory by +{Math.abs(delta)} after printing
               </p>
             )}
             {isCountValid && delta === 0 && (

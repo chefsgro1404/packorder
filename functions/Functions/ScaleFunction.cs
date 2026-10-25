@@ -752,12 +752,18 @@ public class ScaleFunction
                 return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
 
             var (inventoryItemId, locationId) = await _shopify.GetVariantInventoryAsync(variantId);
+            // Fallback: use Azure productvariants cache when Shopify returns no inventory levels.
+            if (string.IsNullOrEmpty(inventoryItemId))
+                inventoryItemId = await _tableStorage.GetInventoryItemIdByVariantIdAsync(variantId);
+            // Default location when Shopify returns none.
+            if (string.IsNullOrEmpty(locationId))
+                locationId = "gid://shopify/Location/82125062435";
 
             return await ResponseHelper.WriteSuccess(req, new
             {
                 found           = !string.IsNullOrEmpty(inventoryItemId),
                 inventoryItemId = inventoryItemId ?? "",
-                locationId      = locationId ?? "",
+                locationId      = locationId,
             }, _allowedOrigins);
         }
         catch (Exception ex)
@@ -789,6 +795,10 @@ public class ScaleFunction
             // Primary: query Azure for synced children across ALL products (cross-product support).
             // These are populated during sync and handle both product-level and variant-level metafields.
             var (parentInventoryItemId, _) = await _shopify.GetVariantInventoryAsync(variantId);
+            // Fallback: use Azure productvariants cache when Shopify returns no inventory levels
+            // (common for products without location-level tracking, e.g. test products).
+            if (string.IsNullOrEmpty(parentInventoryItemId))
+                parentInventoryItemId = await _tableStorage.GetInventoryItemIdByVariantIdAsync(variantId);
             var azureOptions = new List<TransformationOption>();
             if (!string.IsNullOrEmpty(parentInventoryItemId))
             {
