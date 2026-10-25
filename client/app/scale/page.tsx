@@ -746,7 +746,6 @@ function BulkPrintResultPanel({
   onReprint,
   onPrintAll,
   onConfirmAdjust,
-  onSkipAdjust,
   onDismiss,
 }: {
   results: BulkPrintLabelResult[];
@@ -757,9 +756,9 @@ function BulkPrintResultPanel({
   onReprint: (r: BulkPrintLabelResult) => void;
   onPrintAll: () => void;
   onConfirmAdjust: () => void;
-  onSkipAdjust: () => void;
   onDismiss: () => void;
 }) {
+  const [applyAdjust, setApplyAdjust] = useState(false);
   const printed = results.filter(r => r.status === 'printed').length;
   const failed = results.filter(r => r.status === 'failed').length;
 
@@ -778,7 +777,7 @@ function BulkPrintResultPanel({
           </span>
         </div>
         <button
-          onClick={onDismiss}
+          onClick={() => { if (applyAdjust && pendingAdjustDelta !== null) onConfirmAdjust(); onDismiss(); }}
           className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 transition-colors"
         >
           <X className="w-3.5 h-3.5" />
@@ -794,14 +793,21 @@ function BulkPrintResultPanel({
         </button>
       )}
       {pendingAdjustDelta !== null && (
-        <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-2">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-          <span className="flex-1 text-xs text-amber-300">
-            Update Shopify inventory by {pendingAdjustDelta > 0 ? `+${pendingAdjustDelta}` : pendingAdjustDelta}?
+        <label className="flex items-center gap-2.5 cursor-pointer select-none bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-2">
+          <input
+            type="checkbox"
+            checked={applyAdjust}
+            onChange={e => setApplyAdjust(e.target.checked)}
+            className="w-4 h-4 rounded accent-violet-500 flex-shrink-0 cursor-pointer"
+          />
+          <span className="text-xs text-slate-300">
+            Adjust Shopify inventory by{' '}
+            <span className={pendingAdjustDelta < 0 ? 'text-amber-300' : 'text-emerald-300'}>
+              {pendingAdjustDelta > 0 ? `+${pendingAdjustDelta}` : pendingAdjustDelta}
+            </span>
+            {' '}({Math.abs(pendingAdjustDelta)}-unit {pendingAdjustDelta < 0 ? 'shortfall' : 'overage'})
           </span>
-          <button onClick={onConfirmAdjust} className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 px-2 py-1 rounded hover:bg-emerald-950/40 transition-colors">Yes</button>
-          <button onClick={onSkipAdjust} className="text-[11px] text-slate-500 hover:text-slate-300 px-2 py-1 rounded hover:bg-slate-700 transition-colors">Skip</button>
-        </div>
+        </label>
       )}
       {inventoryAdjusted !== null && inventoryAdjusted < 0 && (
         <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-1.5">
@@ -2403,7 +2409,6 @@ export default function ScalePage() {
                           console.error('[scale] inventory adjust failed:', err);
                         }
                       }}
-                      onSkipAdjust={() => setPendingInventoryAdjust(null)}
                       onDismiss={() => { setBulkPrintResults(null); setBulkInventoryAdjusted(null); setPendingBulkPayloads(null); setPendingInventoryAdjust(null); }}
                     />
                   )}
