@@ -27,6 +27,7 @@ public class TableStorageService
     private readonly TableClient _printJobs;
     private readonly TableClient _bulkSessions;
     private readonly TableClient _vendors;
+    private readonly TableClient _processingEvents;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -51,6 +52,7 @@ public class TableStorageService
         _printJobs                 = tableServiceClient.GetTableClient("printjobs");
         _bulkSessions              = tableServiceClient.GetTableClient("bulksessions");
         _vendors                   = tableServiceClient.GetTableClient("vendors");
+        _processingEvents          = tableServiceClient.GetTableClient("processingevents");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -74,6 +76,7 @@ public class TableStorageService
         await _printJobs.CreateIfNotExistsAsync();
         await _bulkSessions.CreateIfNotExistsAsync();
         await _vendors.CreateIfNotExistsAsync();
+        await _processingEvents.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1622,5 +1625,22 @@ public class TableStorageService
             }
         }
         return reconciled;
+    }
+
+    // ─── Processing Sessions (CRH-219) ──────────────────────────────────────
+
+    public async Task SaveProcessingSessionAsync(ProcessingSessionEntity entity)
+    {
+        await _processingEvents.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    public async Task<List<ProcessingSessionEntity>> GetProcessingSessionsByLineItemAsync(string poLineItemId)
+    {
+        var results = new List<ProcessingSessionEntity>();
+        var safeKey = poLineItemId.Replace("'", "''");
+        await foreach (var entity in _processingEvents.QueryAsync<ProcessingSessionEntity>(
+            filter: $"PartitionKey eq '{safeKey}'"))
+            results.Add(entity);
+        return results;
     }
 }

@@ -979,6 +979,130 @@ public class ScaleFunction
         }
     }
 
+    // ─── Processing Sessions (CRH-219) ───────────────────────────────────────
+
+    [Function("ScaleProcessingSession")]
+    public async Task<HttpResponseData> ProcessingSession(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "options", Route = "scale/processing-session")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (userId, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                var qs = ParseQueryString(req.Url.Query);
+                var poLineItemId = qs.TryGetValue("poLineItemId", out var p) ? p : "";
+                if (string.IsNullOrWhiteSpace(poLineItemId))
+                    return await ResponseHelper.WriteError(req, "poLineItemId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+                var sessions = await _tableStorage.GetProcessingSessionsByLineItemAsync(poLineItemId);
+
+                var cumulativeQty = sessions.Sum(s => s.SessionQty);
+                var wastageQty    = sessions.Sum(s => s.WastageQty);
+                var lastSession   = sessions.OrderByDescending(s => s.ProcessedAt).FirstOrDefault();
+                var sessionStatus = lastSession?.SessionStatus ?? "none";
+                var poQty         = lastSession?.PoQty ?? 0;
+
+                var breakdown = new Dictionary<string, int>();
+                foreach (var session in sessions)
+                {
+                    try
+                    {
+                        var bd = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, int>>(session.VariantBreakdown ?? "{}") ?? new();
+                        foreach (var kv in bd)
+                            breakdown[kv.Key] = breakdown.GetValueOrDefault(kv.Key) + kv.Value;
+                    }
+                    catch { }
+                }
+
+                return await ResponseHelper.WriteSuccess(req, new
+                {
+                    poLineItemId,
+                    sessionCount     = sessions.Count,
+                    cumulativeQty,
+                    wastageQty,
+                    sessionStatus,
+                    poQty,
+                    variantBreakdown = breakdown,
+                    sessions         = sessions.Select(s => new
+                    {
+                        sessionId     = s.RowKey,
+                        sessionQty    = s.SessionQty,
+                        cumulativeQty = s.CumulativeQty,
+                        wastageQty    = s.WastageQty,
+                        sessionStatus = s.SessionStatus,
+                        processedAt   = s.ProcessedAt,
+                    }),
+                }, _allowedOrigins);
+            }
+
+            // POST — write a session close event
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<SaveProcessingSessionRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.PoLineItemId))
+                return await ResponseHelper.WriteError(req, "poLineItemId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(request.PoId))
+                return await ResponseHelper.WriteError(req, "poId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (request.SessionQty < 0)
+                return await ResponseHelper.WriteError(req, "sessionQty must be >= 0", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var priorSessions  = await _tableStorage.GetProcessingSessionsByLineItemAsync(request.PoLineItemId);
+            var priorQty       = priorSessions.Sum(s => s.SessionQty);
+            var cumulativeTotal = priorQty + request.SessionQty;
+
+            var sessionId = Guid.NewGuid().ToString("N");
+            var now       = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+
+            var entity = new ProcessingSessionEntity
+            {
+                PartitionKey     = request.PoLineItemId,
+                RowKey           = sessionId,
+                PoId             = request.PoId,
+                PoLineItemId     = request.PoLineItemId,
+                MainVariantId    = request.MainVariantId ?? "",
+                MainProductTitle = request.MainProductTitle ?? "",
+                PoQty            = request.PoQty,
+                SessionQty       = request.SessionQty,
+                CumulativeQty    = cumulativeTotal,
+                WastageQty       = request.WastageQty,
+                SessionStatus    = request.SessionStatus,
+                VariantBreakdown = request.VariantBreakdown != null
+                    ? JsonConvert.SerializeObject(request.VariantBreakdown) : "{}",
+                VendorName       = request.VendorName ?? "",
+                LotNo            = request.LotNo ?? "",
+                ProcessedBy      = userId ?? "",
+                ProcessedAt      = now,
+            };
+
+            await _tableStorage.SaveProcessingSessionAsync(entity);
+
+            _logger.LogInformation(
+                "Processing session saved: {SessionId} PO {PoId} line {PoLineItemId} — sessionQty={Qty} cumulative={Cum} status={Status}",
+                sessionId, request.PoId, request.PoLineItemId, request.SessionQty, cumulativeTotal, request.SessionStatus);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                ok            = true,
+                sessionId,
+                cumulativeQty = cumulativeTotal,
+                sessionStatus = request.SessionStatus,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ProcessingSession endpoint failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     // ─── Bulk Sessions ────────────────────────────────────────────────────────
 
     [Function("ScaleBulkSessions")]

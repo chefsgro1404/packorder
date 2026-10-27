@@ -1137,3 +1137,43 @@ public class FullSyncResult
     [JsonProperty("syncedAt")]    public string SyncedAt { get; set; } = "";
     [JsonProperty("stages")]      public List<FullSyncStageResult> Stages { get; set; } = new();
 }
+
+// ─── Processing Session (CRH-219) ────────────────────────────────────────────
+
+public class ProcessingSessionEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = ""; // poLineItemId
+    public string RowKey { get; set; } = "";       // sessionId (GUID)
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+
+    [JsonProperty("poId")]             public string PoId { get; set; } = "";
+    [JsonProperty("poLineItemId")]     public string PoLineItemId { get; set; } = "";
+    [JsonProperty("mainVariantId")]    public string MainVariantId { get; set; } = "";
+    [JsonProperty("mainProductTitle")] public string MainProductTitle { get; set; } = "";
+    [JsonProperty("poQty")]            public int PoQty { get; set; }
+    [JsonProperty("sessionQty")]       public int SessionQty { get; set; }
+    [JsonProperty("cumulativeQty")]    public int CumulativeQty { get; set; }
+    [JsonProperty("wastageQty")]       public int WastageQty { get; set; }
+    [JsonProperty("sessionStatus")]    public string SessionStatus { get; set; } = "partial"; // partial | completed
+    [JsonProperty("variantBreakdown")] public string VariantBreakdown { get; set; } = "{}";  // JSON: {"Small":45,"Medium":80}
+    [JsonProperty("vendorName")]       public string VendorName { get; set; } = "";
+    [JsonProperty("lotNo")]            public string LotNo { get; set; } = "";
+    [JsonProperty("processedBy")]      public string ProcessedBy { get; set; } = "";
+    [JsonProperty("processedAt")]      public string ProcessedAt { get; set; } = "";
+}
+
+public class SaveProcessingSessionRequest
+{
+    [JsonProperty("poId")]             public string PoId { get; set; } = "";
+    [JsonProperty("poLineItemId")]     public string PoLineItemId { get; set; } = "";
+    [JsonProperty("mainVariantId")]    public string MainVariantId { get; set; } = "";
+    [JsonProperty("mainProductTitle")] public string MainProductTitle { get; set; } = "";
+    [JsonProperty("poQty")]            public int PoQty { get; set; }
+    [JsonProperty("sessionQty")]       public int SessionQty { get; set; }
+    [JsonProperty("wastageQty")]       public int WastageQty { get; set; }
+    [JsonProperty("sessionStatus")]    public string SessionStatus { get; set; } = "partial";
+    [JsonProperty("variantBreakdown")] public Dictionary<string, int>? VariantBreakdown { get; set; }
+    [JsonProperty("vendorName")]       public string VendorName { get; set; } = "";
+    [JsonProperty("lotNo")]            public string LotNo { get; set; } = "";
+}

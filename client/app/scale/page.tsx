@@ -957,6 +957,20 @@ export default function ScalePage() {
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
   const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>([]);
   const [autoDetect, setAutoDetect] = useState<{ matched: WeightRangeRule | null; noMatch: boolean; weightLbs: number } | null>(null);
+  const [processingSession, setProcessingSession] = useState<{
+    poId: string;
+    poLineItemId: string;
+    poQty: number;
+    mainVariantId: string;
+    mainProductTitle: string;
+    vendorName: string;
+    lotNo: string;
+    sessionQty: number;
+    cumulativeQty: number;
+    variantBreakdown: Record<string, number>;
+  } | null>(null);
+  const [sessionClosePrompt, setSessionClosePrompt] = useState(false);
+  const [autoPrintPending, setAutoPrintPending] = useState(false);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
@@ -1109,6 +1123,39 @@ export default function ScalePage() {
     const matched = matchWeightRange(weightRanges, lbs);
     setAutoDetect({ matched, noMatch: matched === null, weightLbs: lbs });
   }, [weightRanges, currentItem?.itemWeight]);
+
+  // Auto-print when a categorical match is found and a processing session is active
+  useEffect(() => {
+    if (!autoDetect?.matched || !processingSession || autoPrintPending) return;
+    setAutoPrintPending(true);
+    const matchedTier = autoDetect.matched;
+    const timer = setTimeout(async () => {
+      if (!currentItem) { setAutoPrintPending(false); return; }
+      const itemWithVariant = {
+        ...currentItem,
+        variantId: matchedTier.variantId,
+        variantTitle: matchedTier.label,
+      };
+      setCurrentItem(itemWithVariant);
+      await printItem(itemWithVariant);
+      setProcessingSession(prev => {
+        if (!prev) return null;
+        const breakdown = { ...prev.variantBreakdown };
+        breakdown[matchedTier.label] = (breakdown[matchedTier.label] ?? 0) + 1;
+        const newSessionQty = prev.sessionQty + 1;
+        const newTotal = prev.cumulativeQty + newSessionQty;
+        if (newTotal >= prev.poQty) {
+          // All units accounted for — auto-open close prompt
+          setTimeout(() => setSessionClosePrompt(true), 300);
+        }
+        return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
+      });
+      setAutoDetect(null);
+      setAutoPrintPending(false);
+    }, 1500);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDetect?.matched?.variantId, !!processingSession, autoPrintPending]);
 
   // Poll status of an in-progress remote print job (non-printer device watching its queued job)
   useEffect(() => {
@@ -1318,10 +1365,35 @@ export default function ScalePage() {
       vendorName: po.vendor ?? null,
     };
 
-    // For categorical products (weight ranges), skip BulkPrintModal and enter per-item weighing mode
+    // For categorical products (weight ranges), start a processing session
     if (ranges.length > 0 && !isLotReceiving) {
       setWeightRanges(ranges);
       setCurrentItem(resolvedItem);
+      // Check for prior partial session on this PO line item
+      let priorCumulative = 0;
+      let priorBreakdown: Record<string, number> = {};
+      try {
+        const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(li.id)}`);
+        if (sessRes.ok) {
+          const sessData = await sessRes.json();
+          if (sessData?.sessionStatus === 'partial' || sessData?.sessionCount > 0) {
+            priorCumulative = sessData.cumulativeQty ?? 0;
+            priorBreakdown = sessData.variantBreakdown ?? {};
+          }
+        }
+      } catch { /* non-fatal */ }
+      setProcessingSession({
+        poId: po.id,
+        poLineItemId: li.id,
+        poQty: li.quantityOrdered,
+        mainVariantId: resolvedItem.variantId ?? '',
+        mainProductTitle: resolvedItem.productTitle ?? '',
+        vendorName: po.vendor ?? '',
+        lotNo: '',
+        sessionQty: 0,
+        cumulativeQty: priorCumulative,
+        variantBreakdown: priorBreakdown,
+      });
       setLookupLoading(false);
       return;
     }
@@ -1843,6 +1915,66 @@ export default function ScalePage() {
     batchPrint(payloads);
   }, [buildReprintSn, batchPrint]);
 
+  const closeSession = useCallback(async (status: 'completed' | 'partial', wastageQty: number) => {
+    if (!processingSession) return;
+    setSessionClosePrompt(false);
+    try {
+      await fetch('/api/scale/processing-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          poId:             processingSession.poId,
+          poLineItemId:     processingSession.poLineItemId,
+          mainVariantId:    processingSession.mainVariantId,
+          mainProductTitle: processingSession.mainProductTitle,
+          poQty:            processingSession.poQty,
+          sessionQty:       processingSession.sessionQty,
+          wastageQty,
+          sessionStatus:    status,
+          variantBreakdown: processingSession.variantBreakdown,
+          vendorName:       processingSession.vendorName,
+          lotNo:            processingSession.lotNo,
+        }),
+      });
+    } catch { /* non-fatal */ }
+
+    // Adjust Shopify inventory for wastage
+    if (status === 'completed' && wastageQty > 0 && processingSession.mainVariantId) {
+      try {
+        const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(processingSession.mainVariantId)}`);
+        if (invRes.ok) {
+          const invData = await invRes.json();
+          if (invData?.inventoryItemId && invData?.locationId) {
+            await fetch('/api/scale/inventory-adjust', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                inventoryItemId: invData.inventoryItemId,
+                locationId: invData.locationId,
+                delta: -wastageQty,
+                reason: 'correction',
+              }),
+            });
+          }
+        }
+      } catch { /* non-fatal — session was already written */ }
+    }
+
+    // Approve PO line item when session completes (all units accounted for)
+    if (status === 'completed') {
+      const totalProcessed = processingSession.cumulativeQty + processingSession.sessionQty;
+      try {
+        await approvePoItem(processingSession.poId, processingSession.poLineItemId, totalProcessed);
+        await refreshLineItems(processingSession.poId);
+      } catch { /* non-fatal */ }
+    }
+
+    setProcessingSession(null);
+    setWeightRanges([]);
+    setAutoDetect(null);
+    setCurrentItem(null);
+  }, [processingSession, approvePoItem, refreshLineItems]);
+
   const handleQrScan = useCallback(async (scanned: string) => {
     setQrScanOpen(false);
     setQrScanError(null);
@@ -2233,6 +2365,37 @@ export default function ScalePage() {
 
                   <div className="border-t border-slate-800" />
 
+                  {/* ── Processing Session Header ── */}
+                  {processingSession && (
+                    <div className="bg-violet-900/30 border border-violet-700/50 rounded-xl p-3 mb-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-semibold text-violet-300 uppercase tracking-wide">Processing Session</span>
+                        <button
+                          onClick={() => setSessionClosePrompt(true)}
+                          className="text-xs bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 border border-rose-700/50 rounded-lg px-2.5 py-1 transition-colors"
+                        >
+                          Close Session
+                        </button>
+                      </div>
+                      <p className="text-sm font-medium text-white truncate">{processingSession.mainProductTitle}</p>
+                      <div className="flex gap-3 mt-1 text-xs text-slate-400">
+                        <span>PO: <span className="text-white font-semibold">{processingSession.poQty}</span></span>
+                        <span>Processed: <span className="text-emerald-300 font-semibold">{processingSession.cumulativeQty + processingSession.sessionQty}</span></span>
+                        <span>Remaining: <span className={`font-semibold ${processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>{Math.max(0, processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty)}</span></span>
+                      </div>
+                      {Object.keys(processingSession.variantBreakdown).length > 0 && (
+                        <div className="flex gap-2 mt-1.5 flex-wrap">
+                          {Object.entries(processingSession.variantBreakdown).map(([label, qty]) => (
+                            <span key={label} className="text-xs bg-slate-700/60 text-slate-200 rounded px-2 py-0.5">{label}: {qty}</span>
+                          ))}
+                        </div>
+                      )}
+                      {autoPrintPending && (
+                        <p className="text-xs text-amber-300 mt-1 animate-pulse">Auto-printing in 1.5s…</p>
+                      )}
+                    </div>
+                  )}
+
                   {/* ── Weight auto-detection banner ── */}
                   {autoDetect && (
                     <div className={`flex flex-col gap-2 rounded-xl px-3 py-2.5 border ${
@@ -2524,6 +2687,53 @@ export default function ScalePage() {
       )}
 
       <PrintLabelPortal payload={printPayload} batchPayloads={batchPrintPayloads} labelSizeKey={labelSizeKey} />
+
+      {/* ── Session Close Prompt ── */}
+      {sessionClosePrompt && processingSession && (() => {
+        const totalProcessed = processingSession.cumulativeQty + processingSession.sessionQty;
+        const unaccounted = Math.max(0, processingSession.poQty - totalProcessed);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+              <h3 className="text-base font-semibold text-white mb-1">Close Processing Session</h3>
+              <p className="text-sm text-slate-400 mb-3">
+                {totalProcessed} of {processingSession.poQty} units processed.
+                {unaccounted > 0 && <> <span className="text-amber-300 font-semibold">{unaccounted} unaccounted.</span></>}
+              </p>
+              <div className="flex flex-col gap-2">
+                {unaccounted > 0 && (
+                  <button
+                    onClick={() => closeSession('completed', unaccounted)}
+                    className="w-full bg-rose-900/50 hover:bg-rose-800/60 border border-rose-700/50 text-rose-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                  >
+                    Mark {unaccounted} as wastage &amp; adjust inventory
+                  </button>
+                )}
+                <button
+                  onClick={() => closeSession('partial', 0)}
+                  className="w-full bg-amber-900/40 hover:bg-amber-800/50 border border-amber-700/50 text-amber-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                >
+                  Process later (save progress)
+                </button>
+                {unaccounted === 0 && (
+                  <button
+                    onClick={() => closeSession('completed', 0)}
+                    className="w-full bg-emerald-900/50 hover:bg-emerald-800/60 border border-emerald-700/50 text-emerald-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                  >
+                    Complete batch
+                  </button>
+                )}
+                <button
+                  onClick={() => setSessionClosePrompt(false)}
+                  className="w-full text-slate-400 text-sm py-2 hover:text-slate-200 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

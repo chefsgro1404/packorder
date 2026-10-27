@@ -17,7 +17,20 @@ import {
   Layers,
   Building2,
   X,
+  Scale,
 } from 'lucide-react';
+
+interface WeightRangeRule {
+  variantId: string;
+  label: string;
+  minLbs: number;
+  maxLbs: number | null;
+}
+
+interface VariantOption {
+  variantId: string;
+  variantTitle: string;
+}
 
 interface TextMapping {
   phrase: string;
@@ -114,6 +127,19 @@ export default function ScaleSettingsPage() {
   const [newVendorName, setNewVendorName] = useState('');
   const [vendorSaving, setVendorSaving] = useState(false);
   const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
+
+  // ── Weight ranges ────────────────────────────────────────────────────────
+  const [wrProductId, setWrProductId] = useState('');
+  const [wrProductSearch, setWrProductSearch] = useState('');
+  const [wrProductTitle, setWrProductTitle] = useState('');
+  const [wrRules, setWrRules] = useState<WeightRangeRule[]>([]);
+  const [wrVariants, setWrVariants] = useState<VariantOption[]>([]);
+  const [wrLoading, setWrLoading] = useState(false);
+  const [wrSaving, setWrSaving] = useState(false);
+  const [wrError, setWrError] = useState<string | null>(null);
+  const [wrSaved, setWrSaved] = useState(false);
+  const [wrProductResults, setWrProductResults] = useState<{ productId: string; productTitle: string }[]>([]);
+  const [wrSearching, setWrSearching] = useState(false);
 
   // ── Webhook registration ─────────────────────────────────────────────────
   const [webhookCallbackUrl, setWebhookCallbackUrl] = useState('');
@@ -360,6 +386,79 @@ export default function ScaleSettingsPage() {
     barcodeBackfill: 'Barcode ↔ PO backfill',
     snCounters: 'SN counter reconciliation',
   }[s] ?? s);
+
+  const handleWrSearch = async () => {
+    if (!wrProductSearch.trim()) return;
+    setWrSearching(true);
+    setWrError(null);
+    try {
+      const res = await fetch(`/api/product/list?search=${encodeURIComponent(wrProductSearch.trim())}&limit=10`);
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      const products: { productId: string; productTitle: string }[] =
+        (data.products ?? data.data?.products ?? []).map((p: { productId?: string; id?: string; productTitle?: string; title?: string }) => ({
+          productId:    p.productId ?? p.id ?? '',
+          productTitle: p.productTitle ?? p.title ?? '',
+        }));
+      setWrProductResults(products);
+    } catch (e) {
+      setWrError(e instanceof Error ? e.message : 'Search failed');
+    } finally {
+      setWrSearching(false);
+    }
+  };
+
+  const handleWrSelectProduct = async (productId: string, productTitle: string) => {
+    setWrProductId(productId);
+    setWrProductTitle(productTitle);
+    setWrProductResults([]);
+    setWrLoading(true);
+    setWrError(null);
+    try {
+      const res = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(productId)}`);
+      if (!res.ok) throw new Error('Failed to load weight ranges');
+      const data = await res.json();
+      setWrRules(data.rules ?? []);
+      setWrVariants(data.variantOptions ?? []);
+    } catch (e) {
+      setWrError(e instanceof Error ? e.message : 'Failed to load');
+    } finally {
+      setWrLoading(false);
+    }
+  };
+
+  const handleWrSave = async () => {
+    if (!wrProductId) return;
+    setWrSaving(true);
+    setWrError(null);
+    setWrSaved(false);
+    try {
+      const res = await fetch('/api/scale/weight-ranges', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: wrProductId, rules: wrRules }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      setWrSaved(true);
+      setTimeout(() => setWrSaved(false), 2000);
+    } catch (e) {
+      setWrError(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setWrSaving(false);
+    }
+  };
+
+  const handleWrAddRule = () => {
+    setWrRules(prev => [...prev, { variantId: '', label: '', minLbs: 0, maxLbs: null }]);
+  };
+
+  const handleWrUpdateRule = (idx: number, field: keyof WeightRangeRule, value: string | number | null) => {
+    setWrRules(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  };
+
+  const handleWrRemoveRule = (idx: number) => {
+    setWrRules(prev => prev.filter((_, i) => i !== idx));
+  };
 
   return (
     <main className="min-h-screen bg-slate-950 pb-safe">
@@ -832,6 +931,126 @@ export default function ScaleSettingsPage() {
               your Shopify app&apos;s API secret key (admin → Apps → develop apps → your app → API credentials).
             </p>
           </div>
+        </div>
+
+        {/* ── Weight Ranges ─────────────────────────────────────────────── */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Scale className="w-4 h-4 text-violet-400" />
+            <h2 className="text-sm font-semibold text-white">Weight Ranges (Categorical Products)</h2>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Configure size tiers for products like red chicken. Each tier maps a weight range to a specific variant.
+          </p>
+
+          {/* Product search */}
+          <div className="flex gap-2 mb-3">
+            <input
+              value={wrProductSearch}
+              onChange={e => setWrProductSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleWrSearch()}
+              placeholder="Search product name…"
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+            />
+            <button
+              onClick={handleWrSearch}
+              disabled={wrSearching || !wrProductSearch.trim()}
+              className="px-4 py-2 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors"
+            >
+              {wrSearching ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Search'}
+            </button>
+          </div>
+
+          {wrProductResults.length > 0 && (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl mb-3 overflow-hidden">
+              {wrProductResults.map(p => (
+                <button
+                  key={p.productId}
+                  onClick={() => handleWrSelectProduct(p.productId, p.productTitle)}
+                  className="w-full text-left px-3 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors border-b border-slate-700/50 last:border-0"
+                >
+                  {p.productTitle}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {wrProductId && (
+            <div>
+              <p className="text-xs text-violet-300 font-medium mb-3">{wrProductTitle}</p>
+              {wrLoading ? (
+                <p className="text-xs text-slate-400">Loading…</p>
+              ) : (
+                <>
+                  <div className="space-y-2 mb-3">
+                    {wrRules.map((rule, idx) => (
+                      <div key={idx} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <input
+                            value={rule.label}
+                            onChange={e => handleWrUpdateRule(idx, 'label', e.target.value)}
+                            placeholder="Label (e.g. Small)"
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                          />
+                          <button onClick={() => handleWrRemoveRule(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-1">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={rule.minLbs}
+                            onChange={e => handleWrUpdateRule(idx, 'minLbs', parseFloat(e.target.value) || 0)}
+                            placeholder="Min lbs"
+                            className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                          />
+                          <input
+                            type="number"
+                            value={rule.maxLbs ?? ''}
+                            onChange={e => handleWrUpdateRule(idx, 'maxLbs', e.target.value ? parseFloat(e.target.value) : null)}
+                            placeholder="Max lbs (blank = no limit)"
+                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                          />
+                        </div>
+                        <select
+                          value={rule.variantId}
+                          onChange={e => handleWrUpdateRule(idx, 'variantId', e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500"
+                        >
+                          <option value="">— Select variant —</option>
+                          {wrVariants.map(v => (
+                            <option key={v.variantId} value={v.variantId}>{v.variantTitle || 'Default Title'}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleWrAddRule}
+                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 rounded-xl px-3 py-2 transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add tier
+                    </button>
+                    <button
+                      onClick={handleWrSave}
+                      disabled={wrSaving}
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs bg-violet-700 hover:bg-violet-600 disabled:opacity-50 rounded-xl px-3 py-2 font-medium transition-colors"
+                    >
+                      {wrSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : wrSaved ? <><Check className="w-3.5 h-3.5 text-emerald-300" /> Saved</> : 'Save ranges'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {wrError && (
+            <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {wrError}
+            </div>
+          )}
         </div>
 
       </div>
