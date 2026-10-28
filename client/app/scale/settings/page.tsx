@@ -32,6 +32,14 @@ interface VariantOption {
   variantTitle: string;
 }
 
+interface WrTierMeta {
+  targetSearch: string;
+  targetResults: { productId: string; productTitle: string }[];
+  targetVariants: VariantOption[];
+  targetProductTitle: string;
+  searching: boolean;
+}
+
 interface TextMapping {
   phrase: string;
   abbreviation: string;
@@ -133,7 +141,7 @@ export default function ScaleSettingsPage() {
   const [wrProductSearch, setWrProductSearch] = useState('');
   const [wrProductTitle, setWrProductTitle] = useState('');
   const [wrRules, setWrRules] = useState<WeightRangeRule[]>([]);
-  const [wrVariants, setWrVariants] = useState<VariantOption[]>([]);
+  const [wrTierMeta, setWrTierMeta] = useState<WrTierMeta[]>([]);
   const [wrLoading, setWrLoading] = useState(false);
   const [wrSaving, setWrSaving] = useState(false);
   const [wrError, setWrError] = useState<string | null>(null);
@@ -408,6 +416,10 @@ export default function ScaleSettingsPage() {
     }
   };
 
+  const emptyTierMeta = (): WrTierMeta => ({
+    targetSearch: '', targetResults: [], targetVariants: [], targetProductTitle: '', searching: false,
+  });
+
   const handleWrSelectProduct = async (productId: string, productTitle: string) => {
     setWrProductId(productId);
     setWrProductTitle(productTitle);
@@ -418,8 +430,22 @@ export default function ScaleSettingsPage() {
       const res = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(productId)}`);
       if (!res.ok) throw new Error('Failed to load weight ranges');
       const data = await res.json();
-      setWrRules(data.rules ?? []);
-      setWrVariants(data.variantOptions ?? []);
+      const rules: WeightRangeRule[] = data.rules ?? [];
+      setWrRules(rules);
+      // Reverse-lookup each rule's target product so the UI can show its name
+      const metas = await Promise.all(rules.map(async (rule): Promise<WrTierMeta> => {
+        if (!rule.variantId) return emptyTierMeta();
+        try {
+          const vRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(rule.variantId)}`);
+          if (!vRes.ok) return emptyTierMeta();
+          const vData = await vRes.json();
+          if (!vData?.found || !vData?.productId) return emptyTierMeta();
+          const rangesRes = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(vData.productId)}`);
+          const variants: VariantOption[] = rangesRes.ok ? ((await rangesRes.json()).variantOptions ?? []) : [];
+          return { ...emptyTierMeta(), targetVariants: variants, targetProductTitle: vData.productTitle ?? '' };
+        } catch { return emptyTierMeta(); }
+      }));
+      setWrTierMeta(metas);
     } catch (e) {
       setWrError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -450,6 +476,7 @@ export default function ScaleSettingsPage() {
 
   const handleWrAddRule = () => {
     setWrRules(prev => [...prev, { variantId: '', label: '', minLbs: 0, maxLbs: null }]);
+    setWrTierMeta(prev => [...prev, emptyTierMeta()]);
   };
 
   const handleWrUpdateRule = (idx: number, field: keyof WeightRangeRule, value: string | number | null) => {
@@ -458,6 +485,46 @@ export default function ScaleSettingsPage() {
 
   const handleWrRemoveRule = (idx: number) => {
     setWrRules(prev => prev.filter((_, i) => i !== idx));
+    setWrTierMeta(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleWrTierSearch = async (idx: number, search: string) => {
+    setWrTierMeta(prev => prev.map((m, i) => i === idx ? { ...m, targetSearch: search, targetResults: [] } : m));
+    if (!search.trim()) return;
+    setWrTierMeta(prev => prev.map((m, i) => i === idx ? { ...m, searching: true } : m));
+    try {
+      const res = await fetch(`/api/products?search=${encodeURIComponent(search.trim())}&pageSize=8`);
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      const results = (data.products ?? []).map((p: { productId?: string; id?: string; productTitle?: string; title?: string }) => ({
+        productId: p.productId ?? p.id ?? '',
+        productTitle: p.productTitle ?? p.title ?? '',
+      }));
+      setWrTierMeta(prev => prev.map((m, i) => i === idx ? { ...m, targetResults: results, searching: false } : m));
+    } catch {
+      setWrTierMeta(prev => prev.map((m, i) => i === idx ? { ...m, searching: false } : m));
+    }
+  };
+
+  const handleWrTierSelectProduct = async (idx: number, productId: string, productTitle: string) => {
+    try {
+      const res = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(productId)}`);
+      const data = res.ok ? await res.json() : {};
+      const variants: VariantOption[] = data.variantOptions ?? [];
+      setWrTierMeta(prev => prev.map((m, i) => i === idx
+        ? { ...m, targetSearch: '', targetResults: [], targetVariants: variants, targetProductTitle: productTitle }
+        : m));
+      setWrRules(prev => prev.map((r, i) => {
+        if (i !== idx) return r;
+        const variantId = variants.length === 1 ? variants[0].variantId : r.variantId;
+        return { ...r, variantId, label: r.label || productTitle };
+      }));
+    } catch { /* non-fatal */ }
+  };
+
+  const handleWrTierClear = (idx: number) => {
+    setWrTierMeta(prev => prev.map((m, i) => i === idx ? emptyTierMeta() : m));
+    setWrRules(prev => prev.map((r, i) => i === idx ? { ...r, variantId: '', label: '' } : r));
   };
 
   return (
@@ -983,47 +1050,86 @@ export default function ScaleSettingsPage() {
               ) : (
                 <>
                   <div className="space-y-2 mb-3">
-                    {wrRules.map((rule, idx) => (
-                      <div key={idx} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
-                        <div className="flex gap-2">
-                          <input
-                            value={rule.label}
-                            onChange={e => handleWrUpdateRule(idx, 'label', e.target.value)}
-                            placeholder="Label (e.g. Small)"
-                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
-                          />
-                          <button onClick={() => handleWrRemoveRule(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-1">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                    {wrRules.map((rule, idx) => {
+                      const tier = wrTierMeta[idx] ?? emptyTierMeta();
+                      return (
+                        <div key={idx} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
+                          {/* Label + delete */}
+                          <div className="flex gap-2">
+                            <input
+                              value={rule.label}
+                              onChange={e => handleWrUpdateRule(idx, 'label', e.target.value)}
+                              placeholder="Label (auto-filled from product)"
+                              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                            />
+                            <button onClick={() => handleWrRemoveRule(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-1">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          {/* Weight range */}
+                          <div className="flex gap-2">
+                            <input
+                              type="number"
+                              value={rule.minLbs}
+                              onChange={e => handleWrUpdateRule(idx, 'minLbs', parseFloat(e.target.value) || 0)}
+                              placeholder="Min lbs"
+                              className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                            />
+                            <input
+                              type="number"
+                              value={rule.maxLbs ?? ''}
+                              onChange={e => handleWrUpdateRule(idx, 'maxLbs', e.target.value ? parseFloat(e.target.value) : null)}
+                              placeholder="Max lbs (blank = no limit)"
+                              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                            />
+                          </div>
+                          {/* Target product */}
+                          {tier.targetProductTitle ? (
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-emerald-400 flex-1 truncate">{tier.targetProductTitle}</span>
+                              {tier.targetVariants.length > 1 && (
+                                <select
+                                  value={rule.variantId}
+                                  onChange={e => handleWrUpdateRule(idx, 'variantId', e.target.value)}
+                                  className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-violet-500"
+                                >
+                                  <option value="">— variant —</option>
+                                  {tier.targetVariants.map(v => (
+                                    <option key={v.variantId} value={v.variantId}>{v.variantTitle || 'Default Title'}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <button onClick={() => handleWrTierClear(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-0.5">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="relative">
+                              <input
+                                value={tier.targetSearch}
+                                onChange={e => handleWrTierSearch(idx, e.target.value)}
+                                placeholder="Search output product…"
+                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                              />
+                              {tier.searching && <RefreshCw className="absolute right-2 top-1.5 w-3 h-3 text-slate-400 animate-spin" />}
+                              {tier.targetResults.length > 0 && (
+                                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg">
+                                  {tier.targetResults.map(p => (
+                                    <button
+                                      key={p.productId}
+                                      onClick={() => handleWrTierSelectProduct(idx, p.productId, p.productTitle)}
+                                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-b border-slate-700/50 last:border-0"
+                                    >
+                                      {p.productTitle}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="number"
-                            value={rule.minLbs}
-                            onChange={e => handleWrUpdateRule(idx, 'minLbs', parseFloat(e.target.value) || 0)}
-                            placeholder="Min lbs"
-                            className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
-                          />
-                          <input
-                            type="number"
-                            value={rule.maxLbs ?? ''}
-                            onChange={e => handleWrUpdateRule(idx, 'maxLbs', e.target.value ? parseFloat(e.target.value) : null)}
-                            placeholder="Max lbs (blank = no limit)"
-                            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
-                          />
-                        </div>
-                        <select
-                          value={rule.variantId}
-                          onChange={e => handleWrUpdateRule(idx, 'variantId', e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500"
-                        >
-                          <option value="">— Select variant —</option>
-                          {wrVariants.map(v => (
-                            <option key={v.variantId} value={v.variantId}>{v.variantTitle || 'Default Title'}</option>
-                          ))}
-                        </select>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   <div className="flex gap-2">

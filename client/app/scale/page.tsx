@@ -1758,20 +1758,16 @@ export default function ScalePage() {
       // before printing. In categorical mode we show confirmation UI instead of auto-printing.
       if (item.found && item.variantId) {
         try {
-          const numericId = item.variantId.includes('/') ? item.variantId.split('/').pop()! : item.variantId;
-          const rangesRes = await fetch(`/api/scale/weight-category?productId=${encodeURIComponent(numericId)}&weightLbs=${encodeURIComponent('0')}`);
-          // We use the weight-ranges endpoint for the full rules list
-          const rulesRes = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(numericId)}`);
+          const rulesRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
           if (rulesRes.ok) {
             const rulesData = await rulesRes.json();
-            const rules: WeightRangeRule[] = Array.isArray(rulesData?.rules) ? rulesData.rules : [];
+            const rules: WeightRangeRule[] = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
             if (rules.length > 0) {
               setWeightRanges(rules);
               // Don't auto-print — show confirmation UI
               return;
             }
           }
-          void rangesRes; // unused if no ranges
         } catch {
           // ignore — proceed with normal print
         }
@@ -2054,11 +2050,10 @@ export default function ScalePage() {
     // Fetch weight ranges for the resolved product and auto-match on weight if present in QR
     if (item.variantId) {
       try {
-        const numericId = item.variantId.includes('/') ? item.variantId.split('/').pop()! : item.variantId;
-        const rulesRes = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(numericId)}`);
+        const rulesRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
         if (rulesRes.ok) {
           const rulesData = await rulesRes.json();
-          const rules: WeightRangeRule[] = Array.isArray(rulesData?.rules) ? rulesData.rules : [];
+          const rules: WeightRangeRule[] = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
           if (rules.length > 0) {
             setWeightRanges(rules);
             // If the QR payload contained a weight, resolve the tier now
