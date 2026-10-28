@@ -1136,8 +1136,15 @@ export default function ScalePage() {
         variantId: matchedTier.variantId,
         variantTitle: matchedTier.label,
       };
+      // Fetch the inventory mapping for the matched output variant now — the state-based
+      // inventoryMapping is stale here (captured from before the variant switched).
+      let matchedMapping: InventoryMappingInfo | null = null;
+      try {
+        const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(matchedTier.variantId)}`);
+        if (mapRes.ok) matchedMapping = await mapRes.json();
+      } catch { /* non-fatal — print still proceeds without adjustment */ }
       setCurrentItem(itemWithVariant);
-      await printItem(itemWithVariant);
+      await printItem(itemWithVariant, { mapping: matchedMapping });
       setProcessingSession(prev => {
         if (!prev) return null;
         const breakdown = { ...prev.variantBreakdown };
@@ -1667,7 +1674,7 @@ export default function ScalePage() {
     printVerbatim({ productTitle: currentItem.productTitle, variantTitle: currentItem.variantTitle ?? null, qrPayload: newQrPayload, itemWeight: currentItem.itemWeight, printedAtEst, sn: reprintSn });
   }, [currentItem, buildReprintSn, printVerbatim]);
 
-  const printItem = useCallback(async (item: CurrentItem, { forceDialog = false }: { forceDialog?: boolean } = {}) => {
+  const printItem = useCallback(async (item: CurrentItem, { forceDialog = false, mapping: explicitMapping }: { forceDialog?: boolean; mapping?: InventoryMappingInfo | null } = {}) => {
     if (isPrinting.current) return;
     isPrinting.current = true;
     setPrintError(null);
@@ -1689,7 +1696,7 @@ export default function ScalePage() {
         return;
       }
 
-      const effectiveMapping = inventoryMappingOverride ?? inventoryMapping;
+      const effectiveMapping = explicitMapping !== undefined ? explicitMapping : (inventoryMappingOverride ?? inventoryMapping);
       if (isPrinterDevice || forceDialog) {
         const { printedAtEst } = triggerPrint({
           plu: item.found ? item.plu : null,
