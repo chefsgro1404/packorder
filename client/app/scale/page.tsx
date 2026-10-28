@@ -2051,6 +2051,30 @@ export default function ScalePage() {
         // non-fatal — item still loads without variantId
       }
     }
+    // Fetch weight ranges for the resolved product and auto-match on weight if present in QR
+    if (item.variantId) {
+      try {
+        const numericId = item.variantId.includes('/') ? item.variantId.split('/').pop()! : item.variantId;
+        const rulesRes = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(numericId)}`);
+        if (rulesRes.ok) {
+          const rulesData = await rulesRes.json();
+          const rules: WeightRangeRule[] = Array.isArray(rulesData?.rules) ? rulesData.rules : [];
+          if (rules.length > 0) {
+            setWeightRanges(rules);
+            // If the QR payload contained a weight, resolve the tier now
+            if (item.itemWeight) {
+              const lbs = parseWeightToLbs(item.itemWeight);
+              const matched = lbs !== null ? matchWeightRange(rules, lbs) : null;
+              if (matched) {
+                item = { ...item, variantId: matched.variantId, variantTitle: matched.label };
+              }
+            }
+          }
+        }
+      } catch {
+        // non-fatal — proceed with resolved item
+      }
+    }
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
