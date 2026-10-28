@@ -392,7 +392,7 @@ export default function ScaleSettingsPage() {
     setWrSearching(true);
     setWrError(null);
     try {
-      const res = await fetch(`/api/product/list?search=${encodeURIComponent(wrProductSearch.trim())}&limit=10`);
+      const res = await fetch(`/api/products?search=${encodeURIComponent(wrProductSearch.trim())}&pageSize=10`);
       if (!res.ok) throw new Error('Search failed');
       const data = await res.json();
       const products: { productId: string; productTitle: string }[] =
