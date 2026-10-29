@@ -1277,15 +1277,14 @@ export default function ScalePage() {
       let parentDelta = 0;
       let childDelta = 0;
 
-      if (mapping.isWeighted) {
+      if (isCategorical && rawWeight > 0) {
+        // Categorical: always round(weight) for both sides, regardless of isWeighted/weightPerUnit
+        const consumed = Math.round(rawWeight);
+        parentDelta = -consumed;
+        childDelta = consumed;
+      } else if (mapping.isWeighted) {
         if (rawWeight > 0) {
-          let consumed: number;
-          if (isCategorical) {
-            // Categorical: input and output always move by round(weight), ignoring weightPerUnit
-            consumed = Math.round(rawWeight);
-          } else {
-            consumed = mapping.weightPerUnit > 0 ? Math.round(rawWeight / mapping.weightPerUnit) : Math.round(rawWeight);
-          }
+          const consumed = mapping.weightPerUnit > 0 ? Math.round(rawWeight / mapping.weightPerUnit) : Math.round(rawWeight);
           parentDelta = -consumed;
           childDelta = consumed;
         }
