@@ -200,6 +200,18 @@ export default function ScaleSettingsPage() {
     }
   }, []);
 
+  const fetchConfiguredProducts = useCallback(async () => {
+    setWrConfiguredLoading(true);
+    try {
+      const res = await fetch('/api/scale/weight-ranges');
+      if (!res.ok) return;
+      const data = await res.json();
+      setWrConfiguredProducts(data.products ?? []);
+    } catch { /* non-fatal */ } finally {
+      setWrConfiguredLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMappings();
     fetchSyncSettings();
@@ -397,18 +409,6 @@ export default function ScaleSettingsPage() {
     barcodeBackfill: 'Barcode ↔ PO backfill',
     snCounters: 'SN counter reconciliation',
   }[s] ?? s);
-
-  const fetchConfiguredProducts = useCallback(async () => {
-    setWrConfiguredLoading(true);
-    try {
-      const res = await fetch('/api/scale/weight-ranges');
-      if (!res.ok) return;
-      const data = await res.json();
-      setWrConfiguredProducts(data.products ?? []);
-    } catch { /* non-fatal */ } finally {
-      setWrConfiguredLoading(false);
-    }
-  }, []);
 
   const handleWrSearch = async () => {
     if (!wrProductSearch.trim()) return;
