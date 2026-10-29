@@ -1372,39 +1372,6 @@ export default function ScalePage() {
       vendorName: po.vendor ?? null,
     };
 
-    // For categorical products (weight ranges), start a processing session
-    if (ranges.length > 0 && !isLotReceiving) {
-      setWeightRanges(ranges);
-      setCurrentItem(resolvedItem);
-      // Check for prior partial session on this PO line item
-      let priorCumulative = 0;
-      let priorBreakdown: Record<string, number> = {};
-      try {
-        const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(li.id)}`);
-        if (sessRes.ok) {
-          const sessData = await sessRes.json();
-          if (sessData?.sessionStatus === 'partial' || sessData?.sessionCount > 0) {
-            priorCumulative = sessData.cumulativeQty ?? 0;
-            priorBreakdown = sessData.variantBreakdown ?? {};
-          }
-        }
-      } catch { /* non-fatal */ }
-      setProcessingSession({
-        poId: po.id,
-        poLineItemId: li.id,
-        poQty: li.quantityReceived > 0 ? li.quantityReceived : li.quantityOrdered,
-        mainVariantId: resolvedItem.variantId ?? '',
-        mainProductTitle: resolvedItem.productTitle ?? '',
-        vendorName: po.vendor ?? '',
-        lotNo: '',
-        sessionQty: 0,
-        cumulativeQty: priorCumulative,
-        variantBreakdown: priorBreakdown,
-      });
-      setLookupLoading(false);
-      return;
-    }
-
     // Fetch inventoryItemId now so the modal can show the adjustment checkbox before printing
     let inventoryItemId: string | undefined;
     let locationId: string | undefined;
