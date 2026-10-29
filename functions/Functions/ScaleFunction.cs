@@ -288,8 +288,12 @@ public class ScaleFunction
                     catch { }
                 }
 
+                var hasAdjustments = !string.IsNullOrWhiteSpace(variantEntity?.Adjustments)
+                    && variantEntity.Adjustments != "null"
+                    && variantEntity.Adjustments != "{}";
+
                 if (entity == null)
-                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving, weightRanges = weightRulesForVariant }, _allowedOrigins);
+                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving, weightRanges = weightRulesForVariant, hasAdjustments }, _allowedOrigins);
 
                 return await ResponseHelper.WriteSuccess(req, new
                 {
@@ -306,6 +310,7 @@ public class ScaleFunction
                     noWeight = entity.NoWeight,
                     isLotReceiving,
                     weightRanges = weightRulesForVariant,
+                    hasAdjustments,
                 }, _allowedOrigins);
             }
 
@@ -723,6 +728,11 @@ public class ScaleFunction
                 variantId    = variantId,
                 productTitle = label.ProductTitle,
                 plu          = label.Plu,
+                poId         = label.PoId,
+                poLineItemId = label.PoLineItemId,
+                vendorName   = label.VendorName,
+                lotNo        = label.LotNo,
+                itemWeight   = label.ItemWeight,
             }, _allowedOrigins);
         }
         catch (Exception ex)

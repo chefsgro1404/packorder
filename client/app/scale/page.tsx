@@ -1392,7 +1392,7 @@ export default function ScalePage() {
       setProcessingSession({
         poId: po.id,
         poLineItemId: li.id,
-        poQty: li.quantityOrdered,
+        poQty: li.quantityReceived > 0 ? li.quantityReceived : li.quantityOrdered,
         mainVariantId: resolvedItem.variantId ?? '',
         mainProductTitle: resolvedItem.productTitle ?? '',
         vendorName: po.vendor ?? '',
@@ -1867,11 +1867,18 @@ export default function ScalePage() {
       setCurrentItem(item);
       setManualWeight('');
     }
-    // When auto-detect has a match, apply the matched variant before printing
+    // When auto-detect has a match, apply the matched variant before printing.
+    // Fetch the mapping for the matched output variant explicitly — inventoryMapping
+    // in state may still be for the input product (stale closure in session mode).
     if (autoDetect?.matched && item.variantId !== autoDetect.matched.variantId) {
       const itemWithVariant = { ...item, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
+      let matchedMapping: InventoryMappingInfo | null = null;
+      try {
+        const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(autoDetect.matched.variantId)}`);
+        if (mapRes.ok) matchedMapping = await mapRes.json();
+      } catch { /* non-fatal */ }
       setCurrentItem(itemWithVariant);
-      await printItem(itemWithVariant, { forceDialog: true });
+      await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping });
       // Reset for next item (staff places next chicken)
       setAutoDetect(null);
       setWeightRanges(prev => prev); // keep ranges for next weigh
@@ -1881,6 +1888,9 @@ export default function ScalePage() {
     if (weightRanges.length > 0) {
       // Reset detection for next item in sequence
       setAutoDetect(null);
+    } else if (processingSession) {
+      // Standard session (beef): increment counter per print
+      setProcessingSession(prev => prev ? { ...prev, sessionQty: prev.sessionQty + 1 } : prev);
     }
   };
 
@@ -1963,20 +1973,11 @@ export default function ScalePage() {
       } catch { /* non-fatal — session was already written */ }
     }
 
-    // Approve PO line item when session completes (all units accounted for)
-    if (status === 'completed') {
-      const totalProcessed = processingSession.cumulativeQty + processingSession.sessionQty;
-      try {
-        await approvePoItem(processingSession.poId, processingSession.poLineItemId, totalProcessed);
-        await refreshLineItems(processingSession.poId);
-      } catch { /* non-fatal */ }
-    }
-
     setProcessingSession(null);
     setWeightRanges([]);
     setAutoDetect(null);
     setCurrentItem(null);
-  }, [processingSession, approvePoItem, refreshLineItems]);
+  }, [processingSession]);
 
   const handleQrScan = useCallback(async (scanned: string) => {
     setQrScanOpen(false);
@@ -2019,20 +2020,33 @@ export default function ScalePage() {
       timestamp: new Date(),
     });
 
-    // Primary: SN-based lookup — resolves variantId from the original print log entry.
-    // This works for both mapped and unmapped products, including PLU "N/A" items.
-    if (!item.variantId && sn) {
+    // Primary: SN-based lookup — resolves variantId and PO context from the original print log entry.
+    // Always run when SN is present to capture PO context for session auto-start even if variantId is known.
+    let snPoId: string | null = null;
+    let snPoLineItemId: string | null = null;
+    let snVendorName: string | null = null;
+    let snLotNo: string | null = null;
+    if (sn) {
       try {
         const snRes = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(sn)}`);
         if (snRes.ok) {
           const snData = await snRes.json();
-          if (snData?.found && snData?.variantId) {
-            item = { ...item, variantId: snData.variantId };
+          if (snData?.found) {
+            if (snData?.variantId && !item.variantId) {
+              item = { ...item, variantId: snData.variantId };
+            }
+            snPoId = snData.poId ?? null;
+            snPoLineItemId = snData.poLineItemId ?? null;
+            snVendorName = snData.vendorName ?? null;
+            snLotNo = snData.lotNo ?? null;
           }
         }
       } catch (err) {
         console.error('[qr] SN lookup error:', err);
       }
+    }
+    if (snPoId) {
+      item = { ...item, poId: snPoId, poLineItemId: snPoLineItemId ?? undefined, vendorName: snVendorName };
     }
 
     // Tertiary fallback: title-based lookup for unmapped products without a logged SN variantId
@@ -2055,18 +2069,21 @@ export default function ScalePage() {
       }
     }
     // Fetch weight ranges for the resolved product and auto-match on weight if present in QR
+    let sessionRules: WeightRangeRule[] = [];
+    let hasAdjustments = false;
     if (item.variantId) {
       try {
         const rulesRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
         if (rulesRes.ok) {
           const rulesData = await rulesRes.json();
-          const rules: WeightRangeRule[] = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
-          if (rules.length > 0) {
-            setWeightRanges(rules);
+          sessionRules = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
+          hasAdjustments = !!rulesData?.hasAdjustments;
+          if (sessionRules.length > 0) {
+            setWeightRanges(sessionRules);
             // If the QR payload contained a weight, resolve the tier now
             if (item.itemWeight) {
               const lbs = parseWeightToLbs(item.itemWeight);
-              const matched = lbs !== null ? matchWeightRange(rules, lbs) : null;
+              const matched = lbs !== null ? matchWeightRange(sessionRules, lbs) : null;
               if (matched) {
                 item = { ...item, variantId: matched.variantId, variantTitle: matched.label };
               }
@@ -2077,10 +2094,47 @@ export default function ScalePage() {
         // non-fatal — proceed with resolved item
       }
     }
+
+    // Auto-start processing session when a batch barcode has PO context and the product is
+    // categorical (weight ranges) or standard session (beef — has adjustments but no weight ranges)
+    if (snPoId && snPoLineItemId && (sessionRules.length > 0 || hasAdjustments)) {
+      let poQty = 0;
+      let priorCumulative = 0;
+      let priorBreakdown: Record<string, number> = {};
+      try {
+        const lineItems = await fetchLineItems(snPoId);
+        const li = lineItems.find(x => x.id === snPoLineItemId);
+        poQty = (li?.quantityReceived && li.quantityReceived > 0) ? li.quantityReceived : (li?.quantityOrdered ?? 0);
+      } catch { /* non-fatal */ }
+      try {
+        const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(snPoLineItemId)}`);
+        if (sessRes.ok) {
+          const sessData = await sessRes.json();
+          if (sessData?.sessionStatus === 'partial' || sessData?.sessionCount > 0) {
+            priorCumulative = sessData.cumulativeQty ?? 0;
+            priorBreakdown = sessData.variantBreakdown ?? {};
+            if (!poQty && sessData.poQty) poQty = sessData.poQty;
+          }
+        }
+      } catch { /* non-fatal */ }
+      setProcessingSession({
+        poId: snPoId,
+        poLineItemId: snPoLineItemId,
+        poQty,
+        mainVariantId: item.variantId ?? '',
+        mainProductTitle: item.productTitle ?? '',
+        vendorName: snVendorName ?? '',
+        lotNo: snLotNo ?? '',
+        sessionQty: 0,
+        cumulativeQty: priorCumulative,
+        variantBreakdown: priorBreakdown,
+      });
+    }
+
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
-  }, [lookupProduct]);
+  }, [lookupProduct, fetchLineItems]);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
