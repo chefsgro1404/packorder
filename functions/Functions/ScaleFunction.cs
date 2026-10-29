@@ -293,7 +293,23 @@ public class ScaleFunction
                     && variantEntity.Adjustments != "{}";
 
                 if (entity == null)
+                {
+                    // Not in PLU table — fall back to productvariants table for title data
+                    if (variantEntity != null && !string.IsNullOrWhiteSpace(variantEntity.ProductTitle))
+                        return await ResponseHelper.WriteSuccess(req, new
+                        {
+                            found = true,
+                            productId = variantEntity.ProductId,
+                            variantId = variantEntity.VariantId,
+                            productTitle = variantEntity.ProductTitle,
+                            variantTitle = variantEntity.VariantTitle,
+                            plu = (string?)null,
+                            isLotReceiving,
+                            weightRanges = weightRulesForVariant,
+                            hasAdjustments,
+                        }, _allowedOrigins);
                     return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving, weightRanges = weightRulesForVariant, hasAdjustments }, _allowedOrigins);
+                }
 
                 return await ResponseHelper.WriteSuccess(req, new
                 {
