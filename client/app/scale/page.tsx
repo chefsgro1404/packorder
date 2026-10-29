@@ -1142,8 +1142,12 @@ export default function ScalePage() {
         const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(matchedTier.variantId)}`);
         if (tierRes.ok) {
           const tierData = await tierRes.json();
+          console.log('[scale] auto-print tier by-variant response:', tierData);
           if (tierData?.found) {
-            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierData.productTitle ?? itemWithVariant.productTitle, found: true };
+            const tierPT = tierData.productTitle ?? itemWithVariant.productTitle;
+            // Avoid "X - X" on the label when tier label matches the product title exactly
+            const tierVT = itemWithVariant.variantTitle === tierPT ? null : itemWithVariant.variantTitle;
+            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierPT, variantTitle: tierVT, found: true };
           }
         }
       } catch { /* non-fatal — print still proceeds with input product title */ }
@@ -1860,39 +1864,59 @@ export default function ScalePage() {
       setCurrentItem(item);
       setManualWeight('');
     }
-    // When auto-detect has a match, apply the matched variant before printing.
-    // Fetch the mapping for the matched output variant explicitly — inventoryMapping
-    // in state may still be for the input product (stale closure in session mode).
-    if (autoDetect?.matched && item.variantId !== autoDetect.matched.variantId) {
-      let itemWithVariant: CurrentItem = { ...item, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
-      // Fetch matched tier's own PLU + productTitle so the barcode is for the output variant
+    // Resolve the tier match — prefer the already-computed auto-detect state, but compute
+    // inline when autoDetect.matched is null. This happens when the user types weight manually:
+    // the auto-detect effect watches currentItem.itemWeight (not manualWeight), so it hasn't
+    // fired yet at the point handleManualPrint is called from the Enter keypress.
+    let activeMatch = autoDetect?.matched ?? null;
+    if (!activeMatch && weightRanges.length > 0 && item.itemWeight) {
+      const lbs = parseWeightToLbs(item.itemWeight);
+      if (lbs !== null) activeMatch = matchWeightRange(weightRanges, lbs);
+      console.log('[scale] manual print inline match:', { weight: item.itemWeight, lbs, activeMatch });
+    }
+
+    if (activeMatch && item.variantId !== activeMatch.variantId) {
+      let itemWithVariant: CurrentItem = { ...item, variantId: activeMatch.variantId, variantTitle: activeMatch.label };
       try {
-        const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(autoDetect.matched.variantId)}`);
+        const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(activeMatch.variantId)}`);
         if (tierRes.ok) {
           const tierData = await tierRes.json();
+          console.log('[scale] manual print tier by-variant response:', tierData);
           if (tierData?.found) {
-            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierData.productTitle ?? itemWithVariant.productTitle, found: true };
+            const tierPT = tierData.productTitle ?? itemWithVariant.productTitle;
+            // Avoid "X - X" on the label when the tier label matches the product title
+            const tierVT = itemWithVariant.variantTitle === tierPT ? null : itemWithVariant.variantTitle;
+            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierPT, variantTitle: tierVT, found: true };
           }
         }
       } catch { /* non-fatal */ }
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
-        const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(autoDetect.matched.variantId)}`);
+        const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(activeMatch.variantId)}`);
         if (mapRes.ok) matchedMapping = await mapRes.json();
       } catch { /* non-fatal */ }
       setCurrentItem(itemWithVariant);
+      // Block the auto-print timer from firing a second print for the same item
+      setAutoPrintPending(true);
       await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping, isCategorical: true });
-      // Reset for next item (staff places next chicken)
+      // Increment session counter (same logic as auto-print effect)
+      setProcessingSession(prev => {
+        if (!prev) return null;
+        const breakdown = { ...prev.variantBreakdown };
+        breakdown[activeMatch!.label] = (breakdown[activeMatch!.label] ?? 0) + 1;
+        const newSessionQty = prev.sessionQty + 1;
+        const newTotal = prev.cumulativeQty + newSessionQty;
+        if (newTotal >= prev.poQty) setTimeout(() => setSessionClosePrompt(true), 300);
+        return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
+      });
       setAutoDetect(null);
-      setWeightRanges(prev => prev); // keep ranges for next weigh
+      setAutoPrintPending(false);
       return;
     }
     await printItem(item, { forceDialog: true });
     if (weightRanges.length > 0) {
-      // Reset detection for next item in sequence
       setAutoDetect(null);
     } else if (processingSession) {
-      // Standard session (beef): increment counter per print
       setProcessingSession(prev => prev ? { ...prev, sessionQty: prev.sessionQty + 1 } : prev);
     }
   };
