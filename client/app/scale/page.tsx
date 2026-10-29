@@ -1293,7 +1293,7 @@ export default function ScalePage() {
 
       if (parentDelta !== 0) {
         try {
-          await fetch('/api/scale/inventory-adjust', {
+          const adjRes = await fetch('/api/scale/inventory-adjust', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1303,7 +1303,12 @@ export default function ScalePage() {
               reason: 'correction',
             }),
           });
-          setLastAdjustment({ delta: parentDelta, parentTitle: mapping.parentProductTitle });
+          if (!adjRes.ok) {
+            const errText = await adjRes.text().catch(() => '');
+            console.error('[scale] inventory adjustment failed:', adjRes.status, errText, '| parentInventoryId:', mapping.parentInventoryId, '| locationId:', mapping.parentLocationId);
+          } else {
+            setLastAdjustment({ delta: parentDelta, parentTitle: mapping.parentProductTitle });
+          }
         } catch (err) {
           console.error('[scale] inventory adjustment failed:', err);
         }
@@ -1311,7 +1316,7 @@ export default function ScalePage() {
         // Increase child (transformation output) inventory
         if (mapping.childInventoryItemId && childDelta > 0) {
           try {
-            await fetch('/api/scale/inventory-adjust', {
+            const childAdjRes = await fetch('/api/scale/inventory-adjust', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -1321,6 +1326,10 @@ export default function ScalePage() {
                 reason: 'correction',
               }),
             });
+            if (!childAdjRes.ok) {
+              const errText = await childAdjRes.text().catch(() => '');
+              console.error('[scale] child inventory adjustment failed:', childAdjRes.status, errText, '| childInventoryItemId:', mapping.childInventoryItemId);
+            }
           } catch (err) {
             console.error('[scale] child inventory increase failed:', err);
           }
@@ -2123,6 +2132,8 @@ export default function ScalePage() {
         cumulativeQty: priorCumulative,
         variantBreakdown: priorBreakdown,
       });
+      // Clear baked-in QR weight — session uses live scale readings, not the PO acceptance weight
+      item = { ...item, itemWeight: '' };
     }
 
     setWasQrScanned(true);
@@ -2560,8 +2571,8 @@ export default function ScalePage() {
                     </div>
                   )}
 
-                  {/* Transformation options (auto-detected or manual fallback) */}
-                  {(transformationOptions !== null) && (
+                  {/* Transformation options — suppressed when weight ranges are active (categorical session picks tier from weight) */}
+                  {(transformationOptions !== null && weightRanges.length === 0) && (
                     <TransformationPanel
                       options={transformationOptions}
                       currentItem={currentItem}
