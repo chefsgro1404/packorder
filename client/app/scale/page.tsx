@@ -1131,11 +1131,22 @@ export default function ScalePage() {
     const matchedTier = autoDetect.matched;
     const timer = setTimeout(async () => {
       if (!currentItem) { setAutoPrintPending(false); return; }
-      const itemWithVariant = {
+      let itemWithVariant: CurrentItem = {
         ...currentItem,
         variantId: matchedTier.variantId,
         variantTitle: matchedTier.label,
       };
+      // Fetch matched tier's own PLU + productTitle so the barcode is printed for the
+      // correct output variant, not the original scanned input product.
+      try {
+        const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(matchedTier.variantId)}`);
+        if (tierRes.ok) {
+          const tierData = await tierRes.json();
+          if (tierData?.found) {
+            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierData.productTitle ?? itemWithVariant.productTitle, found: true };
+          }
+        }
+      } catch { /* non-fatal — print still proceeds with input product title */ }
       // Fetch the inventory mapping for the matched output variant now — the state-based
       // inventoryMapping is stale here (captured from before the variant switched).
       let matchedMapping: InventoryMappingInfo | null = null;
@@ -1144,7 +1155,7 @@ export default function ScalePage() {
         if (mapRes.ok) matchedMapping = await mapRes.json();
       } catch { /* non-fatal — print still proceeds without adjustment */ }
       setCurrentItem(itemWithVariant);
-      await printItem(itemWithVariant, { mapping: matchedMapping });
+      await printItem(itemWithVariant, { mapping: matchedMapping, isCategorical: true });
       setProcessingSession(prev => {
         if (!prev) return null;
         const breakdown = { ...prev.variantBreakdown };
@@ -1214,6 +1225,7 @@ export default function ScalePage() {
     skipPoApproval?: boolean,
     lotNo?: string | null,
     expiryDate?: string | null,
+    isCategorical?: boolean,
   ) => {
     try {
       const res = await fetch('/api/scale/print-log', {
@@ -1262,9 +1274,14 @@ export default function ScalePage() {
       let childDelta = 0;
 
       if (mapping.isWeighted) {
-        // Weight-based: derive from measured weight
-        if (rawWeight > 0 && mapping.weightPerUnit > 0) {
-          const consumed = Math.round(rawWeight / mapping.weightPerUnit);
+        if (rawWeight > 0) {
+          let consumed: number;
+          if (isCategorical) {
+            // Categorical: input and output always move by round(weight), ignoring weightPerUnit
+            consumed = Math.round(rawWeight);
+          } else {
+            consumed = mapping.weightPerUnit > 0 ? Math.round(rawWeight / mapping.weightPerUnit) : Math.round(rawWeight);
+          }
           parentDelta = -consumed;
           childDelta = consumed;
         }
@@ -1641,7 +1658,7 @@ export default function ScalePage() {
     printVerbatim({ productTitle: currentItem.productTitle, variantTitle: currentItem.variantTitle ?? null, qrPayload: newQrPayload, itemWeight: currentItem.itemWeight, printedAtEst, sn: reprintSn });
   }, [currentItem, buildReprintSn, printVerbatim]);
 
-  const printItem = useCallback(async (item: CurrentItem, { forceDialog = false, mapping: explicitMapping }: { forceDialog?: boolean; mapping?: InventoryMappingInfo | null } = {}) => {
+  const printItem = useCallback(async (item: CurrentItem, { forceDialog = false, mapping: explicitMapping, isCategorical = false }: { forceDialog?: boolean; mapping?: InventoryMappingInfo | null; isCategorical?: boolean } = {}) => {
     if (isPrinting.current) return;
     isPrinting.current = true;
     setPrintError(null);
@@ -1671,7 +1688,7 @@ export default function ScalePage() {
           variantTitle: mappedVariant,
           itemWeight: item.itemWeight,
         }, sn, encryptedPayload);
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping, undefined, undefined, undefined, isCategorical);
       } else {
         const printedAtEst = formatEst(new Date());
         const jobPayload: PrintJobPayload = {
@@ -1687,7 +1704,7 @@ export default function ScalePage() {
         const job = await createJob(jobPayload, 'label');
         if (job) {
           setRemotePrintJob(job);
-          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping);
+          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping, undefined, undefined, undefined, isCategorical);
         } else {
           setPrintError('Failed to queue print job — check your connection and try again.');
         }
@@ -1838,14 +1855,24 @@ export default function ScalePage() {
     // Fetch the mapping for the matched output variant explicitly — inventoryMapping
     // in state may still be for the input product (stale closure in session mode).
     if (autoDetect?.matched && item.variantId !== autoDetect.matched.variantId) {
-      const itemWithVariant = { ...item, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
+      let itemWithVariant: CurrentItem = { ...item, variantId: autoDetect.matched.variantId, variantTitle: autoDetect.matched.label };
+      // Fetch matched tier's own PLU + productTitle so the barcode is for the output variant
+      try {
+        const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(autoDetect.matched.variantId)}`);
+        if (tierRes.ok) {
+          const tierData = await tierRes.json();
+          if (tierData?.found) {
+            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierData.productTitle ?? itemWithVariant.productTitle, found: true };
+          }
+        }
+      } catch { /* non-fatal */ }
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
         const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(autoDetect.matched.variantId)}`);
         if (mapRes.ok) matchedMapping = await mapRes.json();
       } catch { /* non-fatal */ }
       setCurrentItem(itemWithVariant);
-      await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping });
+      await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping, isCategorical: true });
       // Reset for next item (staff places next chicken)
       setAutoDetect(null);
       setWeightRanges(prev => prev); // keep ranges for next weigh
