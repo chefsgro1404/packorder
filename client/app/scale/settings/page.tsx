@@ -148,6 +148,8 @@ export default function ScaleSettingsPage() {
   const [wrSaved, setWrSaved] = useState(false);
   const [wrProductResults, setWrProductResults] = useState<{ productId: string; productTitle: string }[]>([]);
   const [wrSearching, setWrSearching] = useState(false);
+  const [wrConfiguredProducts, setWrConfiguredProducts] = useState<{ productId: string; productTitle: string; rulesCount: number }[]>([]);
+  const [wrConfiguredLoading, setWrConfiguredLoading] = useState(false);
 
   // ── Webhook registration ─────────────────────────────────────────────────
   const [webhookCallbackUrl, setWebhookCallbackUrl] = useState('');
@@ -202,7 +204,8 @@ export default function ScaleSettingsPage() {
     fetchMappings();
     fetchSyncSettings();
     fetchVendors();
-  }, [fetchMappings, fetchSyncSettings, fetchVendors]);
+    fetchConfiguredProducts();
+  }, [fetchMappings, fetchSyncSettings, fetchVendors, fetchConfiguredProducts]);
 
   const handleAddMapping = async () => {
     if (!newPhrase.trim() || !newAbbr.trim()) return;
@@ -395,6 +398,18 @@ export default function ScaleSettingsPage() {
     snCounters: 'SN counter reconciliation',
   }[s] ?? s);
 
+  const fetchConfiguredProducts = useCallback(async () => {
+    setWrConfiguredLoading(true);
+    try {
+      const res = await fetch('/api/scale/weight-ranges');
+      if (!res.ok) return;
+      const data = await res.json();
+      setWrConfiguredProducts(data.products ?? []);
+    } catch { /* non-fatal */ } finally {
+      setWrConfiguredLoading(false);
+    }
+  }, []);
+
   const handleWrSearch = async () => {
     if (!wrProductSearch.trim()) return;
     setWrSearching(true);
@@ -467,6 +482,7 @@ export default function ScaleSettingsPage() {
       if (!res.ok) throw new Error('Failed to save');
       setWrSaved(true);
       setTimeout(() => setWrSaved(false), 2000);
+      await fetchConfiguredProducts();
     } catch (e) {
       setWrError(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -1009,6 +1025,31 @@ export default function ScaleSettingsPage() {
           <p className="text-xs text-slate-400 mb-3">
             Configure size tiers for products like red chicken. Each tier maps a weight range to a specific variant.
           </p>
+
+          {/* Already-configured products */}
+          {wrConfiguredLoading ? (
+            <p className="text-xs text-slate-500 mb-3">Loading configured products…</p>
+          ) : wrConfiguredProducts.length > 0 ? (
+            <div className="mb-4">
+              <p className="text-xs text-slate-500 mb-1.5 font-medium uppercase tracking-wide">Configured products</p>
+              <div className="flex flex-col gap-1">
+                {wrConfiguredProducts.map(p => (
+                  <button
+                    key={p.productId}
+                    onClick={() => handleWrSelectProduct(p.productId, p.productTitle)}
+                    className={`w-full flex items-center justify-between text-left px-3 py-2 rounded-xl border text-sm transition-colors ${
+                      wrProductId === p.productId
+                        ? 'bg-violet-900/50 border-violet-600 text-violet-200'
+                        : 'bg-slate-800/60 border-slate-700/60 text-slate-200 hover:bg-slate-800 hover:border-slate-600'
+                    }`}
+                  >
+                    <span className="truncate">{p.productTitle}</span>
+                    <span className="text-xs text-slate-500 ml-2 flex-shrink-0">{p.rulesCount} tier{p.rulesCount !== 1 ? 's' : ''}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
 
           {/* Product search */}
           <div className="flex gap-2 mb-3">

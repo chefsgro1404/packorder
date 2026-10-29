@@ -960,8 +960,31 @@ public class ScaleFunction
             {
                 var qs = ParseQueryString(req.Url.Query);
                 var productId = qs.TryGetValue("productId", out var p) ? p : "";
+
                 if (string.IsNullOrWhiteSpace(productId))
-                    return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+                {
+                    // No productId — return all products that have weight ranges configured
+                    var all = await _tableStorage.GetAllProductVariantsAsync();
+                    var configured = all
+                        .Where(v => !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]")
+                        .GroupBy(v => v.PartitionKey)
+                        .Select(g =>
+                        {
+                            var first = g.First();
+                            int rulesCount = 0;
+                            try
+                            {
+                                var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(first.WeightRanges ?? "[]");
+                                rulesCount = parsed?.Count ?? 0;
+                            }
+                            catch { }
+                            return new { productId = first.ProductId, productTitle = first.ProductTitle, rulesCount };
+                        })
+                        .Where(x => x.rulesCount > 0)
+                        .OrderBy(x => x.productTitle)
+                        .ToList();
+                    return await ResponseHelper.WriteSuccess(req, new { products = configured }, _allowedOrigins);
+                }
 
                 var variants = await _tableStorage.GetProductVariantsByProductIdAsync(productId);
                 var json = variants.Count > 0 ? variants[0].WeightRanges : null;

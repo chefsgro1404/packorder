@@ -1160,11 +1160,12 @@ export default function ScalePage() {
       } catch { /* non-fatal — print still proceeds without adjustment */ }
       setCurrentItem(itemWithVariant);
       await printItem(itemWithVariant, { mapping: matchedMapping, isCategorical: true });
+      const consumed = autoDetect?.weightLbs && autoDetect.weightLbs > 0 ? Math.round(autoDetect.weightLbs) : 1;
       setProcessingSession(prev => {
         if (!prev) return null;
         const breakdown = { ...prev.variantBreakdown };
-        breakdown[matchedTier.label] = (breakdown[matchedTier.label] ?? 0) + 1;
-        const newSessionQty = prev.sessionQty + 1;
+        breakdown[matchedTier.label] = (breakdown[matchedTier.label] ?? 0) + consumed;
+        const newSessionQty = prev.sessionQty + consumed;
         const newTotal = prev.cumulativeQty + newSessionQty;
         if (newTotal >= prev.poQty) {
           // All units accounted for — auto-open close prompt
@@ -1868,9 +1869,10 @@ export default function ScalePage() {
     // the auto-detect effect watches currentItem.itemWeight (not manualWeight), so it hasn't
     // fired yet at the point handleManualPrint is called from the Enter keypress.
     let activeMatch = autoDetect?.matched ?? null;
+    let activeLbs: number | null = autoDetect?.weightLbs ?? null;
     if (!activeMatch && weightRanges.length > 0 && item.itemWeight) {
       const lbs = parseWeightToLbs(item.itemWeight);
-      if (lbs !== null) activeMatch = matchWeightRange(weightRanges, lbs);
+      if (lbs !== null) { activeMatch = matchWeightRange(weightRanges, lbs); activeLbs = lbs; }
       console.log('[scale] manual print inline match:', { weight: item.itemWeight, lbs, activeMatch });
     }
 
@@ -1898,12 +1900,13 @@ export default function ScalePage() {
       // Block the auto-print timer from firing a second print for the same item
       setAutoPrintPending(true);
       await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping, isCategorical: true });
-      // Increment session counter (same logic as auto-print effect)
+      // Increment session counter by round(weight) — same as inventory delta for categorical
+      const consumed = activeLbs && activeLbs > 0 ? Math.round(activeLbs) : 1;
       setProcessingSession(prev => {
         if (!prev) return null;
         const breakdown = { ...prev.variantBreakdown };
-        breakdown[activeMatch!.label] = (breakdown[activeMatch!.label] ?? 0) + 1;
-        const newSessionQty = prev.sessionQty + 1;
+        breakdown[activeMatch!.label] = (breakdown[activeMatch!.label] ?? 0) + consumed;
+        const newSessionQty = prev.sessionQty + consumed;
         const newTotal = prev.cumulativeQty + newSessionQty;
         if (newTotal >= prev.poQty) setTimeout(() => setSessionClosePrompt(true), 300);
         return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
