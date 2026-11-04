@@ -406,6 +406,15 @@ export default function ShipPage() {
         data.fulfillmentLineItemId,
         data.quantityShipped,
       );
+
+      // Stamp ShippedAt on the printedlabels row for analytics (fire-and-forget, non-blocking)
+      if (qr?.sn) {
+        fetch("/api/scale/mark-shipped", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sn: qr.sn, orderId: selectedFulfillment.orderId }),
+        }).catch(() => { /* non-fatal */ });
+      }
     } catch (e) {
       setBanner({ type: "error", message: e instanceof Error ? e.message : "Scan failed" });
     }
@@ -496,7 +505,28 @@ export default function ShipPage() {
     const qr = parseQrLabel(rawValue);
     const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 
+    // SN-based lookup — primary resolution path for ShipScan-printed labels.
+    // Resolves variantId from the print log so N/A-PLU products still match.
+    let snVariantId: string | null = null;
+    if (qr?.sn) {
+      try {
+        const snRes = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(qr.sn)}`);
+        if (snRes.ok) {
+          const snData = await snRes.json();
+          if (snData?.found && snData.variantId) snVariantId = snData.variantId;
+        }
+      } catch { /* non-fatal — fall through to PLU/title match */ }
+    }
+
     const item = selectedFulfillment.lineItems.find((li) => {
+      if (snVariantId) {
+        // SN resolved a variantId — match by variantId first, fall back to title
+        return (
+          (li.variantId && norm(li.variantId) === norm(snVariantId)) ||
+          norm(li.productTitle) === norm(qr?.productTitle) ||
+          norm(li.variantTitle) === norm(qr?.productTitle)
+        );
+      }
       if (qr) {
         return (
           (li.barcode && norm(li.barcode) === norm(qr.plu)) ||

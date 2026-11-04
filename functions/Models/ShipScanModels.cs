@@ -771,6 +771,9 @@ public class PrintedLabelEntity : ITableEntity
     public string? LotNo { get; set; }
     public string? ExpiryDate { get; set; }
     public string? VariantId { get; set; }
+    // Ship-page stamp — set when this label is successfully scanned out on the ship page
+    public DateTimeOffset? ShippedAt { get; set; }
+    public string? ShippedOrderId { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -1089,6 +1092,12 @@ public class SaveWeightRangesRequest
 {
     [JsonProperty("productId")] public string ProductId { get; set; } = "";
     [JsonProperty("rules")]     public List<WeightRangeRule>? Rules { get; set; }
+}
+
+public class MarkShippedRequest
+{
+    [JsonProperty("sn")]      public string? Sn { get; set; }
+    [JsonProperty("orderId")] public string? OrderId { get; set; }
 }
 
 // ─── Webhook Registration ─────────────────────────────────────────────────────

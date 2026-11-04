@@ -758,6 +758,35 @@ public class ScaleFunction
         }
     }
 
+    [Function("ScaleMarkShipped")]
+    public async Task<HttpResponseData> MarkShipped(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "scale/mark-shipped")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var payload = Newtonsoft.Json.JsonConvert.DeserializeObject<MarkShippedRequest>(body);
+            if (string.IsNullOrWhiteSpace(payload?.Sn))
+                return await ResponseHelper.WriteError(req, "sn is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var stamped = await _tableStorage.StampShippedAtAsync(payload.Sn, payload.OrderId ?? "");
+            return await ResponseHelper.WriteSuccess(req, new { ok = true, found = stamped }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "MarkShipped failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     [Function("ScaleVariantInventory")]
     public async Task<HttpResponseData> VariantInventory(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/variant-inventory")]
