@@ -898,6 +898,8 @@ public class PurchaseOrderLineItemEntity : ITableEntity
     public string Status { get; set; } = "pending";   // pending | partial | approved
     public DateTimeOffset? PrintedAt { get; set; }
     public string? PrintedBy { get; set; }
+    public int? DiscrepancyQty { get; set; }
+    public string? DiscrepancyType { get; set; }  // "short" | "over" | "lot_method"
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }
@@ -984,6 +986,25 @@ public class ApprovePurchaseOrderLineItemRequest
     [JsonProperty("quantityReceived")] public int QuantityReceived { get; set; }
     [JsonProperty("printedBy")]        public string PrintedBy { get; set; } = "";
     [JsonProperty("forceApprove")]     public bool ForceApprove { get; set; } = false;
+    [JsonProperty("discrepancyQty")]   public int? DiscrepancyQty { get; set; }
+    [JsonProperty("discrepancyType")]  public string? DiscrepancyType { get; set; }
+}
+
+public class LotProductEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";  // productId (numeric)
+    public string RowKey { get; set; } = "config";
+    public string ProductTitle { get; set; } = "";
+    public string? ConfiguredBy { get; set; }
+    public string ConfiguredAt { get; set; } = "";
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class SaveLotProductRequest
+{
+    [JsonProperty("productId")]    public string ProductId { get; set; } = "";
+    [JsonProperty("productTitle")] public string ProductTitle { get; set; } = "";
 }
 
 public class InventoryAdjustRequest

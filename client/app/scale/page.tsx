@@ -61,6 +61,7 @@ interface CurrentItem {
   productTitle: string;
   variantTitle?: string | null;
   variantId?: string | null;
+  productId?: string | null;
   found: boolean;
   // PO context — set when item was selected from a PO suggestion
   poId?: string | null;
@@ -1194,6 +1195,12 @@ export default function ScalePage() {
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
+  const [lotProducts, setLotProducts] = useState<Set<string>>(new Set());
+  const [lotProductPrompt, setLotProductPrompt] = useState<{
+    item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem;
+    printedCount: number; lotTotalWeightLbs?: number;
+    inventoryItemId?: string; locationId?: string;
+  } | null>(null);
   const [pendingBulkPayloads, setPendingBulkPayloads] = useState<PrintPayload[] | null>(null);
 
   const [qrScanOpen, setQrScanOpen] = useState(false);
@@ -1214,6 +1221,17 @@ export default function ScalePage() {
     setLabelSizeKey(key);
     localStorage.setItem(LABEL_SIZE_STORAGE_KEY, key);
   };
+
+  const fetchLotProducts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/scale/lot-products');
+      if (res.ok) {
+        const data = await res.json();
+        const ids = new Set<string>((data.products ?? []).map((p: { productId: string }) => p.productId));
+        setLotProducts(ids);
+      }
+    } catch { /* non-fatal */ }
+  }, []);
 
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
@@ -1586,6 +1604,7 @@ export default function ScalePage() {
     let found = false;
     let isLotReceiving = false;
     let ranges: WeightRangeRule[] = [];
+    let productId: string | null = null;
 
     // Try to find a mapped PLU and receiving mode for this variant
     if (li.variantId) {
@@ -1596,6 +1615,7 @@ export default function ScalePage() {
           const data = await res.json();
           isLotReceiving = !!data?.isLotReceiving;
           ranges = Array.isArray(data?.weightRanges) ? data.weightRanges : [];
+          productId = data?.productId ?? null;
           if (data?.found) {
             plu = data.plu ?? '';
             productTitle = data.productTitle ?? li.productTitle;
@@ -1617,6 +1637,7 @@ export default function ScalePage() {
       productTitle,
       variantTitle,
       variantId: li.variantId,
+      productId,
       found,
       poId: po.id,
       poLineItemId: li.id,
@@ -1642,6 +1663,48 @@ export default function ScalePage() {
     setLookupLoading(false);
   }, []);
 
+  const applyBulkApprovalAndInventory = useCallback(async (
+    po: PurchaseOrder,
+    li: PurchaseOrderLineItem,
+    printedCount: number,
+    lotTotalWeightLbs: number | undefined,
+    isLotMethod: boolean,
+    inventoryItemId: string | undefined,
+    locationId: string | undefined,
+  ) => {
+    if (printedCount === 0) return;
+    const hasDiscrepancy = printedCount !== li.quantityOrdered;
+    const discrepancyQty = hasDiscrepancy ? (isLotMethod ? 0 : Math.abs(li.quantityOrdered - printedCount)) : null;
+    const discrepancyType = hasDiscrepancy ? (isLotMethod ? 'lot_method' : (printedCount < li.quantityOrdered ? 'short' : 'over')) : null;
+    const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : (isLotMethod ? li.quantityOrdered : printedCount);
+    const inventoryDelta = isLotMethod ? li.quantityOrdered : printedCount;
+    try {
+      await approvePoItem(po.id, li.id, approvalQty, true, discrepancyQty, discrepancyType);
+      const fresh = await refreshLineItems(po.id);
+      setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
+    } catch (err) {
+      console.error('[scale] PO bulk approval failed:', err);
+    }
+    if (inventoryItemId && inventoryDelta > 0) {
+      try {
+        const adjRes = await fetch('/api/scale/inventory-adjust', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            inventoryItemId,
+            locationId: locationId || 'gid://shopify/Location/82125062435',
+            delta: inventoryDelta,
+            reason: 'receiving',
+          }),
+        });
+        if (adjRes.ok) setBulkInventoryAdjusted(inventoryDelta);
+        else console.error('[bulk] inventory adjust failed:', adjRes.status);
+      } catch (err) {
+        console.error('[bulk] inventory adjust error:', err);
+      }
+    }
+  }, [approvePoItem, refreshLineItems]);
+
   const handleBulkPrint = useCallback(async (
     modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; inventoryItemId?: string; locationId?: string },
     quantity: number,
@@ -1650,7 +1713,6 @@ export default function ScalePage() {
     expiryDate: string,
     mfgDate: string,
     lotTotalWeightLbs?: number,
-    applyAdjust?: boolean,
   ) => {
     const { item: baseItem, po, li } = modalState;
     const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
@@ -1712,45 +1774,7 @@ export default function ScalePage() {
       setPendingBulkPayloads(batchPayloads);
     }
 
-    // Approve PO line item: weight-based (lot) uses total lbs, count-based uses printed count.
-    // forceApprove=true so a short session (e.g. 13/15) is marked approved, not partial.
     const printedCount = results.filter(r => r.status === 'printed').length;
-    const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : printedCount;
-    if (printedCount > 0) {
-      try {
-        await approvePoItem(po.id, li.id, approvalQty, true);
-        const fresh = await refreshLineItems(po.id);
-        setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
-      } catch (err) {
-        console.error('[scale] PO bulk approval failed:', err);
-      }
-    }
-
-    // Shopify inventory adjustment: apply immediately if user opted in from the modal.
-    // count-based only — lot/weight products have no unit qty to correct.
-    const qtyDelta = li.quantityOrdered - printedCount; // positive = short, negative = over
-    const { inventoryItemId: modalInvItemId, locationId: modalLocationId } = modalState;
-    if (applyAdjust && qtyDelta !== 0 && modalInvItemId && lotTotalWeightLbs === undefined) {
-      try {
-        const adjRes = await fetch('/api/scale/inventory-adjust', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            inventoryItemId: modalInvItemId,
-            locationId: modalLocationId || 'gid://shopify/Location/82125062435',
-            delta: -qtyDelta,
-            reason: 'correction',
-          }),
-        });
-        if (adjRes.ok) {
-          setBulkInventoryAdjusted(-qtyDelta);
-        } else {
-          console.error('[bulk] inventory adjust failed:', adjRes.status);
-        }
-      } catch (err) {
-        console.error('[bulk] inventory adjust error:', err);
-      }
-    }
 
     // Save bulk session history
     if (printedCount > 0) {
@@ -1785,7 +1809,47 @@ export default function ScalePage() {
         console.error('[scale] failed to save bulk session:', err);
       }
     }
-  }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, approvePoItem, refreshLineItems, labelSizeKey, resetPrinted]);
+
+    // Determine lot method: either in configured lot products list, or weight-based lot receiving
+    const productId = item.productId ?? null;
+    const isLotMethod = productId ? lotProducts.has(productId) : (lotTotalWeightLbs !== undefined);
+    const { inventoryItemId: modalInvItemId, locationId: modalLocationId } = modalState;
+
+    // Show first-discrepancy modal when count mismatches and product not yet configured
+    if (!isLotMethod && printedCount !== li.quantityOrdered && productId !== null) {
+      setLotProductPrompt({ item, po, li, printedCount, lotTotalWeightLbs, inventoryItemId: modalInvItemId, locationId: modalLocationId });
+      return;
+    }
+
+    // No prompt needed — apply approval and inventory immediately
+    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, isLotMethod, modalInvItemId, modalLocationId);
+  }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, labelSizeKey, resetPrinted, lotProducts, applyBulkApprovalAndInventory]);
+
+  const handleMarkAsLot = useCallback(async () => {
+    if (!lotProductPrompt) return;
+    const { item, po, li, printedCount, lotTotalWeightLbs, inventoryItemId, locationId } = lotProductPrompt;
+    setLotProductPrompt(null);
+    if (item.productId) {
+      try {
+        await fetch('/api/scale/lot-products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ productId: item.productId, productTitle: item.productTitle }),
+        });
+        setLotProducts(prev => new Set([...prev, item.productId!]));
+      } catch (err) {
+        console.error('[scale] failed to save lot product:', err);
+      }
+    }
+    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, true, inventoryItemId, locationId);
+  }, [lotProductPrompt, applyBulkApprovalAndInventory]);
+
+  const handleDeclineLot = useCallback(async () => {
+    if (!lotProductPrompt) return;
+    const { po, li, printedCount, lotTotalWeightLbs, inventoryItemId, locationId } = lotProductPrompt;
+    setLotProductPrompt(null);
+    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, false, inventoryItemId, locationId);
+  }, [lotProductPrompt, applyBulkApprovalAndInventory]);
 
   const handleTransformationSelect = useCallback((opt: TransformationOption) => {
     if (!currentItem) return;
@@ -2088,6 +2152,7 @@ export default function ScalePage() {
     fetch('/api/auth').then(r => { if (r.status === 401) router.replace('/'); });
     scale.autoConnect();
     fetchHistory();
+    fetchLotProducts();
     fetch('/api/scale/text-mappings')
       .then(r => r.json())
       .then(d => setTextMappings(d.mappings ?? []))
@@ -3042,15 +3107,51 @@ export default function ScalePage() {
           orderedQuantity={bulkPrintModal.li.quantityOrdered}
           vendorName={bulkPrintModal.item.vendorName}
           isLotReceiving={bulkPrintModal.isLotReceiving}
-          inventoryItemId={bulkPrintModal.inventoryItemId ?? null}
-          onConfirm={(qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs, applyAdjust) =>
-            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs, applyAdjust)
+          onConfirm={(qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs) =>
+            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs)
           }
           onClose={() => setBulkPrintModal(null)}
         />
       )}
 
       <PrintLabelPortal payload={printPayload} batchPayloads={batchPrintPayloads} labelSizeKey={labelSizeKey} />
+
+      {/* ── Lot Product Prompt ── */}
+      {lotProductPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-900/60 border border-amber-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <span className="text-lg">🏷️</span>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-slate-100 leading-snug">Is this a lot product?</p>
+                <p className="text-xs text-slate-400 mt-1">
+                  <span className="font-semibold text-amber-300">{lotProductPrompt.printedCount}</span> barcode{lotProductPrompt.printedCount !== 1 ? 's' : ''} printed,
+                  but PO quantity is <span className="font-semibold text-slate-200">{lotProductPrompt.li.quantityOrdered}</span>.
+                </p>
+                <p className="text-xs text-slate-500 mt-2">
+                  <span className="font-medium text-slate-300">{lotProductPrompt.item.productTitle}</span> — Lot products (beef, lamb, goat, etc.) use the full PO quantity for inventory since barcodes are batch labels, not unit counts.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={handleMarkAsLot}
+                className="w-full h-11 bg-amber-600 hover:bg-amber-500 rounded-xl text-sm text-white font-bold transition-colors"
+              >
+                Mark as lot product — use PO qty ({lotProductPrompt.li.quantityOrdered})
+              </button>
+              <button
+                onClick={handleDeclineLot}
+                className="w-full h-11 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 font-medium transition-colors"
+              >
+                No — record discrepancy of {Math.abs(lotProductPrompt.li.quantityOrdered - lotProductPrompt.printedCount)}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Session Close Prompt ── */}
       {sessionClosePrompt && processingSession && (() => {

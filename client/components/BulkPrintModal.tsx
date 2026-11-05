@@ -9,8 +9,7 @@ export interface BulkPrintModalProps {
   orderedQuantity: number;
   vendorName?: string | null;
   isLotReceiving?: boolean;
-  inventoryItemId?: string | null;
-  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, mfgDate: string, lotTotalWeightLbs?: number, applyAdjust?: boolean) => void;
+  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, mfgDate: string, lotTotalWeightLbs?: number) => void;
   onClose: () => void;
 }
 
@@ -20,7 +19,6 @@ export function BulkPrintModal({
   orderedQuantity,
   vendorName,
   isLotReceiving = false,
-  inventoryItemId,
   onConfirm,
   onClose,
 }: BulkPrintModalProps) {
@@ -29,7 +27,6 @@ export function BulkPrintModal({
   const [lotNo, setLotNo] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [mfgDate, setMfgDate] = useState('');
-  const [applyAdjust, setApplyAdjust] = useState(false);
 
   // Lot receiving state (weight-based products: beef, goat, lamb)
   const [totalWeightLbs, setTotalWeightLbs] = useState('');
@@ -49,9 +46,9 @@ export function BulkPrintModal({
     if (!isValid) return;
     if (isLotReceiving) {
       const labelWeight = `${weightPerLabel} lbs (LOT)`;
-      onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), mfgDate.trim(), parsedWeight, false);
+      onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), mfgDate.trim(), parsedWeight);
     } else {
-      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim(), mfgDate.trim(), undefined, applyAdjust);
+      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim(), mfgDate.trim());
     }
   };
 
@@ -165,30 +162,13 @@ export function BulkPrintModal({
                 Full quantity received
               </p>
             )}
-            {isCountValid && delta !== 0 && !inventoryItemId && (
+            {isCountValid && delta !== 0 && (
               <p className={`text-xs flex items-center gap-1.5 ${delta > 0 ? 'text-amber-400' : 'text-violet-400'}`}>
                 <span className={`w-1.5 h-1.5 rounded-full inline-block ${delta > 0 ? 'bg-amber-400' : 'bg-violet-400'}`} />
                 {delta > 0
-                  ? `${delta} unit${delta !== 1 ? 's' : ''} short vs PO`
-                  : `${Math.abs(delta)} extra unit${Math.abs(delta) !== 1 ? 's' : ''} vs PO`}
+                  ? `${delta} unit${delta !== 1 ? 's' : ''} short vs PO — printed qty will be added to inventory`
+                  : `${Math.abs(delta)} extra unit${Math.abs(delta) !== 1 ? 's' : ''} vs PO — printed qty will be added to inventory`}
               </p>
-            )}
-            {isCountValid && delta !== 0 && inventoryItemId && (
-              <label className="flex items-center gap-2.5 cursor-pointer select-none bg-slate-800/60 border border-slate-700/60 rounded-lg px-3 py-2 mt-1">
-                <input
-                  type="checkbox"
-                  checked={applyAdjust}
-                  onChange={e => setApplyAdjust(e.target.checked)}
-                  className="w-4 h-4 rounded accent-violet-500 flex-shrink-0 cursor-pointer"
-                />
-                <span className="text-xs text-slate-300">
-                  Adjust Shopify inventory by{' '}
-                  <span className={delta > 0 ? 'text-amber-300 font-semibold' : 'text-emerald-300 font-semibold'}>
-                    {delta > 0 ? `−${delta}` : `+${Math.abs(delta)}`}
-                  </span>
-                  {' '}({delta > 0 ? `${delta}-unit shortfall` : `${Math.abs(delta)}-unit overage`})
-                </span>
-              </label>
             )}
           </div>
         )}

@@ -28,6 +28,7 @@ public class TableStorageService
     private readonly TableClient _bulkSessions;
     private readonly TableClient _vendors;
     private readonly TableClient _processingEvents;
+    private readonly TableClient _lotProducts;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -53,6 +54,7 @@ public class TableStorageService
         _bulkSessions              = tableServiceClient.GetTableClient("bulksessions");
         _vendors                   = tableServiceClient.GetTableClient("vendors");
         _processingEvents          = tableServiceClient.GetTableClient("processingevents");
+        _lotProducts               = tableServiceClient.GetTableClient("lotproducts");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -77,6 +79,7 @@ public class TableStorageService
         await _bulkSessions.CreateIfNotExistsAsync();
         await _vendors.CreateIfNotExistsAsync();
         await _processingEvents.CreateIfNotExistsAsync();
+        await _lotProducts.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1246,7 +1249,8 @@ public class TableStorageService
     }
 
     public async Task<PurchaseOrderLineItemEntity?> ApprovePurchaseOrderLineItemAsync(
-        string numericPoId, string numericLineItemId, int quantityReceived, string printedBy, bool forceApprove = false)
+        string numericPoId, string numericLineItemId, int quantityReceived, string printedBy,
+        bool forceApprove = false, int? discrepancyQty = null, string? discrepancyType = null)
     {
         PurchaseOrderLineItemEntity entity;
         try
@@ -1264,6 +1268,11 @@ public class TableStorageService
         entity.PrintedAt = DateTimeOffset.UtcNow;
         entity.PrintedBy = printedBy;
 
+        if (discrepancyQty.HasValue)
+            entity.DiscrepancyQty = discrepancyQty.Value;
+        if (discrepancyType != null)
+            entity.DiscrepancyType = discrepancyType;
+
         if (forceApprove || entity.QuantityReceived >= entity.QuantityOrdered)
             entity.Status = "approved";
         else if (entity.QuantityReceived > 0)
@@ -1271,6 +1280,45 @@ public class TableStorageService
 
         await _purchaseOrderLineItems.UpsertEntityAsync(entity, TableUpdateMode.Replace);
         return entity;
+    }
+
+    // ─── Lot Products ─────────────────────────────────────────────────────────
+
+    public async Task<List<LotProductEntity>> GetLotProductsAsync()
+    {
+        var results = new List<LotProductEntity>();
+        await foreach (var entity in _lotProducts.QueryAsync<LotProductEntity>())
+            results.Add(entity);
+        return results;
+    }
+
+    public async Task<LotProductEntity> SaveLotProductAsync(string productId, string productTitle, string configuredBy)
+    {
+        var numericId = productId.Contains('/') ? productId.Split('/').Last() : productId;
+        var entity = new LotProductEntity
+        {
+            PartitionKey = numericId,
+            RowKey       = "config",
+            ProductTitle = productTitle,
+            ConfiguredBy = configuredBy,
+            ConfiguredAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        };
+        await _lotProducts.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+        return entity;
+    }
+
+    public async Task<bool> IsLotProductAsync(string productId)
+    {
+        var numericId = productId.Contains('/') ? productId.Split('/').Last() : productId;
+        try
+        {
+            await _lotProducts.GetEntityAsync<LotProductEntity>(numericId, "config");
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404)
+        {
+            return false;
+        }
     }
 
     public async Task CheckAndFulfillPurchaseOrderAsync(string numericPoId)

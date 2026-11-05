@@ -169,7 +169,8 @@ public class PurchaseOrderFunction
         var printedBy = string.IsNullOrWhiteSpace(body.PrintedBy) ? (userId ?? "unknown") : body.PrintedBy;
 
         var updated = await _tableStorage.ApprovePurchaseOrderLineItemAsync(
-            numericPoId, numericLineItemId, body.QuantityReceived, printedBy, body.ForceApprove);
+            numericPoId, numericLineItemId, body.QuantityReceived, printedBy,
+            body.ForceApprove, body.DiscrepancyQty, body.DiscrepancyType);
 
         if (updated == null)
             return await ResponseHelper.WriteError(req, "Line item not found", HttpStatusCode.NotFound, _allowedOrigins);

@@ -1258,6 +1258,59 @@ public class ScaleFunction
         }
     }
 
+    // GET /api/scale/lot-products  — list all configured lot products
+    // POST /api/scale/lot-products — mark a product as lot method
+    [Function("ScaleLotProducts")]
+    public async Task<HttpResponseData> LotProducts(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "options", Route = "scale/lot-products")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (userId, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("GET", StringComparison.OrdinalIgnoreCase))
+            {
+                var products = await _tableStorage.GetLotProductsAsync();
+                var dtos = products.Select(p => new
+                {
+                    productId    = p.PartitionKey,
+                    productTitle = p.ProductTitle,
+                    configuredBy = p.ConfiguredBy,
+                    configuredAt = p.ConfiguredAt,
+                }).ToList();
+                return await ResponseHelper.WriteSuccess(req, new { products = dtos }, _allowedOrigins);
+            }
+
+            // POST — save a product as lot method
+            var body = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<SaveLotProductRequest>(body);
+            if (request == null || string.IsNullOrWhiteSpace(request.ProductId))
+                return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            var entity = await _tableStorage.SaveLotProductAsync(request.ProductId, request.ProductTitle, userId ?? "unknown");
+            _logger.LogInformation("Lot product saved: {ProductId} ({ProductTitle}) by {UserId}",
+                request.ProductId, request.ProductTitle, userId);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                productId    = entity.PartitionKey,
+                productTitle = entity.ProductTitle,
+                configuredAt = entity.ConfiguredAt,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LotProducts endpoint failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     private static Dictionary<string, string> ParseQueryString(string query)
     {
         return query.TrimStart('?')

@@ -136,6 +136,15 @@ export default function ScaleSettingsPage() {
   const [vendorSaving, setVendorSaving] = useState(false);
   const [deletingVendorId, setDeletingVendorId] = useState<string | null>(null);
 
+  // ── Lot products ─────────────────────────────────────────────────────────
+  const [lotProducts, setLotProducts] = useState<{ productId: string; productTitle: string; configuredAt: string }[]>([]);
+  const [lotProductsLoading, setLotProductsLoading] = useState(false);
+  const [lotProductSearch, setLotProductSearch] = useState('');
+  const [lotProductResults, setLotProductResults] = useState<{ productId: string; productTitle: string }[]>([]);
+  const [lotProductSearching, setLotProductSearching] = useState(false);
+  const [lotProductSaving, setLotProductSaving] = useState(false);
+  const [lotProductError, setLotProductError] = useState<string | null>(null);
+
   // ── Weight ranges ────────────────────────────────────────────────────────
   const [wrProductId, setWrProductId] = useState('');
   const [wrProductSearch, setWrProductSearch] = useState('');
@@ -212,12 +221,25 @@ export default function ScaleSettingsPage() {
     }
   }, []);
 
+  const fetchLotProductList = useCallback(async () => {
+    setLotProductsLoading(true);
+    try {
+      const res = await fetch('/api/scale/lot-products');
+      if (!res.ok) return;
+      const data = await res.json();
+      setLotProducts(data.products ?? []);
+    } catch { /* non-fatal */ } finally {
+      setLotProductsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     fetchMappings();
     fetchSyncSettings();
     fetchVendors();
     fetchConfiguredProducts();
-  }, [fetchMappings, fetchSyncSettings, fetchVendors, fetchConfiguredProducts]);
+    fetchLotProductList();
+  }, [fetchMappings, fetchSyncSettings, fetchVendors, fetchConfiguredProducts, fetchLotProductList]);
 
   const handleAddMapping = async () => {
     if (!newPhrase.trim() || !newAbbr.trim()) return;
@@ -409,6 +431,42 @@ export default function ScaleSettingsPage() {
     barcodeBackfill: 'Barcode ↔ PO backfill',
     snCounters: 'SN counter reconciliation',
   }[s] ?? s);
+
+  const handleLotProductSearch = async () => {
+    if (!lotProductSearch.trim()) return;
+    setLotProductSearching(true);
+    setLotProductError(null);
+    try {
+      const res = await fetch(`/api/scale/products/search?q=${encodeURIComponent(lotProductSearch.trim())}`);
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      setLotProductResults(data.products ?? []);
+    } catch {
+      setLotProductError('Search failed — try again');
+    } finally {
+      setLotProductSearching(false);
+    }
+  };
+
+  const handleAddLotProduct = async (productId: string, productTitle: string) => {
+    setLotProductSaving(true);
+    setLotProductError(null);
+    try {
+      const res = await fetch('/api/scale/lot-products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId, productTitle }),
+      });
+      if (!res.ok) throw new Error('Failed to save');
+      await fetchLotProductList();
+      setLotProductResults([]);
+      setLotProductSearch('');
+    } catch {
+      setLotProductError('Failed to save lot product — try again');
+    } finally {
+      setLotProductSaving(false);
+    }
+  };
 
   const handleWrSearch = async () => {
     if (!wrProductSearch.trim()) return;
@@ -1196,6 +1254,85 @@ export default function ScaleSettingsPage() {
           {wrError && (
             <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {wrError}
+            </div>
+          )}
+        </div>
+
+        {/* ── Lot Products ──────────────────────────────────────────────────── */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Layers className="w-4 h-4 text-amber-400" />
+            <h2 className="text-sm font-semibold text-white">Lot Products</h2>
+          </div>
+          <p className="text-xs text-slate-400 mb-3">
+            Products marked as lot method use the PO quantity for Shopify inventory — barcode count is not the unit count. Beef, lamb, goat, and chicken are typical lot products.
+          </p>
+
+          {/* Configured lot products */}
+          {lotProductsLoading ? (
+            <p className="text-xs text-slate-500 mb-3">Loading lot products…</p>
+          ) : lotProducts.length > 0 ? (
+            <div className="mb-4">
+              <p className="text-xs text-slate-500 mb-1.5 font-medium uppercase tracking-wide">Configured lot products</p>
+              <div className="flex flex-col gap-1">
+                {lotProducts.map(p => (
+                  <div
+                    key={p.productId}
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border bg-amber-900/20 border-amber-800/40 text-sm"
+                  >
+                    <span className="text-amber-200 truncate">{p.productTitle}</span>
+                    <span className="text-xs text-slate-500 ml-2 flex-shrink-0">
+                      {p.configuredAt ? new Date(p.configuredAt).toLocaleDateString() : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-600 mb-3">No lot products configured yet.</p>
+          )}
+
+          {/* Search and add */}
+          <div className="flex gap-2 mb-3">
+            <input
+              value={lotProductSearch}
+              onChange={e => setLotProductSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleLotProductSearch()}
+              placeholder="Search product to add as lot…"
+              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+            />
+            <button
+              onClick={handleLotProductSearch}
+              disabled={lotProductSearching || !lotProductSearch.trim()}
+              className="px-4 py-2 bg-amber-700 hover:bg-amber-600 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors"
+            >
+              {lotProductSearching ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Search'}
+            </button>
+          </div>
+
+          {lotProductResults.length > 0 && (
+            <div className="bg-slate-800 border border-slate-700 rounded-xl mb-3 overflow-hidden">
+              {lotProductResults.map(p => (
+                <button
+                  key={p.productId}
+                  onClick={() => handleAddLotProduct(p.productId, p.productTitle)}
+                  disabled={lotProductSaving || lotProducts.some(lp => lp.productId === p.productId)}
+                  className="w-full text-left px-3 py-2.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50 transition-colors border-b border-slate-700/50 last:border-0 flex items-center justify-between"
+                >
+                  <span>{p.productTitle}</span>
+                  {lotProducts.some(lp => lp.productId === p.productId) ? (
+                    <span className="text-xs text-amber-400 flex-shrink-0 ml-2">Already configured</span>
+                  ) : (
+                    <span className="text-xs text-slate-500 flex-shrink-0 ml-2">+ Mark as lot</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {lotProductError && (
+            <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
+              <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {lotProductError}
             </div>
           )}
         </div>

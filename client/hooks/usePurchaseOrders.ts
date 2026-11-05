@@ -59,12 +59,19 @@ export function usePurchaseOrders() {
     }
   }, []);
 
-  const approve = useCallback(async (poId: string, lineItemId: string, quantityReceived: number, forceApprove = false): Promise<boolean> => {
+  const approve = useCallback(async (
+    poId: string,
+    lineItemId: string,
+    quantityReceived: number,
+    forceApprove = false,
+    discrepancyQty?: number | null,
+    discrepancyType?: string | null,
+  ): Promise<boolean> => {
     try {
       const res = await fetch('/api/purchase-orders/approve', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ poId, lineItemId, quantityReceived, forceApprove }),
+        body: JSON.stringify({ poId, lineItemId, quantityReceived, forceApprove, discrepancyQty, discrepancyType }),
       });
       if (!res.ok) return false;
       // Invalidate cache so next fetch is fresh
