@@ -1947,6 +1947,30 @@ export default function ScalePage() {
     }
   }, [triggerPrint, logPrintedLabel, textMappings, inventoryMapping, inventoryMappingOverride, isPrinterDevice, createJob, labelSizeKey]);
 
+  // Shared session counter increment used by both handleReading and handleManualPrint.
+  // For weight-based children (isWeighted:true) childDelta = round(weight/weightPerUnit);
+  // for count-based children childDelta is always 1.
+  const incrementSessionCounter = useCallback((item: CurrentItem) => {
+    const mapping = inventoryMappingOverride ?? inventoryMapping;
+    const rawWeight = parseFloat(item.itemWeight?.replace(/[^0-9.]/g, '') ?? '0') || 0;
+    let childDelta = 1;
+    if (mapping?.found && mapping.isWeighted && rawWeight > 0) {
+      childDelta = mapping.weightPerUnit > 0
+        ? Math.round(rawWeight / mapping.weightPerUnit)
+        : Math.round(rawWeight);
+    }
+    const breakdownKey = item.variantTitle ?? item.productTitle ?? 'Standard';
+    setProcessingSession(prev => {
+      if (!prev) return null;
+      const breakdown = { ...prev.variantBreakdown };
+      breakdown[breakdownKey] = (breakdown[breakdownKey] ?? 0) + childDelta;
+      const newSessionQty = prev.sessionQty + childDelta;
+      const newTotal = prev.cumulativeQty + newSessionQty;
+      if (newTotal >= prev.poQty) setTimeout(() => setSessionClosePrompt(true), 300);
+      return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
+    });
+  }, [inventoryMappingOverride, inventoryMapping]);
+
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
       // Item 0 (or 00, 000 …) means "same product, new weight".
@@ -1962,6 +1986,8 @@ export default function ScalePage() {
           // let staff confirm the matched tier in the banner before pressing Print.
           if (weightRanges.length > 0) return;
           await printItem(updated);
+          // Standard processing session: update counter by childDelta (not flat +1)
+          if (processingSession) incrementSessionCounter(updated);
         } else {
           setUnmappedPrompt({ itemNumber: reading.itemNumber ?? '0', weight: reading.itemWeight });
         }
@@ -1998,7 +2024,7 @@ export default function ScalePage() {
       }
       await printItem(item);
     },
-    [lookupProduct, printItem, resetPrinted, currentItem]
+    [lookupProduct, printItem, resetPrinted, currentItem, processingSession, incrementSessionCounter]
   );
 
   const handleUnmappedResolved = useCallback(
@@ -2139,7 +2165,7 @@ export default function ScalePage() {
     if (weightRanges.length > 0) {
       setAutoDetect(null);
     } else if (processingSession) {
-      setProcessingSession(prev => prev ? { ...prev, sessionQty: prev.sessionQty + 1 } : prev);
+      incrementSessionCounter(item);
     }
   };
 
