@@ -12,14 +12,18 @@ export function generateSn(): string {
 }
 
 export function buildQrPayload(
-  item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight?: string | null },
+  item: { plu: string | null; productTitle: string; variantTitle?: string | null; itemWeight?: string | null; expiryDate?: string | null; mfgDate?: string | null },
   sn: string
 ): string {
   const plu = item.plu || 'N/A';
   const effectiveVariant = item.variantTitle && item.variantTitle !== 'Default Title' ? item.variantTitle : null;
   const title = effectiveVariant ? `${item.productTitle} - ${effectiveVariant}` : item.productTitle;
+  const dateParts = [
+    item.expiryDate ? `EXP:${item.expiryDate}` : null,
+    item.mfgDate ? `MFG:${item.mfgDate}` : null,
+  ].filter(Boolean);
+  const dateSuffix = dateParts.length ? ` | ${dateParts.join(' | ')}` : '';
   // No-weight products omit the weight segment — 3-part payload instead of 4.
-  // Packing date removed from payload (commented out temporarily — re-add here and in parseQrLabel if needed).
-  if (!item.itemWeight) return `${plu} | ${title} | SN:${sn}`;
-  return `${plu} | ${title} | ${item.itemWeight} | SN:${sn}`;
+  if (!item.itemWeight) return `${plu} | ${title} | SN:${sn}${dateSuffix}`;
+  return `${plu} | ${title} | ${item.itemWeight} | SN:${sn}${dateSuffix}`;
 }

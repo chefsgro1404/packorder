@@ -1451,6 +1451,7 @@ export default function ScalePage() {
     lotNo?: string | null,
     expiryDate?: string | null,
     isCategorical?: boolean,
+    mfgDate?: string | null,
   ) => {
     try {
       const res = await fetch('/api/scale/print-log', {
@@ -1470,6 +1471,7 @@ export default function ScalePage() {
           vendorName: item.vendorName ?? null,
           lotNo: lotNo ?? null,
           expiryDate: expiryDate ?? null,
+          mfgDate: mfgDate ?? null,
         }),
       });
       if (res.ok) {
@@ -1646,6 +1648,7 @@ export default function ScalePage() {
     weight: string,
     lotNo: string,
     expiryDate: string,
+    mfgDate: string,
     lotTotalWeightLbs?: number,
     applyAdjust?: boolean,
   ) => {
@@ -1673,6 +1676,8 @@ export default function ScalePage() {
           productTitle: mappedTitle,
           variantTitle: mappedVariant,
           itemWeight: item.itemWeight,
+          expiryDate: expiryDate || null,
+          mfgDate: mfgDate || null,
         }, sn);
 
         let encryptedPayload: string;
@@ -1692,7 +1697,7 @@ export default function ScalePage() {
           await createJob({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: item.itemWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
         }
         // Log each label; skip PO approval (done once after the full batch)
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true, lotNo || null, expiryDate || null);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true, lotNo || null, expiryDate || null, undefined, mfgDate || null);
         results.push({ index: i + 1, sn, qrPayload: encryptedPayload, printedAtEst, status: 'printed' });
       } catch (err) {
         results.push({ index: i + 1, sn: '', qrPayload: '', printedAtEst: '', status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
@@ -1762,6 +1767,7 @@ export default function ScalePage() {
             vendorName: item.vendorName ?? null,
             lotNo: lotNo || null,
             expiryDate: expiryDate || null,
+            mfgDate: mfgDate || null,
             quantityOrdered: li.quantityOrdered,
             quantityPrinted: printedCount,
             results: results.map(r => ({
@@ -3037,8 +3043,8 @@ export default function ScalePage() {
           vendorName={bulkPrintModal.item.vendorName}
           isLotReceiving={bulkPrintModal.isLotReceiving}
           inventoryItemId={bulkPrintModal.inventoryItemId ?? null}
-          onConfirm={(qty, wt, lotNo, expiryDate, lotTotalWeightLbs, applyAdjust) =>
-            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, lotTotalWeightLbs, applyAdjust)
+          onConfirm={(qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs, applyAdjust) =>
+            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs, applyAdjust)
           }
           onClose={() => setBulkPrintModal(null)}
         />

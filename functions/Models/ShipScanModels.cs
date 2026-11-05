@@ -770,6 +770,7 @@ public class PrintedLabelEntity : ITableEntity
     public string? VendorName { get; set; }
     public string? LotNo { get; set; }
     public string? ExpiryDate { get; set; }
+    public string? ManufacturingDate { get; set; }
     public string? VariantId { get; set; }
     // Ship-page stamp — set when this label is successfully scanned out on the ship page
     public DateTimeOffset? ShippedAt { get; set; }
@@ -793,6 +794,7 @@ public class LogPrintedLabelRequest
     [JsonProperty("vendorName")]   public string? VendorName { get; set; }
     [JsonProperty("lotNo")]        public string? LotNo { get; set; }
     [JsonProperty("expiryDate")]   public string? ExpiryDate { get; set; }
+    [JsonProperty("mfgDate")]      public string? MfgDate { get; set; }
     [JsonProperty("variantId")]    public string? VariantId { get; set; }
 }
 
@@ -1056,6 +1058,7 @@ public class BulkSessionEntity : ITableEntity
     public string? VendorName { get; set; }
     public string? LotNo { get; set; }
     public string? ExpiryDate { get; set; }
+    public string? ManufacturingDate { get; set; }
     public int QuantityOrdered { get; set; }
     public int QuantityPrinted { get; set; }
     public string Results { get; set; } = "[]"; // JSON: BulkSessionLabelResult[]
@@ -1083,6 +1086,7 @@ public class SaveBulkSessionRequest
     [JsonProperty("vendorName")]      public string? VendorName { get; set; }
     [JsonProperty("lotNo")]           public string? LotNo { get; set; }
     [JsonProperty("expiryDate")]      public string? ExpiryDate { get; set; }
+    [JsonProperty("mfgDate")]         public string? MfgDate { get; set; }
     [JsonProperty("quantityOrdered")] public int QuantityOrdered { get; set; }
     [JsonProperty("quantityPrinted")] public int QuantityPrinted { get; set; }
     [JsonProperty("results")]         public List<BulkSessionLabelResult> Results { get; set; } = new();

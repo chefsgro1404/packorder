@@ -356,6 +356,8 @@ export interface PrintedLabel {
   qrPayload: string;
   printedBy: string | null;
   sn: string | null;
+  expiryDate: string | null;
+  mfgDate: string | null;
 }
 
 export interface InventoryMappingInfo {

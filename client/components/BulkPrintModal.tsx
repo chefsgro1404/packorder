@@ -10,7 +10,7 @@ export interface BulkPrintModalProps {
   vendorName?: string | null;
   isLotReceiving?: boolean;
   inventoryItemId?: string | null;
-  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, lotTotalWeightLbs?: number, applyAdjust?: boolean) => void;
+  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, mfgDate: string, lotTotalWeightLbs?: number, applyAdjust?: boolean) => void;
   onClose: () => void;
 }
 
@@ -28,6 +28,7 @@ export function BulkPrintModal({
   const [weight, setWeight] = useState('');
   const [lotNo, setLotNo] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
+  const [mfgDate, setMfgDate] = useState('');
   const [applyAdjust, setApplyAdjust] = useState(false);
 
   // Lot receiving state (weight-based products: beef, goat, lamb)
@@ -48,9 +49,9 @@ export function BulkPrintModal({
     if (!isValid) return;
     if (isLotReceiving) {
       const labelWeight = `${weightPerLabel} lbs (LOT)`;
-      onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), parsedWeight, false);
+      onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), mfgDate.trim(), parsedWeight, false);
     } else {
-      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim(), undefined, applyAdjust);
+      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim(), mfgDate.trim(), undefined, applyAdjust);
     }
   };
 
@@ -192,8 +193,8 @@ export function BulkPrintModal({
           </div>
         )}
 
-        {/* Optional lot + expiry fields (shared by both modes) */}
-        <div className="grid grid-cols-2 gap-3">
+        {/* Optional lot + date fields (shared by both modes) */}
+        <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
               Lot No <span className="text-slate-600 normal-case font-normal">(optional)</span>
@@ -208,19 +209,33 @@ export function BulkPrintModal({
               }`}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              Expiry <span className="text-slate-600 normal-case font-normal">(optional)</span>
-            </label>
-            <input
-              type="text"
-              placeholder="e.g. 2025-06-30"
-              value={expiryDate}
-              onChange={e => setExpiryDate(e.target.value)}
-              className={`w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-colors ${
-                isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
-              }`}
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                Mfg Date <span className="text-slate-600 normal-case font-normal">(optional)</span>
+              </label>
+              <input
+                type="date"
+                value={mfgDate}
+                onChange={e => setMfgDate(e.target.value)}
+                className={`w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 focus:outline-none transition-colors [color-scheme:dark] ${
+                  isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
+                }`}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                Expiry <span className="text-slate-600 normal-case font-normal">(optional)</span>
+              </label>
+              <input
+                type="date"
+                value={expiryDate}
+                onChange={e => setExpiryDate(e.target.value)}
+                className={`w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 focus:outline-none transition-colors [color-scheme:dark] ${
+                  isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
+                }`}
+              />
+            </div>
           </div>
         </div>
 

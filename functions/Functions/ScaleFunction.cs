@@ -449,6 +449,7 @@ public class ScaleFunction
                     vendorName = e.VendorName,
                     lotNo = e.LotNo,
                     expiryDate = e.ExpiryDate,
+                    mfgDate = e.ManufacturingDate,
                 }).ToList();
                 _logger.LogInformation("Scale print-log query returned {Count} labels (from={From}, to={To}, plu={Plu})",
                     labels.Count, from, to, plu);
@@ -495,6 +496,7 @@ public class ScaleFunction
                 VendorName = request.VendorName,
                 LotNo = request.LotNo,
                 ExpiryDate = request.ExpiryDate,
+                ManufacturingDate = request.MfgDate,
                 VariantId = request.VariantId,
             };
             await _tableStorage.LogPrintedLabelAsync(entityToSave);
@@ -1212,6 +1214,7 @@ public class ScaleFunction
                     vendorName    = s.VendorName,
                     lotNo         = s.LotNo,
                     expiryDate    = s.ExpiryDate,
+                    mfgDate       = s.ManufacturingDate,
                     quantityOrdered  = s.QuantityOrdered,
                     quantityPrinted  = s.QuantityPrinted,
                     results       = s.Results,
@@ -1237,6 +1240,7 @@ public class ScaleFunction
                 VendorName      = request.VendorName,
                 LotNo           = request.LotNo,
                 ExpiryDate      = request.ExpiryDate,
+                ManufacturingDate = request.MfgDate,
                 QuantityOrdered = request.QuantityOrdered,
                 QuantityPrinted = request.QuantityPrinted,
                 Results         = JsonConvert.SerializeObject(request.Results),
