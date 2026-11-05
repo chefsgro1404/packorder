@@ -29,6 +29,8 @@ public class TableStorageService
     private readonly TableClient _vendors;
     private readonly TableClient _processingEvents;
     private readonly TableClient _lotProducts;
+    private readonly TableClient _operationJobs;
+    private readonly TableClient _operationLogs;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -55,6 +57,8 @@ public class TableStorageService
         _vendors                   = tableServiceClient.GetTableClient("vendors");
         _processingEvents          = tableServiceClient.GetTableClient("processingevents");
         _lotProducts               = tableServiceClient.GetTableClient("lotproducts");
+        _operationJobs             = tableServiceClient.GetTableClient("operationjobs");
+        _operationLogs             = tableServiceClient.GetTableClient("operationlogs");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -80,6 +84,8 @@ public class TableStorageService
         await _vendors.CreateIfNotExistsAsync();
         await _processingEvents.CreateIfNotExistsAsync();
         await _lotProducts.CreateIfNotExistsAsync();
+        await _operationJobs.CreateIfNotExistsAsync();
+        await _operationLogs.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1721,6 +1727,184 @@ public class TableStorageService
         await foreach (var entity in _processingEvents.QueryAsync<ProcessingSessionEntity>(
             filter: $"PartitionKey eq '{safeKey}'"))
             results.Add(entity);
+        return results;
+    }
+
+    // ─── Operation Jobs (CRH-271) ────────────────────────────────────────────
+
+    public async Task<OperationJobEntity> EnqueueOperationJobAsync(
+        string userId, string jobType, string payload,
+        string? deviceId = null, string? idempotencyKey = null)
+    {
+        // Idempotency guard: if a job with this key already exists and is completed, skip
+        if (!string.IsNullOrEmpty(idempotencyKey))
+        {
+            var safeKey = idempotencyKey.Replace("'", "''");
+            await foreach (var existing in _operationJobs.QueryAsync<OperationJobEntity>(
+                filter: $"PartitionKey eq '{userId}' and IdempotencyKey eq '{safeKey}'"))
+            {
+                if (existing.Status == "completed")
+                    return existing;
+            }
+        }
+
+        var entity = new OperationJobEntity
+        {
+            PartitionKey    = userId,
+            RowKey          = Guid.NewGuid().ToString("N"),
+            JobType         = jobType,
+            Status          = "queued",
+            Payload         = payload,
+            IdempotencyKey  = idempotencyKey,
+            DeviceId        = deviceId,
+            CreatedAt       = DateTimeOffset.UtcNow,
+            RetryCount      = 0,
+        };
+        await _operationJobs.AddEntityAsync(entity);
+        return entity;
+    }
+
+    public async Task<List<OperationJobEntity>> GetOperationJobsAsync(
+        string userId, string? status = null, string? jobType = null, int maxResults = 200)
+    {
+        var filters = new List<string> { $"PartitionKey eq '{userId}'" };
+        if (!string.IsNullOrEmpty(status))
+            filters.Add($"Status eq '{status.Replace("'", "''")}'");
+        if (!string.IsNullOrEmpty(jobType))
+            filters.Add($"JobType eq '{jobType.Replace("'", "''")}'");
+
+        var filter = string.Join(" and ", filters);
+        var results = new List<OperationJobEntity>();
+        await foreach (var e in _operationJobs.QueryAsync<OperationJobEntity>(filter: filter, maxPerPage: maxResults))
+        {
+            results.Add(e);
+            if (results.Count >= maxResults) break;
+        }
+        return results;
+    }
+
+    public async Task<OperationJobEntity?> GetOperationJobAsync(string userId, string jobId)
+    {
+        try
+        {
+            var r = await _operationJobs.GetEntityAsync<OperationJobEntity>(userId, jobId);
+            return r.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
+    }
+
+    public async Task<bool> ClaimOperationJobAsync(string userId, string jobId, string deviceId)
+    {
+        try
+        {
+            var r = await _operationJobs.GetEntityAsync<OperationJobEntity>(userId, jobId);
+            var job = r.Value;
+            if (job.Status != "queued") return false;
+            job.Status    = "claimed";
+            job.ClaimedBy = deviceId;
+            job.ClaimedAt = DateTimeOffset.UtcNow;
+            await _operationJobs.UpdateEntityAsync(job, job.ETag, TableUpdateMode.Replace);
+            return true;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404 || ex.Status == 412) { return false; }
+    }
+
+    public async Task CompleteOperationJobAsync(string userId, string jobId)
+    {
+        var r = await _operationJobs.GetEntityAsync<OperationJobEntity>(userId, jobId);
+        var job = r.Value;
+        job.Status      = "completed";
+        job.CompletedAt = DateTimeOffset.UtcNow;
+        await _operationJobs.UpdateEntityAsync(job, ETag.All, TableUpdateMode.Replace);
+    }
+
+    public async Task FailOperationJobAsync(string userId, string jobId, string reason)
+    {
+        var r = await _operationJobs.GetEntityAsync<OperationJobEntity>(userId, jobId);
+        var job = r.Value;
+        job.RetryCount++;
+        job.FailedAt     = DateTimeOffset.UtcNow;
+        job.FailedReason = reason;
+        // After 3 failures the job is dead; otherwise back to queued for retry
+        job.Status  = job.RetryCount >= 3 ? "dead" : "queued";
+        job.ClaimedBy = null;
+        job.ClaimedAt = null;
+        await _operationJobs.UpdateEntityAsync(job, ETag.All, TableUpdateMode.Replace);
+    }
+
+    public async Task RetryDeadOperationJobAsync(string userId, string jobId)
+    {
+        var r = await _operationJobs.GetEntityAsync<OperationJobEntity>(userId, jobId);
+        var job = r.Value;
+        job.Status      = "queued";
+        job.RetryCount  = 0;
+        job.FailedAt    = null;
+        job.FailedReason = null;
+        job.ClaimedBy   = null;
+        job.ClaimedAt   = null;
+        await _operationJobs.UpdateEntityAsync(job, ETag.All, TableUpdateMode.Replace);
+    }
+
+    public async Task DismissOperationJobAsync(string userId, string jobId)
+    {
+        var r = await _operationJobs.GetEntityAsync<OperationJobEntity>(userId, jobId);
+        var job = r.Value;
+        job.Status = "dismissed";
+        await _operationJobs.UpdateEntityAsync(job, ETag.All, TableUpdateMode.Replace);
+    }
+
+    // ─── Operation Logs (CRH-271) ────────────────────────────────────────────
+
+    public async Task WriteOperationLogAsync(
+        string jobId, string jobType, string evt,
+        string payload = "{}", string? deviceId = null, string? failureReason = null)
+    {
+        var entity = new OperationLogEntity
+        {
+            PartitionKey  = jobId,
+            RowKey        = $"{DateTimeOffset.UtcNow.Ticks:D20}-{Guid.NewGuid():N}",
+            JobId         = jobId,
+            JobType       = jobType,
+            Event         = evt,
+            DeviceId      = deviceId,
+            Payload       = payload,
+            FailureReason = failureReason,
+            EventAt       = DateTimeOffset.UtcNow,
+        };
+        await _operationLogs.AddEntityAsync(entity);
+    }
+
+    public async Task<List<OperationLogEntity>> GetOperationLogsAsync(
+        string? jobId = null, string? jobType = null, string? evt = null,
+        string? deviceId = null, DateTimeOffset? since = null, int maxResults = 500)
+    {
+        // When jobId is known, partition-key scan is efficient
+        string? filter = null;
+        if (!string.IsNullOrEmpty(jobId))
+        {
+            filter = $"PartitionKey eq '{jobId.Replace("'", "''")}'";
+        }
+        else
+        {
+            var filters = new List<string>();
+            if (!string.IsNullOrEmpty(jobType))
+                filters.Add($"JobType eq '{jobType.Replace("'", "''")}'");
+            if (!string.IsNullOrEmpty(evt))
+                filters.Add($"Event eq '{evt.Replace("'", "''")}'");
+            if (!string.IsNullOrEmpty(deviceId))
+                filters.Add($"DeviceId eq '{deviceId.Replace("'", "''")}'");
+            if (since.HasValue)
+                filters.Add($"EventAt ge datetime'{since.Value:yyyy-MM-ddTHH:mm:ssZ}'");
+            if (filters.Count > 0)
+                filter = string.Join(" and ", filters);
+        }
+
+        var results = new List<OperationLogEntity>();
+        await foreach (var e in _operationLogs.QueryAsync<OperationLogEntity>(filter: filter, maxPerPage: maxResults))
+        {
+            results.Add(e);
+            if (results.Count >= maxResults) break;
+        }
         return results;
     }
 }

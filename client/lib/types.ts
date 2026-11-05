@@ -438,3 +438,55 @@ export interface PurchaseOrderLineItem {
   printedAt: string | null;
   printedBy: string | null;
 }
+
+// ─── Operation Jobs & Logs (CRH-271) ─────────────────────────────────────────
+
+export type OperationJobType =
+  | 'adjust-inventory'
+  | 'log-label'
+  | 'approve-line-item'
+  | 'stamp-shipped'
+  | 'generate-sn';
+
+export type OperationJobStatus =
+  | 'queued'
+  | 'claimed'
+  | 'completed'
+  | 'failed'
+  | 'dead'
+  | 'dismissed';
+
+export type OperationLogEvent =
+  | 'created'
+  | 'claimed'
+  | 'completed'
+  | 'failed'
+  | 'retried'
+  | 'dead'
+  | 'dismissed';
+
+export interface OperationJob {
+  id: string;
+  jobType: OperationJobType;
+  status: OperationJobStatus;
+  payload: string;
+  idempotencyKey: string | null;
+  deviceId: string | null;
+  claimedBy: string | null;
+  createdAt: string;
+  claimedAt: string | null;
+  completedAt: string | null;
+  failedAt: string | null;
+  failedReason: string | null;
+  retryCount: number;
+}
+
+export interface OperationLog {
+  jobId: string;
+  jobType: string;
+  event: OperationLogEvent;
+  deviceId: string | null;
+  payload: string;
+  failureReason: string | null;
+  eventAt: string;
+}

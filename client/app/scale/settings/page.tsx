@@ -18,7 +18,12 @@ import {
   Building2,
   X,
   Scale,
+  ShieldAlert,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
+import { useDeadOperations, jobTypeLabel } from '@/hooks/useDeadOperations';
 
 interface WeightRangeRule {
   variantId: string;
@@ -83,6 +88,11 @@ interface WebhookResult {
 
 export default function ScaleSettingsPage() {
   const router = useRouter();
+
+  // ── Failed operations (CRH-271) ──────────────────────────────────────────
+  const { deadJobs, loading: deadLoading, error: deadError, fetch: fetchDeadJobs, retry: retryJob, dismiss: dismissJob } = useDeadOperations();
+  const [failedOpsOpen, setFailedOpsOpen] = useState(false);
+  const [failedOpsActing, setFailedOpsActing] = useState<string | null>(null);
 
   // ── Text mappings ────────────────────────────────────────────────────────
   const [mappings, setMappings] = useState<TextMapping[]>([]);
@@ -239,7 +249,8 @@ export default function ScaleSettingsPage() {
     fetchVendors();
     fetchConfiguredProducts();
     fetchLotProductList();
-  }, [fetchMappings, fetchSyncSettings, fetchVendors, fetchConfiguredProducts, fetchLotProductList]);
+    fetchDeadJobs();
+  }, [fetchMappings, fetchSyncSettings, fetchVendors, fetchConfiguredProducts, fetchLotProductList, fetchDeadJobs]);
 
   const handleAddMapping = async () => {
     if (!newPhrase.trim() || !newAbbr.trim()) return;
@@ -1333,6 +1344,113 @@ export default function ScaleSettingsPage() {
           {lotProductError && (
             <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {lotProductError}
+            </div>
+          )}
+        </div>
+
+        {/* ── Failed Operations ─────────────────────────────────────────────── */}
+        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+          <button
+            className="w-full flex items-center justify-between gap-2"
+            onClick={() => {
+              if (!failedOpsOpen) fetchDeadJobs();
+              setFailedOpsOpen(o => !o);
+            }}
+          >
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-rose-400" />
+              <h2 className="text-sm font-semibold text-white">Failed Operations</h2>
+              {deadJobs.length > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
+                  {deadJobs.length}
+                </span>
+              )}
+            </div>
+            {failedOpsOpen ? (
+              <ChevronUp className="w-4 h-4 text-slate-500" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            )}
+          </button>
+
+          {failedOpsOpen && (
+            <div className="mt-4">
+              <p className="text-xs text-slate-400 mb-3">
+                Operations that failed after 3 retries. Each can be retried or dismissed (kept in log but hidden).
+              </p>
+
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={fetchDeadJobs}
+                  disabled={deadLoading}
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${deadLoading ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
+              </div>
+
+              {deadError && (
+                <div className="flex items-center gap-2 text-xs text-rose-400 mb-3">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {deadError}
+                </div>
+              )}
+
+              {!deadLoading && deadJobs.length === 0 && !deadError && (
+                <p className="text-xs text-slate-600 text-center py-4">No failed operations — all clear.</p>
+              )}
+
+              {deadJobs.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {deadJobs.map(job => (
+                    <div
+                      key={job.id}
+                      className="bg-rose-950/30 border border-rose-900/40 rounded-xl p-3 flex flex-col gap-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-rose-300">{jobTypeLabel(job.jobType)}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {job.failedAt ? new Date(job.failedAt).toLocaleString() : new Date(job.createdAt).toLocaleString()}
+                            {job.deviceId && ` · ${job.deviceId}`}
+                            {` · ${job.retryCount} retries`}
+                          </p>
+                          {job.failedReason && (
+                            <p className="text-[11px] text-rose-400/80 mt-1 break-all">{job.failedReason}</p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <button
+                          onClick={async () => {
+                            setFailedOpsActing(job.id);
+                            await retryJob(job.id);
+                            setFailedOpsActing(null);
+                          }}
+                          disabled={failedOpsActing === job.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-rose-800/60 hover:bg-rose-700/60 disabled:opacity-50 rounded-lg text-xs text-rose-200 font-medium transition-colors"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Retry
+                        </button>
+                        <button
+                          onClick={async () => {
+                            setFailedOpsActing(job.id);
+                            await dismissJob(job.id);
+                            setFailedOpsActing(null);
+                          }}
+                          disabled={failedOpsActing === job.id}
+                          className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg text-xs text-slate-400 font-medium transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

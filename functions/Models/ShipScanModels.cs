@@ -1015,6 +1015,76 @@ public class InventoryAdjustRequest
     [JsonProperty("reason")]          public string Reason { get; set; } = "correction";
 }
 
+// ─── Operation Jobs & Logs (CRH-271) ─────────────────────────────────────────
+
+// Status lifecycle: queued → claimed → completed | failed → (retry) → dead | dismissed
+public class OperationJobEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";   // userId
+    public string RowKey { get; set; } = "";          // job GUID
+    // adjust-inventory | log-label | approve-line-item | stamp-shipped | generate-sn
+    public string JobType { get; set; } = "";
+    // queued | claimed | completed | failed | dead | dismissed
+    public string Status { get; set; } = "queued";
+    public string Payload { get; set; } = "{}";       // JSON snapshot of operation inputs
+    public string? IdempotencyKey { get; set; }       // prevents duplicate execution on retry
+    public string? DeviceId { get; set; }             // device that created the job
+    public string? ClaimedBy { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? ClaimedAt { get; set; }
+    public DateTimeOffset? CompletedAt { get; set; }
+    public DateTimeOffset? FailedAt { get; set; }
+    public string? FailedReason { get; set; }
+    public int RetryCount { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class OperationLogEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";   // jobId
+    // {ticks:D20}-{guid} — sort ascending by time within a job's history
+    public string RowKey { get; set; } = "";
+    public string JobId { get; set; } = "";
+    public string JobType { get; set; } = "";
+    // created | claimed | completed | failed | retried | dead | dismissed
+    public string Event { get; set; } = "";
+    public string? DeviceId { get; set; }
+    public string Payload { get; set; } = "{}";
+    public string? FailureReason { get; set; }
+    public DateTimeOffset EventAt { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class EnqueueOperationJobRequest
+{
+    [JsonProperty("jobType")]        public string JobType { get; set; } = "";
+    [JsonProperty("payload")]        public string Payload { get; set; } = "{}";
+    [JsonProperty("deviceId")]       public string? DeviceId { get; set; }
+    [JsonProperty("idempotencyKey")] public string? IdempotencyKey { get; set; }
+}
+
+public class ClaimOperationJobRequest
+{
+    [JsonProperty("deviceId")] public string DeviceId { get; set; } = "";
+}
+
+public class FailOperationJobRequest
+{
+    [JsonProperty("reason")] public string Reason { get; set; } = "";
+}
+
+public class WriteOperationLogRequest
+{
+    [JsonProperty("jobId")]         public string JobId { get; set; } = "";
+    [JsonProperty("jobType")]       public string JobType { get; set; } = "";
+    [JsonProperty("event")]         public string Event { get; set; } = "";
+    [JsonProperty("deviceId")]      public string? DeviceId { get; set; }
+    [JsonProperty("payload")]       public string Payload { get; set; } = "{}";
+    [JsonProperty("failureReason")] public string? FailureReason { get; set; }
+}
+
 // ─── Print Jobs (Cross-Device Print Sync) ────────────────────────────────────
 
 public class PrintJobEntity : ITableEntity
