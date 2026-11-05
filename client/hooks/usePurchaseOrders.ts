@@ -79,9 +79,24 @@ export function usePurchaseOrders() {
     }
   }, []);
 
+  const markTransferred = useCallback(async (poId: string): Promise<boolean> => {
+    try {
+      const numericId = poId.includes('/') ? poId.split('/').pop()! : poId;
+      const res = await fetch(`/api/purchase-orders/${numericId}/mark-transferred`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) return false;
+      setOrders(prev => prev.map(o => o.id === poId ? { ...o, status: 'transferred' } : o));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { orders, loading, error, refresh, fetchLineItems, refreshLineItems, approve };
+  return { orders, loading, error, refresh, fetchLineItems, refreshLineItems, approve, markTransferred };
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
@@ -31,6 +31,7 @@ import {
   Zap,
   QrCode,
   ArrowRight,
+  Truck,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -575,6 +576,59 @@ function PoStatusBadge({ status }: { status: string }) {
   return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-slate-800 text-slate-400 border border-slate-700">Pending</span>;
 }
 
+// ─── PO date grouping helpers ─────────────────────────────────────────────────
+
+const PO_GROUP_ORDER = ['Today', 'Yesterday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Older'];
+
+function getPoDateLabel(shopifyCreatedAt: string): string {
+  const date = new Date(shopifyCreatedAt);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const diffDays = Math.round((today.getTime() - targetDay.getTime()) / (1000 * 60 * 60 * 24));
+  if (diffDays <= 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays <= 6) return date.toLocaleDateString('en-US', { weekday: 'long' });
+  return 'Older';
+}
+
+function sortPoGroupKeys(keys: string[]): string[] {
+  return [...keys].sort((a, b) => {
+    const ai = PO_GROUP_ORDER.indexOf(a);
+    const bi = PO_GROUP_ORDER.indexOf(b);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
+}
+
+const PO_FILTER_KEY    = 'shipScanPoFilters';
+const PO_COLLAPSE_KEY  = 'shipScanPoGroupCollapse';
+const DEFAULT_FILTERS  = ['open', 'partial'];
+
+function poStatusChipStyle(status: string): string {
+  switch (status) {
+    case 'open':               return 'bg-blue-900/60 text-blue-300 border-blue-800';
+    case 'partial':            return 'bg-amber-900/60 text-amber-300 border-amber-800';
+    case 'fulfilled':          return 'bg-emerald-900/60 text-emerald-300 border-emerald-800';
+    case 'transferred':        return 'bg-slate-700/60 text-slate-300 border-slate-600';
+    case 'draft':              return 'bg-purple-900/60 text-purple-300 border-purple-800';
+    case 'ordered':            return 'bg-cyan-900/60 text-cyan-300 border-cyan-800';
+    case 'partially_received': return 'bg-orange-900/60 text-orange-300 border-orange-800';
+    case 'received':           return 'bg-teal-900/60 text-teal-300 border-teal-800';
+    case 'cancelled':          return 'bg-rose-900/60 text-rose-300 border-rose-800';
+    default:                   return 'bg-slate-800 text-slate-400 border-slate-700';
+  }
+}
+
+function poStatusPillStyle(status: string): string {
+  switch (status) {
+    case 'open':        return 'bg-blue-950 text-blue-400 border-blue-900';
+    case 'partial':     return 'bg-amber-950 text-amber-400 border-amber-900';
+    case 'fulfilled':   return 'bg-emerald-950 text-emerald-400 border-emerald-900';
+    case 'transferred': return 'bg-slate-800 text-slate-400 border-slate-700';
+    default:            return 'bg-slate-800 text-slate-400 border-slate-700';
+  }
+}
+
 // ─── PO suggestions panel ────────────────────────────────────────────────────
 
 function PoSuggestions({
@@ -585,6 +639,7 @@ function PoSuggestions({
   expandedPoId,
   onToggleExpand,
   onSelectItem,
+  onMarkTransferred,
 }: {
   orders: PurchaseOrder[];
   loading: boolean;
@@ -593,16 +648,82 @@ function PoSuggestions({
   expandedPoId: string | null;
   onToggleExpand: (id: string) => void;
   onSelectItem: (po: PurchaseOrder, li: PurchaseOrderLineItem) => void;
+  onMarkTransferred: (poId: string) => void;
 }) {
   const [panelOpen, setPanelOpen] = useState(true);
 
-  const pendingCount = orders.reduce((acc, o) => {
-    const items = lineItemsCache[o.id] ?? [];
-    return acc + items.filter(li => li.status !== 'approved').length;
-  }, 0);
+  const [activeFilters, setActiveFilters] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(PO_FILTER_KEY) ?? JSON.stringify(DEFAULT_FILTERS)); }
+    catch { return DEFAULT_FILTERS; }
+  });
+
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => {
+    try { return JSON.parse(localStorage.getItem(PO_COLLAPSE_KEY) ?? '{}'); }
+    catch { return {}; }
+  });
+
+  // Available filter chips derived from current orders
+  const availableChips = useMemo(() => {
+    const internal = new Set<string>();
+    const shopify  = new Set<string>();
+    for (const po of orders) {
+      internal.add(po.status);
+      if (po.shopifyStatus) shopify.add(po.shopifyStatus);
+    }
+    return { internal: Array.from(internal).sort(), shopify: Array.from(shopify).sort() };
+  }, [orders]);
+
+  // Active-filter–matched orders
+  const filteredOrders = useMemo(() => {
+    if (activeFilters.length === 0) return orders;
+    return orders.filter(po =>
+      activeFilters.includes(po.status) ||
+      (po.shopifyStatus != null && activeFilters.includes(po.shopifyStatus)),
+    );
+  }, [orders, activeFilters]);
+
+  // Group by date label
+  const groupedOrders = useMemo(() => {
+    const map = new Map<string, PurchaseOrder[]>();
+    for (const po of filteredOrders) {
+      const label = getPoDateLabel(po.shopifyCreatedAt);
+      if (!map.has(label)) map.set(label, []);
+      map.get(label)!.push(po);
+    }
+    return map;
+  }, [filteredOrders]);
+
+  const sortedGroupKeys = useMemo(() => sortPoGroupKeys(Array.from(groupedOrders.keys())), [groupedOrders]);
+
+  const toggleFilter = useCallback((chip: string) => {
+    setActiveFilters(prev => {
+      const next = prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip];
+      try { localStorage.setItem(PO_FILTER_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const clearFilters = useCallback(() => {
+    setActiveFilters([]);
+    try { localStorage.setItem(PO_FILTER_KEY, '[]'); } catch {}
+  }, []);
+
+  const toggleGroupCollapse = useCallback((group: string) => {
+    setCollapsedGroups(prev => {
+      const next = { ...prev, [group]: !prev[group] };
+      try { localStorage.setItem(PO_COLLAPSE_KEY, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const pendingCount = useMemo(() =>
+    orders.filter(po => po.status === 'open' || po.status === 'partial').length,
+    [orders],
+  );
 
   return (
     <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+      {/* Panel header */}
       <button
         className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
         onClick={() => setPanelOpen(v => !v)}
@@ -621,100 +742,199 @@ function PoSuggestions({
 
       {panelOpen && (
         <div className="border-t border-slate-800">
+          {/* Filter chips */}
+          {!loading && orders.length > 0 && (
+            <div className="px-3 py-2.5 flex flex-wrap gap-1.5 border-b border-slate-800/60">
+              <button
+                onClick={clearFilters}
+                className={`text-[11px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                  activeFilters.length === 0
+                    ? 'bg-slate-200 text-slate-900 border-slate-300'
+                    : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                All
+              </button>
+
+              {availableChips.internal.map(chip => (
+                <button
+                  key={chip}
+                  onClick={() => toggleFilter(chip)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                    activeFilters.includes(chip)
+                      ? poStatusChipStyle(chip)
+                      : 'bg-slate-800/50 text-slate-500 border-slate-700 hover:bg-slate-800'
+                  }`}
+                >
+                  {chip}
+                </button>
+              ))}
+
+              {availableChips.shopify.length > 0 && (
+                <span className="text-[10px] text-slate-700 self-center">|</span>
+              )}
+
+              {availableChips.shopify.map(chip => (
+                <button
+                  key={`shopify-${chip}`}
+                  onClick={() => toggleFilter(chip)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                    activeFilters.includes(chip)
+                      ? poStatusChipStyle(chip)
+                      : 'bg-slate-800/50 text-slate-500 border-slate-700 hover:bg-slate-800'
+                  }`}
+                >
+                  {chip.replace(/_/g, ' ')}
+                </button>
+              ))}
+            </div>
+          )}
+
           {loading ? (
             <div className="flex items-center gap-2 px-4 py-5 text-slate-500">
               <RefreshCw className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading open POs…</span>
+              <span className="text-sm">Loading POs…</span>
             </div>
           ) : error ? (
             <p className="px-4 py-4 text-sm text-rose-400">{error}</p>
-          ) : orders.length === 0 ? (
+          ) : filteredOrders.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <ClipboardList className="w-5 h-5 text-slate-700" />
-              <p className="text-sm text-slate-600">No open purchase orders</p>
+              <p className="text-sm text-slate-600">
+                {orders.length === 0 ? 'No purchase orders' : 'No POs match the active filters'}
+              </p>
+              {activeFilters.length > 0 && orders.length > 0 && (
+                <button onClick={clearFilters} className="text-xs text-blue-400 hover:text-blue-300">
+                  Clear filters
+                </button>
+              )}
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-slate-800/60 max-h-72 overflow-y-auto lg:max-h-none">
-              {orders.map(po => {
-                const isExpanded = expandedPoId === po.id;
-                const items = lineItemsCache[po.id] ?? [];
-                const pendingItems = items.filter(li => li.status !== 'approved');
-                const approvedItems = items.filter(li => li.status === 'approved');
+            <div className="flex flex-col max-h-72 overflow-y-auto lg:max-h-none">
+              {sortedGroupKeys.map(groupKey => {
+                const groupPOs = groupedOrders.get(groupKey) ?? [];
+                const isGroupCollapsed = collapsedGroups[groupKey] ?? (groupKey !== 'Today');
 
                 return (
-                  <div key={po.id}>
+                  <div key={groupKey}>
+                    {/* Date group header */}
                     <button
-                      className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-900/40 transition-colors text-left"
-                      onClick={() => onToggleExpand(po.id)}
+                      className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-900/30 transition-colors"
+                      onClick={() => toggleGroupCollapse(groupKey)}
                     >
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-semibold text-slate-200">{po.poName}</span>
-                          {po.vendor && <span className="text-xs text-slate-500">{po.vendor}</span>}
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${
-                            po.status === 'partial'
-                              ? 'bg-amber-950 text-amber-400 border-amber-900'
-                              : 'bg-blue-950 text-blue-400 border-blue-900'
-                          }`}>{po.status}</span>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-0.5">
-                          {po.approvedLineItems}/{po.totalLineItems} items received
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">{groupKey}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
+                          {groupPOs.length}
+                        </span>
                       </div>
-                      {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-slate-500 flex-shrink-0" />}
+                      {isGroupCollapsed
+                        ? <ChevronDown className="w-3 h-3 text-slate-600" />
+                        : <ChevronUp className="w-3 h-3 text-slate-600" />
+                      }
                     </button>
 
-                    {isExpanded && items.length === 0 && (
-                      <div className="px-4 pb-3">
-                        <p className="text-xs text-slate-500">No line items loaded — tap to expand</p>
-                      </div>
-                    )}
+                    {!isGroupCollapsed && (
+                      <div className="flex flex-col divide-y divide-slate-800/60">
+                        {groupPOs.map(po => {
+                          const isExpanded = expandedPoId === po.id;
+                          const items = lineItemsCache[po.id] ?? [];
+                          const pendingItems = items.filter(li => li.status !== 'approved');
+                          const approvedItems = items.filter(li => li.status === 'approved');
 
-                    {isExpanded && items.length > 0 && (
-                      <div className="px-4 pb-3 flex flex-col gap-2">
-                        {pendingItems.map(li => (
-                          <button
-                            key={li.id}
-                            onClick={() => onSelectItem(po, li)}
-                            className="flex items-start gap-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl px-3 py-2.5 text-left transition-colors active:scale-[0.99]"
-                          >
-                            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                              <Tag className="w-3.5 h-3.5 text-slate-500" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-start justify-between gap-2">
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-slate-200 leading-snug">{li.productTitle}</p>
-                                  {li.variantTitle && li.variantTitle !== 'Default Title' && (
-                                    <p className="text-xs text-slate-400">{li.variantTitle}</p>
-                                  )}
-                                  {li.sku && <p className="text-xs text-slate-500 font-mono">SKU: {li.sku}</p>}
-                                </div>
-                                <PoStatusBadge status={li.status} />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-1">
-                                {li.quantityReceived}/{li.quantityOrdered} received
-                              </p>
-                            </div>
-                          </button>
-                        ))}
-                        {approvedItems.length > 0 && (
-                          <div className="flex flex-col gap-1.5">
-                            <p className="text-[10px] text-slate-600 uppercase tracking-widest font-semibold px-0.5">Completed</p>
-                            {approvedItems.map(li => (
-                              <div
-                                key={li.id}
-                                className="flex items-center gap-3 bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-2 opacity-50"
+                          return (
+                            <div key={po.id}>
+                              <button
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-900/40 transition-colors text-left"
+                                onClick={() => onToggleExpand(po.id)}
                               >
-                                <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                                 <div className="flex-1 min-w-0">
-                                  <p className="text-sm text-slate-400 leading-snug line-through">{li.productTitle}</p>
-                                  <p className="text-xs text-slate-600">{li.quantityReceived}/{li.quantityOrdered} received</p>
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm font-semibold text-slate-200">{po.poName}</span>
+                                    {po.vendor && <span className="text-xs text-slate-500">{po.vendor}</span>}
+                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${poStatusPillStyle(po.status)}`}>
+                                      {po.status}
+                                    </span>
+                                    {po.shopifyStatus && (
+                                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium border ${poStatusChipStyle(po.shopifyStatus)}`}>
+                                        {po.shopifyStatus.replace(/_/g, ' ')}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    {po.approvedLineItems}/{po.totalLineItems} items received
+                                  </p>
                                 </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                                <div className="flex items-center gap-1.5 flex-shrink-0">
+                                  {po.status === 'fulfilled' && (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); onMarkTransferred(po.id); }}
+                                      title="Mark as transferred to sales floor"
+                                      className="p-1 rounded-lg text-slate-500 hover:text-amber-400 hover:bg-amber-950/40 transition-colors"
+                                    >
+                                      <Truck className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                  {isExpanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                                </div>
+                              </button>
+
+                              {isExpanded && items.length === 0 && (
+                                <div className="px-4 pb-3">
+                                  <p className="text-xs text-slate-500">No line items loaded — tap to expand</p>
+                                </div>
+                              )}
+
+                              {isExpanded && items.length > 0 && (
+                                <div className="px-4 pb-3 flex flex-col gap-2">
+                                  {pendingItems.map(li => (
+                                    <button
+                                      key={li.id}
+                                      onClick={() => onSelectItem(po, li)}
+                                      className="flex items-start gap-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl px-3 py-2.5 text-left transition-colors active:scale-[0.99]"
+                                    >
+                                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                        <Tag className="w-3.5 h-3.5 text-slate-500" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <p className="text-sm font-medium text-slate-200 leading-snug">{li.productTitle}</p>
+                                            {li.variantTitle && li.variantTitle !== 'Default Title' && (
+                                              <p className="text-xs text-slate-400">{li.variantTitle}</p>
+                                            )}
+                                            {li.sku && <p className="text-xs text-slate-500 font-mono">SKU: {li.sku}</p>}
+                                          </div>
+                                          <PoStatusBadge status={li.status} />
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-1">
+                                          {li.quantityReceived}/{li.quantityOrdered} received
+                                        </p>
+                                      </div>
+                                    </button>
+                                  ))}
+                                  {approvedItems.length > 0 && (
+                                    <div className="flex flex-col gap-1.5">
+                                      <p className="text-[10px] text-slate-600 uppercase tracking-widest font-semibold px-0.5">Completed</p>
+                                      {approvedItems.map(li => (
+                                        <div
+                                          key={li.id}
+                                          className="flex items-center gap-3 bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-2 opacity-50"
+                                        >
+                                          <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-slate-400 leading-snug line-through">{li.productTitle}</p>
+                                            <p className="text-xs text-slate-600">{li.quantityReceived}/{li.quantityOrdered} received</p>
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
@@ -981,7 +1201,7 @@ export default function ScalePage() {
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
   const [wasQrScanned, setWasQrScanned] = useState(false);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
-  const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem } = usePurchaseOrders();
+  const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem, markTransferred } = usePurchaseOrders();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
   const isPrinting = useRef(false);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
@@ -2255,6 +2475,7 @@ export default function ScalePage() {
               expandedPoId={expandedPoId}
               onToggleExpand={handlePoToggle}
               onSelectItem={handlePoItemSelect}
+              onMarkTransferred={markTransferred}
             />
           </div>
 

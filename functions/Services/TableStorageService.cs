@@ -1188,6 +1188,28 @@ public class TableStorageService
         return results.OrderByDescending(e => e.ShopifyCreatedAt).ToList();
     }
 
+    public async Task<List<PurchaseOrderEntity>> GetAllRecentPurchaseOrdersAsync(int daysBack = 30)
+    {
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-daysBack);
+        var results = new List<PurchaseOrderEntity>();
+        await foreach (var e in _purchaseOrders.QueryAsync<PurchaseOrderEntity>(
+            filter: "PartitionKey eq 'po'"))
+        {
+            if (e.ShopifyCreatedAt >= cutoff)
+                results.Add(e);
+        }
+        return results.OrderByDescending(e => e.ShopifyCreatedAt).ToList();
+    }
+
+    public async Task<bool> UpdatePurchaseOrderStatusAsync(string numericPoId, string status)
+    {
+        var entity = await GetPurchaseOrderByIdAsync(numericPoId);
+        if (entity == null) return false;
+        entity.Status = status;
+        await _purchaseOrders.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+        return true;
+    }
+
     public async Task<Dictionary<string, int>> GetPurchaseOrderStatusCountsAsync()
     {
         var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

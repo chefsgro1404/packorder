@@ -28,7 +28,7 @@ public class PurchaseOrderFunction
         _allowedOrigins = allowedOrigins;
     }
 
-    // GET /api/purchase-orders — returns open + partial POs
+    // GET /api/purchase-orders — returns all POs from last 30 days (all statuses)
     [Function("GetPurchaseOrders")]
     public async Task<HttpResponseData> GetPurchaseOrders(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "purchase-orders")]
@@ -41,13 +41,14 @@ public class PurchaseOrderFunction
         if (authError != null)
             return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
 
-        var orders = await _tableStorage.GetOpenPurchaseOrdersAsync();
+        var orders = await _tableStorage.GetAllRecentPurchaseOrdersAsync(30);
         var mapped = orders.Select(o => new
         {
             id                = o.RowKey,
             poId              = o.PoId,
             poName            = o.PoName,
             status            = o.Status,
+            shopifyStatus     = o.ShopifyStatus,
             vendor            = o.Vendor,
             totalLineItems    = o.TotalLineItems,
             approvedLineItems = o.ApprovedLineItems,
@@ -55,6 +56,29 @@ public class PurchaseOrderFunction
             shopifyUpdatedAt  = o.ShopifyUpdatedAt,
         });
         return await ResponseHelper.WriteSuccess(req, mapped, _allowedOrigins);
+    }
+
+    // POST /api/purchase-orders/{id}/mark-transferred — marks a PO as transferred
+    [Function("MarkPurchaseOrderTransferred")]
+    public async Task<HttpResponseData> MarkPurchaseOrderTransferred(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "purchase-orders/{id}/mark-transferred")]
+        HttpRequestData req,
+        string id)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        var numericId = id.Contains('/') ? id.Split('/').Last() : id;
+        var updated = await _tableStorage.UpdatePurchaseOrderStatusAsync(numericId, "transferred");
+        if (!updated)
+            return await ResponseHelper.WriteError(req, "Purchase order not found", HttpStatusCode.NotFound, _allowedOrigins);
+
+        _logger.LogInformation("PO {PoId} marked as transferred", numericId);
+        return await ResponseHelper.WriteSuccess(req, new { ok = true, status = "transferred" }, _allowedOrigins);
     }
 
     // GET /api/purchase-orders/{id} — returns PO with its line items

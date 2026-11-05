@@ -871,7 +871,8 @@ public class PurchaseOrderEntity : ITableEntity
     public string RowKey { get; set; } = "";           // numeric PO ID
     public string PoId { get; set; } = "";             // full GID
     public string PoName { get; set; } = "";           // e.g. "PO-1001"
-    public string Status { get; set; } = "open";       // open | partial | fulfilled
+    public string Status { get; set; } = "open";       // open | partial | fulfilled | transferred
+    public string? ShopifyStatus { get; set; }         // Shopify-side status: draft | ordered | partially_received | received | cancelled
     public string Vendor { get; set; } = "";
     public int TotalLineItems { get; set; }
     public int ApprovedLineItems { get; set; }

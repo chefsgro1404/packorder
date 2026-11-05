@@ -388,7 +388,8 @@ export interface PurchaseOrder {
   id: string;
   poId: string;
   poName: string;
-  status: 'open' | 'partial' | 'fulfilled';
+  status: 'open' | 'partial' | 'fulfilled' | 'transferred';
+  shopifyStatus?: string;
   vendor: string;
   totalLineItems: number;
   approvedLineItems: number;
