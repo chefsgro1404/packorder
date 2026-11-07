@@ -82,7 +82,7 @@ export function ModeSelector() {
           className={`relative flex items-center gap-4 px-5 py-4 rounded-2xl border-2 transition-all duration-200 active:scale-[0.97] min-h-[80px] ${
             lastMode === mode.id
               ? mode.activeColor
-              : "border-slate-700 bg-slate-900 hover:border-slate-500"
+              : "border-[var(--border-color)] bg-[var(--bg-card)] hover:border-slate-500"
           }`}
         >
           {lastMode === mode.id && (
@@ -98,7 +98,7 @@ export function ModeSelector() {
             {mode.icon}
           </div>
           <div className="text-left">
-            <h2 className="text-base font-bold text-slate-100">{mode.label}</h2>
+            <h2 className="text-base font-bold text-[var(--text-primary)]">{mode.label}</h2>
             <p className="text-xs text-slate-400 mt-0.5">{mode.description}</p>
           </div>
         </button>

@@ -55,7 +55,7 @@ export function BulkPrintModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-md bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-2xl shadow-2xl px-5 py-6 flex flex-col gap-4 z-10">
+      <div className="relative w-full sm:max-w-md bg-[var(--bg-card)] border border-[var(--border-color)] rounded-t-3xl sm:rounded-2xl shadow-2xl px-5 py-6 flex flex-col gap-4 z-10">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
@@ -72,7 +72,7 @@ export function BulkPrintModal({
               {isLotReceiving && (
                 <p className="text-[10px] font-semibold text-amber-500 uppercase tracking-widest mb-0.5">Lot Receiving</p>
               )}
-              <p className="text-sm font-bold text-slate-100 leading-snug">{productTitle}</p>
+              <p className="text-sm font-bold text-[var(--text-primary)] leading-snug">{productTitle}</p>
               {variantTitle && variantTitle !== 'Default Title' && (
                 <p className="text-xs text-slate-400 mt-0.5">{variantTitle}</p>
               )}
@@ -88,7 +88,7 @@ export function BulkPrintModal({
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors flex-shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-colors flex-shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -111,7 +111,7 @@ export function BulkPrintModal({
                 onChange={e => setTotalWeightLbs(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
                 autoFocus
-                className="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-base font-semibold text-slate-100 placeholder-slate-600 focus:outline-none focus:border-amber-500 transition-colors"
+                className="w-full h-11 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-amber-500 transition-colors"
               />
             </div>
 
@@ -127,8 +127,8 @@ export function BulkPrintModal({
                     onClick={() => setBarcodeCount(n)}
                     className={`flex-1 h-11 rounded-xl text-sm font-bold transition-colors ${
                       barcodeCount === n
-                        ? 'bg-amber-600 text-white'
-                        : 'bg-slate-800 border border-slate-700 text-slate-300 hover:border-amber-700'
+                        ? 'bg-amber-600 text-[var(--text-primary)]'
+                        : 'bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-700'
                     }`}
                   >
                     {n}
@@ -154,7 +154,7 @@ export function BulkPrintModal({
               onChange={e => setQuantity(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
               autoFocus
-              className="w-full h-11 bg-slate-800 border border-slate-700 rounded-xl px-3 text-base font-semibold text-slate-100 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full h-11 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors"
             />
             {isCountValid && delta === 0 && (
               <p className="text-xs text-emerald-400 flex items-center gap-1.5">
@@ -184,7 +184,7 @@ export function BulkPrintModal({
               placeholder="e.g. LOT-2024-01"
               value={lotNo}
               onChange={e => setLotNo(e.target.value)}
-              className={`w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-colors ${
+              className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none transition-colors ${
                 isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
               }`}
             />
@@ -198,7 +198,7 @@ export function BulkPrintModal({
                 type="date"
                 value={mfgDate}
                 onChange={e => setMfgDate(e.target.value)}
-                className={`w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 focus:outline-none transition-colors [color-scheme:dark] ${
+                className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] focus:outline-none transition-colors [color-scheme:dark] ${
                   isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
                 }`}
               />
@@ -211,7 +211,7 @@ export function BulkPrintModal({
                 type="date"
                 value={expiryDate}
                 onChange={e => setExpiryDate(e.target.value)}
-                className={`w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 focus:outline-none transition-colors [color-scheme:dark] ${
+                className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] focus:outline-none transition-colors [color-scheme:dark] ${
                   isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
                 }`}
               />
@@ -232,7 +232,7 @@ export function BulkPrintModal({
               value={weight}
               onChange={e => setWeight(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
-              className="w-full h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+              className="w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-blue-500 transition-colors"
             />
             <p className="text-[11px] text-slate-600">Applied to all labels in this batch</p>
           </div>
@@ -242,14 +242,14 @@ export function BulkPrintModal({
         <div className="flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 h-11 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 font-medium transition-colors"
+            className="flex-1 h-11 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] font-medium transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className={`flex-1 h-11 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-white font-bold flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 h-11 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-[var(--text-primary)] font-bold flex items-center justify-center gap-2 transition-colors ${
               isLotReceiving
                 ? 'bg-amber-600 hover:bg-amber-500'
                 : 'bg-blue-600 hover:bg-blue-500'

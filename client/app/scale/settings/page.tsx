@@ -22,8 +22,11 @@ import {
   RotateCcw,
   ChevronDown,
   ChevronUp,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { useDeadOperations, jobTypeLabel } from '@/hooks/useDeadOperations';
+import { useTheme } from '@/hooks/useTheme';
 
 interface WeightRangeRule {
   variantId: string;
@@ -88,6 +91,9 @@ interface WebhookResult {
 
 export default function ScaleSettingsPage() {
   const router = useRouter();
+
+  // ── Theme ────────────────────────────────────────────────────────────────
+  const { theme, toggleTheme } = useTheme();
 
   // ── Failed operations (CRH-271) ──────────────────────────────────────────
   const { deadJobs, loading: deadLoading, error: deadError, fetch: fetchDeadJobs, retry: retryJob, dismiss: dismissJob } = useDeadOperations();
@@ -613,29 +619,29 @@ export default function ScaleSettingsPage() {
   };
 
   return (
-    <main className="min-h-screen bg-slate-950 pb-safe">
+    <main className="min-h-screen bg-[var(--bg-page)] pb-safe">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800/60 px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-[var(--bg-page)] backdrop-blur border-b border-[var(--border-color)] px-4 py-3 flex items-center gap-3">
         <button
           onClick={() => router.push('/scale')}
-          className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors flex-shrink-0"
+          className="w-9 h-9 flex items-center justify-center rounded-xl bg-[var(--bg-card)] hover:bg-[var(--bg-input)] transition-colors flex-shrink-0"
           aria-label="Back to scale"
         >
-          <ArrowLeft className="w-4 h-4 text-slate-400" />
+          <ArrowLeft className="w-4 h-4 text-[var(--text-muted)]" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-base font-bold text-slate-100 leading-tight">Scale Settings</h1>
-          <p className="text-xs text-slate-500 leading-tight">Sync, vendors, webhooks &amp; device setup</p>
+          <h1 className="text-base font-bold text-[var(--text-primary)] leading-tight">Scale Settings</h1>
+          <p className="text-xs text-[var(--text-muted)] leading-tight">Sync, vendors, webhooks &amp; device setup</p>
         </div>
       </div>
 
       <div className="px-4 py-5 flex flex-col gap-5">
 
         {/* ── Full Sync ─────────────────────────────────────────────────────── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
             <Layers className="w-4 h-4 text-indigo-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Full Sync</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Full Sync</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
@@ -663,7 +669,7 @@ export default function ScaleSettingsPage() {
                       ? <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
                       : <X className="w-3 h-3 text-rose-400 flex-shrink-0" />
                     }
-                    <span className="text-slate-300">{stageName(s.stage)}</span>
+                    <span className="text-[var(--text-secondary)]">{stageName(s.stage)}</span>
                     {s.ok
                       ? <span className="text-slate-500 ml-auto">{s.count}</span>
                       : <span className="text-rose-400 ml-auto truncate max-w-[140px]">{s.error}</span>
@@ -688,10 +694,10 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Scheduled auto-sync ──────────────────────────────────────────── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
             <Clock className="w-4 h-4 text-blue-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Scheduled Auto-Sync</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Scheduled Auto-Sync</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
@@ -718,10 +724,10 @@ export default function ScaleSettingsPage() {
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
                     syncSettings.autoSyncEnabled
                       ? 'bg-blue-950/40 border-blue-800 text-blue-300'
-                      : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                      : 'bg-[var(--bg-input)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]'
                   }`}
                 >
-                  <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${syncSettings.autoSyncEnabled ? 'bg-blue-500' : 'bg-slate-700'}`}>
+                  <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${syncSettings.autoSyncEnabled ? 'bg-blue-500' : 'bg-[var(--bg-elevated)]'}`}>
                     <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${syncSettings.autoSyncEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
                   </span>
                   {syncSettings.autoSyncEnabled ? 'Auto-sync enabled — runs nightly at midnight NY' : 'Auto-sync disabled'}
@@ -736,7 +742,7 @@ export default function ScaleSettingsPage() {
                     value={syncSettings.autoSyncVendors}
                     onChange={e => setSyncSettings(s => ({ ...s, autoSyncVendors: e.target.value }))}
                     placeholder="e.g. Green Valley, Farm Fresh"
-                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
@@ -749,7 +755,7 @@ export default function ScaleSettingsPage() {
                     value={syncSettings.autoSyncTags}
                     onChange={e => setSyncSettings(s => ({ ...s, autoSyncTags: e.target.value }))}
                     placeholder="e.g. packing, scale"
-                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
@@ -800,10 +806,10 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Vendor Management ────────────────────────────────────────────── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
             <Building2 className="w-4 h-4 text-teal-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Vendors</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Vendors</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
@@ -823,7 +829,7 @@ export default function ScaleSettingsPage() {
                 value={newVendorName}
                 onChange={e => setNewVendorName(e.target.value)}
                 placeholder="Vendor name…"
-                className="flex-1 min-w-0 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+                className="flex-1 min-w-0 px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
                 onKeyDown={e => { if (e.key === 'Enter') handleAddVendor(); }}
               />
               <button
@@ -848,7 +854,7 @@ export default function ScaleSettingsPage() {
                 {vendors.map(v => (
                   <div key={v.id} className="flex items-center gap-3 py-2.5 group">
                     <Building2 className="w-4 h-4 text-slate-600 flex-shrink-0" />
-                    <span className="flex-1 min-w-0 text-sm text-slate-300 truncate">{v.vendorName}</span>
+                    <span className="flex-1 min-w-0 text-sm text-[var(--text-secondary)] truncate">{v.vendorName}</span>
                     <button
                       onClick={() => handleDeleteVendor(v.id)}
                       disabled={deletingVendorId === v.id}
@@ -868,10 +874,10 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Variant title abbreviations ──────────────────────────────────── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
             <Type className="w-4 h-4 text-emerald-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Title Abbreviations</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Title Abbreviations</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
@@ -892,7 +898,7 @@ export default function ScaleSettingsPage() {
                 value={newPhrase}
                 onChange={e => setNewPhrase(e.target.value)}
                 placeholder="Phrase (e.g. ready to cook, cut and clean)"
-                className="flex-1 min-w-0 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="flex-1 min-w-0 px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 onKeyDown={e => { if (e.key === 'Enter') handleAddMapping(); }}
               />
               <input
@@ -900,7 +906,7 @@ export default function ScaleSettingsPage() {
                 value={newAbbr}
                 onChange={e => setNewAbbr(e.target.value)}
                 placeholder="Short (e.g. RC)"
-                className="w-24 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                className="w-24 px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 onKeyDown={e => { if (e.key === 'Enter') handleAddMapping(); }}
               />
               <button
@@ -930,7 +936,7 @@ export default function ScaleSettingsPage() {
                   <div key={m.phrase} className="flex items-center gap-3 py-2.5 group">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm text-slate-300 break-all">{m.phrase}</span>
+                        <span className="text-sm text-[var(--text-secondary)] break-all">{m.phrase}</span>
                         <span className="text-slate-600">→</span>
                         <span className="text-sm font-semibold text-emerald-400">{m.abbreviation}</span>
                       </div>
@@ -955,10 +961,10 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Printer device ───────────────────────────────────────────────── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
             <Printer className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-semibold text-slate-200">Printer Device</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Printer Device</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
             <p className="text-xs text-slate-500">
@@ -971,10 +977,10 @@ export default function ScaleSettingsPage() {
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
                 isPrinterDevice
                   ? 'bg-amber-950/40 border-amber-800 text-amber-300'
-                  : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                  : 'bg-[var(--bg-input)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]'
               }`}
             >
-              <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${isPrinterDevice ? 'bg-amber-500' : 'bg-slate-700'}`}>
+              <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${isPrinterDevice ? 'bg-amber-500' : 'bg-[var(--bg-elevated)]'}`}>
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${isPrinterDevice ? 'translate-x-5' : 'translate-x-0'}`} />
               </span>
               {isPrinterDevice ? 'This device is registered as the printer' : 'Register as printer device'}
@@ -988,16 +994,16 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Shopify webhook registration ─────────────────────────────────── */}
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Webhook className="w-4 h-4 text-purple-400" />
-              <h2 className="text-sm font-semibold text-slate-200">Shopify Webhooks</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Shopify Webhooks</h2>
             </div>
             <button
               onClick={fetchRegisteredWebhooks}
               disabled={webhooksLoading}
-              className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+              className="p-1 rounded-lg text-slate-500 hover:text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors"
               title="Load registered webhooks"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${webhooksLoading ? 'animate-spin' : ''}`} />
@@ -1014,9 +1020,9 @@ export default function ScaleSettingsPage() {
               <div className="flex flex-col gap-1">
                 <p className="text-xs text-slate-500 font-medium">{registeredWebhooks.length} registered webhook{registeredWebhooks.length !== 1 ? 's' : ''}:</p>
                 {registeredWebhooks.map(w => (
-                  <div key={w.id} className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/60 rounded-lg group">
+                  <div key={w.id} className="flex items-center gap-2 px-3 py-1.5 bg-[var(--bg-input)] rounded-lg group">
                     <Tag className="w-3 h-3 text-purple-400 flex-shrink-0" />
-                    <span className="text-xs font-mono text-slate-300 flex-1 min-w-0 truncate">{w.topic}</span>
+                    <span className="text-xs font-mono text-[var(--text-secondary)] flex-1 min-w-0 truncate">{w.topic}</span>
                     <button
                       onClick={() => handleDeleteWebhook(w.id)}
                       disabled={deletingWebhookId === w.id}
@@ -1043,7 +1049,7 @@ export default function ScaleSettingsPage() {
               <div className={`border rounded-xl px-3 py-2.5 flex flex-col gap-1 ${
                 webhookResult.errors === 0 ? 'bg-emerald-950/40 border-emerald-900' : 'bg-amber-950/40 border-amber-900'
               }`}>
-                <p className="text-xs font-semibold text-slate-200">
+                <p className="text-xs font-semibold text-[var(--text-primary)]">
                   {webhookResult.registered} registered · {webhookResult.alreadyRegistered} already registered
                   {webhookResult.errors > 0 && ` · ${webhookResult.errors} errors`}
                 </p>
@@ -1062,7 +1068,7 @@ export default function ScaleSettingsPage() {
                 value={webhookCallbackUrl}
                 onChange={e => setWebhookCallbackUrl(e.target.value)}
                 placeholder="https://your-functions-app.azurewebsites.net"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
             </div>
 
@@ -1086,10 +1092,10 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Weight Ranges ─────────────────────────────────────────────── */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Scale className="w-4 h-4 text-violet-400" />
-            <h2 className="text-sm font-semibold text-white">Weight Ranges (Categorical Products)</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Weight Ranges (Categorical Products)</h2>
           </div>
           <p className="text-xs text-slate-400 mb-3">
             Configure size tiers for products like red chicken. Each tier maps a weight range to a specific variant.
@@ -1109,7 +1115,7 @@ export default function ScaleSettingsPage() {
                     className={`w-full flex items-center justify-between text-left px-3 py-2 rounded-xl border text-sm transition-colors ${
                       wrProductId === p.productId
                         ? 'bg-violet-900/50 border-violet-600 text-violet-200'
-                        : 'bg-slate-800/60 border-slate-700/60 text-slate-200 hover:bg-slate-800 hover:border-slate-600'
+                        : 'bg-[var(--bg-input)] border-[var(--border-color)]/60 text-[var(--text-primary)] hover:bg-[var(--bg-input)] hover:border-slate-600'
                     }`}
                   >
                     <span className="truncate">{p.productTitle}</span>
@@ -1127,7 +1133,7 @@ export default function ScaleSettingsPage() {
               onChange={e => setWrProductSearch(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleWrSearch()}
               placeholder="Search product name…"
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+              className="flex-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
             />
             <button
               onClick={handleWrSearch}
@@ -1139,12 +1145,12 @@ export default function ScaleSettingsPage() {
           </div>
 
           {wrProductResults.length > 0 && (
-            <div className="bg-slate-800 border border-slate-700 rounded-xl mb-3 overflow-hidden">
+            <div className="bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl mb-3 overflow-hidden">
               {wrProductResults.map(p => (
                 <button
                   key={p.productId}
                   onClick={() => handleWrSelectProduct(p.productId, p.productTitle)}
-                  className="w-full text-left px-3 py-2.5 text-sm text-slate-200 hover:bg-slate-700 transition-colors border-b border-slate-700/50 last:border-0"
+                  className="w-full text-left px-3 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors border-b border-[var(--border-color)] last:border-0"
                 >
                   {p.productTitle}
                 </button>
@@ -1163,14 +1169,14 @@ export default function ScaleSettingsPage() {
                     {wrRules.map((rule, idx) => {
                       const tier = wrTierMeta[idx] ?? emptyTierMeta();
                       return (
-                        <div key={idx} className="bg-slate-800/60 border border-slate-700/60 rounded-xl p-3 flex flex-col gap-2">
+                        <div key={idx} className="bg-[var(--bg-input)] border border-[var(--border-color)]/60 rounded-xl p-3 flex flex-col gap-2">
                           {/* Label + delete */}
                           <div className="flex gap-2">
                             <input
                               value={rule.label}
                               onChange={e => handleWrUpdateRule(idx, 'label', e.target.value)}
                               placeholder="Label (auto-filled from product)"
-                              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                              className="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                             />
                             <button onClick={() => handleWrRemoveRule(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-1">
                               <Trash2 className="w-3.5 h-3.5" />
@@ -1183,14 +1189,14 @@ export default function ScaleSettingsPage() {
                               value={rule.minLbs}
                               onChange={e => handleWrUpdateRule(idx, 'minLbs', parseFloat(e.target.value) || 0)}
                               placeholder="Min lbs"
-                              className="w-24 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                              className="w-24 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                             />
                             <input
                               type="number"
                               value={rule.maxLbs ?? ''}
                               onChange={e => handleWrUpdateRule(idx, 'maxLbs', e.target.value ? parseFloat(e.target.value) : null)}
                               placeholder="Max lbs (blank = no limit)"
-                              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                              className="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                             />
                           </div>
                           {/* Target product */}
@@ -1201,7 +1207,7 @@ export default function ScaleSettingsPage() {
                                 <select
                                   value={rule.variantId}
                                   onChange={e => handleWrUpdateRule(idx, 'variantId', e.target.value)}
-                                  className="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-violet-500"
+                                  className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2 py-1 text-xs text-[var(--text-primary)] focus:outline-none focus:border-violet-500"
                                 >
                                   <option value="">— variant —</option>
                                   {tier.targetVariants.map(v => (
@@ -1219,16 +1225,16 @@ export default function ScaleSettingsPage() {
                                 value={tier.targetSearch}
                                 onChange={e => handleWrTierSearch(idx, e.target.value)}
                                 placeholder="Search output product…"
-                                className="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500"
+                                className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                               />
                               {tier.searching && <RefreshCw className="absolute right-2 top-1.5 w-3 h-3 text-slate-400 animate-spin" />}
                               {tier.targetResults.length > 0 && (
-                                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-slate-800 border border-slate-700 rounded-xl overflow-hidden shadow-lg">
+                                <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl overflow-hidden shadow-lg">
                                   {tier.targetResults.map(p => (
                                     <button
                                       key={p.productId}
                                       onClick={() => handleWrTierSelectProduct(idx, p.productId, p.productTitle)}
-                                      className="w-full text-left px-3 py-2 text-xs text-slate-200 hover:bg-slate-700 transition-colors border-b border-slate-700/50 last:border-0"
+                                      className="w-full text-left px-3 py-2 text-xs text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors border-b border-[var(--border-color)] last:border-0"
                                     >
                                       {p.productTitle}
                                     </button>
@@ -1245,7 +1251,7 @@ export default function ScaleSettingsPage() {
                   <div className="flex gap-2">
                     <button
                       onClick={handleWrAddRule}
-                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white border border-slate-700 hover:border-slate-500 rounded-xl px-3 py-2 transition-colors"
+                      className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-[var(--text-primary)] border border-[var(--border-color)] hover:border-slate-500 rounded-xl px-3 py-2 transition-colors"
                     >
                       <Plus className="w-3.5 h-3.5" /> Add tier
                     </button>
@@ -1270,10 +1276,10 @@ export default function ScaleSettingsPage() {
         </div>
 
         {/* ── Lot Products ──────────────────────────────────────────────────── */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
             <Layers className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-semibold text-white">Lot Products</h2>
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Lot Products</h2>
           </div>
           <p className="text-xs text-slate-400 mb-3">
             Products marked as lot method use the PO quantity for Shopify inventory — barcode count is not the unit count. Beef, lamb, goat, and chicken are typical lot products.
@@ -1310,7 +1316,7 @@ export default function ScaleSettingsPage() {
               onChange={e => setLotProductSearch(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleLotProductSearch()}
               placeholder="Search product to add as lot…"
-              className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              className="flex-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-amber-500"
             />
             <button
               onClick={handleLotProductSearch}
@@ -1322,13 +1328,13 @@ export default function ScaleSettingsPage() {
           </div>
 
           {lotProductResults.length > 0 && (
-            <div className="bg-slate-800 border border-slate-700 rounded-xl mb-3 overflow-hidden">
+            <div className="bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl mb-3 overflow-hidden">
               {lotProductResults.map(p => (
                 <button
                   key={p.productId}
                   onClick={() => handleAddLotProduct(p.productId, p.productTitle)}
                   disabled={lotProductSaving || lotProducts.some(lp => lp.productId === p.productId)}
-                  className="w-full text-left px-3 py-2.5 text-sm text-slate-200 hover:bg-slate-700 disabled:opacity-50 transition-colors border-b border-slate-700/50 last:border-0 flex items-center justify-between"
+                  className="w-full text-left px-3 py-2.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] disabled:opacity-50 transition-colors border-b border-[var(--border-color)] last:border-0 flex items-center justify-between"
                 >
                   <span>{p.productTitle}</span>
                   {lotProducts.some(lp => lp.productId === p.productId) ? (
@@ -1348,8 +1354,40 @@ export default function ScaleSettingsPage() {
           )}
         </div>
 
+        {/* ── Theme ─────────────────────────────────────────────────────────── */}
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            {theme === 'dark' ? (
+              <Moon className="w-4 h-4 text-indigo-400" />
+            ) : (
+              <Sun className="w-4 h-4 text-amber-500" />
+            )}
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Theme</h2>
+          </div>
+          <p className="text-xs text-[var(--text-muted)] mb-4">
+            Light mode is easier to read under bright warehouse lighting. Your preference is saved per device.
+          </p>
+          <button
+            onClick={toggleTheme}
+            className={`flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-medium transition-colors w-full ${
+              theme === 'dark'
+                ? 'bg-indigo-950/40 border-indigo-800 text-indigo-300'
+                : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}
+          >
+            <span className={`w-11 h-6 rounded-full relative transition-colors shrink-0 ${theme === 'dark' ? 'bg-indigo-500' : 'bg-amber-400'}`}>
+              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${theme === 'dark' ? 'translate-x-5' : 'translate-x-0'}`} />
+            </span>
+            {theme === 'dark' ? (
+              <span className="flex items-center gap-2"><Moon className="w-4 h-4" /> Dark mode</span>
+            ) : (
+              <span className="flex items-center gap-2"><Sun className="w-4 h-4" /> Light mode</span>
+            )}
+          </button>
+        </div>
+
         {/* ── Failed Operations ─────────────────────────────────────────────── */}
-        <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-5">
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
           <button
             className="w-full flex items-center justify-between gap-2"
             onClick={() => {
@@ -1359,9 +1397,9 @@ export default function ScaleSettingsPage() {
           >
             <div className="flex items-center gap-2">
               <ShieldAlert className="w-4 h-4 text-rose-400" />
-              <h2 className="text-sm font-semibold text-white">Failed Operations</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Failed Operations</h2>
               {deadJobs.length > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-[var(--text-primary)] text-[10px] font-bold">
                   {deadJobs.length}
                 </span>
               )}
@@ -1383,7 +1421,7 @@ export default function ScaleSettingsPage() {
                 <button
                   onClick={fetchDeadJobs}
                   disabled={deadLoading}
-                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                  className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-[var(--text-primary)] transition-colors"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${deadLoading ? 'animate-spin' : ''}`} />
                   Refresh
@@ -1441,7 +1479,7 @@ export default function ScaleSettingsPage() {
                             setFailedOpsActing(null);
                           }}
                           disabled={failedOpsActing === job.id}
-                          className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 rounded-lg text-xs text-slate-400 font-medium transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] disabled:opacity-50 rounded-lg text-xs text-slate-400 font-medium transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
                           Dismiss

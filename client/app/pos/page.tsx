@@ -139,23 +139,23 @@ export default function POSPage() {
   const isOnline = typeof window !== "undefined" ? navigator.onLine : true;
 
   return (
-    <main className="min-h-screen flex flex-col bg-slate-950">
+    <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-card)] border-b border-[var(--border-color)]">
         <button
           onClick={() => router.push("/")}
-          className="p-2 -ml-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+          className="p-2 -ml-2 text-slate-400 hover:text-[var(--text-primary)] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="font-bold text-slate-100">POS Mode</h1>
+        <h1 className="font-bold text-[var(--text-primary)]">POS Mode</h1>
         <button
           onClick={() => setCartOpen(true)}
-          className="relative p-2 -mr-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+          className="relative p-2 -mr-2 text-slate-400 hover:text-[var(--text-primary)] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
           <ShoppingCart className="w-5 h-5" />
           {items.length > 0 && (
-            <span className="absolute top-1 right-1 w-4 h-4 bg-blue-600 rounded-full text-xs flex items-center justify-center text-white font-bold">
+            <span className="absolute top-1 right-1 w-4 h-4 bg-blue-600 rounded-full text-xs flex items-center justify-center text-[var(--text-primary)] font-bold">
               {items.length}
             </span>
           )}

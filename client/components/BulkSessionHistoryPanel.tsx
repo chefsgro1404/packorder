@@ -98,14 +98,14 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
   };
 
   return (
-    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+    <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-page)]">
       <button
-        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--bg-card)] transition-colors"
         onClick={() => setOpen(v => !v)}
       >
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-slate-500" />
-          <span className="text-sm font-semibold text-slate-200">Bulk Session History</span>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">Bulk Session History</span>
           {sessions.length > 0 && (
             <span className="text-xs text-slate-500">— {sessions.length} session{sessions.length !== 1 ? 's' : ''}</span>
           )}
@@ -114,7 +114,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
           {open && (
             <button
               onClick={e => { e.stopPropagation(); load(); }}
-              className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+              className="p-1 rounded-lg text-slate-500 hover:text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors"
               title="Refresh"
             >
               <RefreshCw className="w-3.5 h-3.5" />
@@ -125,7 +125,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
       </button>
 
       {open && (
-        <div className="border-t border-slate-800">
+        <div className="border-t border-[var(--border-color)]">
           {loading ? (
             <div className="flex items-center gap-2 px-4 py-6 text-slate-500">
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -148,10 +148,10 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                     {/* Session row */}
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : s.id)}
-                      className="w-full flex items-start gap-3 px-4 py-3 hover:bg-slate-900/40 transition-colors text-left"
+                      className="w-full flex items-start gap-3 px-4 py-3 hover:bg-[var(--bg-card)] transition-colors text-left"
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-200 leading-snug">{s.productTitle}</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)] leading-snug">{s.productTitle}</p>
                         {s.variantTitle && s.variantTitle !== 'Default Title' && (
                           <p className="text-xs text-slate-400">{s.variantTitle}</p>
                         )}
@@ -164,7 +164,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <div className="text-right">
-                          <p className="text-sm font-bold text-slate-200">{s.quantityPrinted}/{s.quantityOrdered}</p>
+                          <p className="text-sm font-bold text-[var(--text-primary)]">{s.quantityPrinted}/{s.quantityOrdered}</p>
                           <p className="text-[10px] text-slate-500">printed</p>
                         </div>
                         {failed.length > 0 ? (
@@ -213,7 +213,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                                 <button
                                   onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
                                   disabled={!r.qrPayload}
-                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
+                                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-[var(--text-primary)] px-2 py-1 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30"
                                 >
                                   <RotateCcw className="w-3 h-3" /> Reprint
                                 </button>
@@ -230,10 +230,10 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                               className={`flex items-center gap-2 rounded-xl px-3 py-2 transition-colors ${
                                 selectedSns.has(r.sn)
                                   ? 'bg-blue-950/30 border border-blue-600/50'
-                                  : 'bg-slate-800/50 border border-transparent'
+                                  : 'bg-[var(--bg-input)] border border-transparent'
                               }`}
                             >
-                              <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-slate-600 flex items-center justify-center bg-slate-800 hover:border-blue-400 transition-colors">
+                              <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-slate-600 flex items-center justify-center bg-[var(--bg-input)] hover:border-blue-400 transition-colors">
                                 {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-blue-400" />}
                               </button>
                               <span className="text-[10px] text-slate-500 font-bold w-5">#{r.index}</span>
@@ -244,7 +244,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                               <button
                                 onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
                                 disabled={!r.qrPayload}
-                                className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-white px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors disabled:opacity-30"
+                                className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-[var(--text-primary)] px-2 py-1 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors disabled:opacity-30"
                               >
                                 <RotateCcw className="w-3 h-3" /> Reprint
                               </button>
@@ -256,7 +256,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                         {selectedSns.size > 0 && (
                           <button
                             onClick={() => handleReprintSelected(s)}
-                            className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors active:scale-[0.99]"
+                            className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-[var(--text-primary)] rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors active:scale-[0.99]"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             Reprint Selected ({selectedSns.size})

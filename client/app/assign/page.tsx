@@ -97,7 +97,7 @@ const AUDIT_ACTION_STYLES: Record<BarcodeAudit["action"], string> = {
   added: "bg-green-900/40 text-green-400 border-green-800/50",
   changed: "bg-blue-900/40 text-blue-400 border-blue-800/50",
   removed: "bg-red-900/40 text-red-400 border-red-800/50",
-  rescanned: "bg-slate-700/40 text-slate-400 border-slate-600/50",
+  rescanned: "bg-[var(--bg-elevated)]/40 text-slate-400 border-slate-600/50",
 };
 
 interface BannerState {
@@ -478,20 +478,20 @@ function AssignPageInner() {
     : null;
 
   return (
-    <main className="min-h-screen flex flex-col bg-slate-950">
+    <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 sticky top-0 z-10">
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-card)] border-b border-[var(--border-color)] sticky top-0 z-10">
         <button
           onClick={() => (step === "list" || step === "done") ? router.push("/") : handleReset()}
-          className="p-2 -ml-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+          className="p-2 -ml-2 text-slate-400 hover:text-[var(--text-primary)] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <h1 className="font-bold text-slate-100">Assign Barcode</h1>
+        <h1 className="font-bold text-[var(--text-primary)]">Assign Barcode</h1>
         {step === "list" ? (
           <button
             onClick={() => setSyncOpen(true)}
-            className="p-2 -mr-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+            className="p-2 -mr-2 text-slate-400 hover:text-[var(--text-primary)] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
             title="Sync products"
           >
             <RefreshCw className="w-5 h-5" />
@@ -503,17 +503,17 @@ function AssignPageInner() {
 
       {/* Step indicator */}
       {step !== "list" && step !== "done" && step !== "remove-confirm" && step !== "removing" && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-slate-900/50 border-b border-slate-800/50">
+        <div className="flex items-center gap-2 px-4 py-2 bg-[var(--bg-card)] border-b border-[var(--border-color)]/50">
           {(["scan", "confirm"] as const).map((s, i) => {
             const active = step === s || (step === "saving" && s === "confirm");
             const done   = s === "scan" && (step === "confirm" || step === "saving");
             return (
               <div key={s} className="flex items-center gap-2">
-                {i > 0 && <div className="w-6 h-px bg-slate-700" />}
+                {i > 0 && <div className="w-6 h-px bg-[var(--bg-elevated)]" />}
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                  active ? "bg-purple-600 text-white" : done ? "bg-purple-900/50 text-purple-400" : "bg-slate-800 text-slate-500"
+                  active ? "bg-purple-600 text-[var(--text-primary)]" : done ? "bg-purple-900/50 text-purple-400" : "bg-[var(--bg-input)] text-slate-500"
                 }`}>{i + 1}</div>
-                <span className={`text-xs ${active ? "text-slate-200 font-medium" : "text-slate-500"}`}>
+                <span className={`text-xs ${active ? "text-[var(--text-primary)] font-medium" : "text-slate-500"}`}>
                   {s === "scan" ? "Scan" : "Confirm"}
                 </span>
               </div>
@@ -538,12 +538,12 @@ function AssignPageInner() {
                 value={searchInput}
                 onChange={(e) => handleSearchChange(e.target.value)}
                 placeholder="Search by name, SKU or barcode…"
-                className="w-full pl-10 pr-10 py-3 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 text-base focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[48px]"
+                className="w-full pl-10 pr-10 py-3 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-base focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[48px]"
               />
               {searchInput && (
                 <button
                   onClick={() => { setSearchInput(""); pushFilters("", urlVendor, urlHasBarcode, urlStatus, urlIncludeCollections, urlExcludeCollections); }}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[var(--text-secondary)]"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -553,13 +553,13 @@ function AssignPageInner() {
             {/* Filter row */}
             <div className="flex flex-wrap gap-2">
               {/* Barcode filter */}
-              <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs font-medium">
+              <div className="flex rounded-lg overflow-hidden border border-[var(--border-color)] text-xs font-medium">
                 {(["all", "yes", "no"] as const).map((v) => (
                   <button
                     key={v}
                     onClick={() => handleHasBarcodeChange(v)}
                     className={`px-3 py-2 transition-colors min-h-[36px] ${
-                      urlHasBarcode === v ? "bg-purple-700 text-white" : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                      urlHasBarcode === v ? "bg-purple-700 text-[var(--text-primary)]" : "bg-[var(--bg-card)] text-slate-400 hover:text-[var(--text-primary)]"
                     }`}
                   >
                     {v === "all" ? "All" : v === "yes" ? "Has barcode" : "No barcode"}
@@ -568,7 +568,7 @@ function AssignPageInner() {
               </div>
 
               {/* Status filter */}
-              <div className="flex rounded-lg overflow-hidden border border-slate-700 text-xs font-medium">
+              <div className="flex rounded-lg overflow-hidden border border-[var(--border-color)] text-xs font-medium">
                 {([
                   { value: "all",      label: "Any status" },
                   { value: "ACTIVE",   label: "Active" },
@@ -579,7 +579,7 @@ function AssignPageInner() {
                     key={value}
                     onClick={() => handleStatusChange(value)}
                     className={`px-3 py-2 transition-colors min-h-[36px] ${
-                      urlStatus === value ? "bg-purple-700 text-white" : "bg-slate-900 text-slate-400 hover:text-slate-200"
+                      urlStatus === value ? "bg-purple-700 text-[var(--text-primary)]" : "bg-[var(--bg-card)] text-slate-400 hover:text-[var(--text-primary)]"
                     }`}
                   >
                     {label}
@@ -594,7 +594,7 @@ function AssignPageInner() {
                   <select
                     value={urlVendor}
                     onChange={(e) => handleVendorChange(e.target.value)}
-                    className="pl-8 pr-7 py-2 bg-slate-900 border border-slate-700 rounded-lg text-slate-300 text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[36px]"
+                    className="pl-8 pr-7 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-xs appearance-none focus:outline-none focus:ring-2 focus:ring-purple-500 min-h-[36px]"
                   >
                     <option value="all">All vendors</option>
                     {vendors.map((v) => <option key={v} value={v}>{v}</option>)}
@@ -621,22 +621,22 @@ function AssignPageInner() {
               <button
                 onClick={() => setExportOpen((o) => !o)}
                 disabled={exporting}
-                className="flex items-center gap-1.5 px-3 py-2 bg-slate-900 border border-slate-700 hover:border-purple-500/50 rounded-lg text-xs font-medium text-slate-300 transition-colors min-h-[36px] disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-2 bg-[var(--bg-card)] border border-[var(--border-color)] hover:border-purple-500/50 rounded-lg text-xs font-medium text-[var(--text-secondary)] transition-colors min-h-[36px] disabled:opacity-50"
               >
                 <Download className="w-3.5 h-3.5" />
                 {exporting ? "Exporting…" : "Export"}
               </button>
               {exportOpen && (
-                <div className="absolute left-0 top-full mt-1 z-20 bg-slate-900 border border-slate-700 rounded-lg shadow-lg overflow-hidden w-44">
+                <div className="absolute left-0 top-full mt-1 z-20 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-lg overflow-hidden w-44">
                   <button
                     onClick={() => handleExport("csv")}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-slate-500" />Export CSV
                   </button>
                   <button
                     onClick={() => handleExport("pdf")}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800 transition-colors border-t border-slate-800"
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors border-t border-[var(--border-color)]"
                   >
                     <FileText className="w-4 h-4 text-slate-500" />Export PDF (Print)
                   </button>
@@ -676,7 +676,7 @@ function AssignPageInner() {
                 </p>
                 <button
                   onClick={() => setSyncOpen(true)}
-                  className="mt-2 px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded-lg text-sm font-medium text-white transition-colors"
+                  className="mt-2 px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded-lg text-sm font-medium text-[var(--text-primary)] transition-colors"
                 >
                   Sync now
                 </button>
@@ -715,23 +715,23 @@ function AssignPageInner() {
 
                   const isExpanded = expandedProducts.has(product.productId);
                   return (
-                    <div key={product.productId} className="rounded-xl overflow-hidden border border-slate-700">
+                    <div key={product.productId} className="rounded-xl overflow-hidden border border-[var(--border-color)]">
                       {/* Product header */}
                       <button
                         onClick={() => toggleExpand(product.productId)}
-                        className="w-full flex items-center gap-3 p-3 bg-slate-900 hover:bg-slate-800 transition-colors text-left"
+                        className="w-full flex items-center gap-3 p-3 bg-[var(--bg-card)] hover:bg-[var(--bg-input)] transition-colors text-left"
                       >
                         {product.imageUrl ? (
-                          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+                          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-[var(--bg-input)] shrink-0">
                             <Image src={product.imageUrl} alt={product.productTitle} fill className="object-cover" sizes="48px" />
                           </div>
                         ) : (
-                          <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                          <div className="w-12 h-12 rounded-lg bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                             <span className="text-xl">📦</span>
                           </div>
                         )}
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-slate-100 text-sm leading-tight truncate">
+                          <p className="font-medium text-[var(--text-primary)] text-sm leading-tight truncate">
                             {product.productTitle}
                           </p>
                           <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -751,23 +751,23 @@ function AssignPageInner() {
 
                       {/* Expanded variants */}
                       {isExpanded && (
-                        <div className="border-t border-slate-800">
+                        <div className="border-t border-[var(--border-color)]">
                           {product.variants.map((v, i) => {
                             const cv = toCachedVariant(product, v);
                             return (
                               <div
                                 key={v.variantId}
-                                className={`flex items-center ${i < product.variants.length - 1 ? "border-b border-slate-800/60" : ""}`}
+                                className={`flex items-center ${i < product.variants.length - 1 ? "border-b border-[var(--border-color)]" : ""}`}
                               >
                                 <button
                                   onClick={() => handleSelectVariant(cv)}
-                                  className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-950 hover:bg-slate-900 transition-colors text-left min-w-0"
+                                  className="flex-1 flex items-center gap-3 px-4 py-3 bg-[var(--bg-page)] hover:bg-[var(--bg-card)] transition-colors text-left min-w-0"
                                 >
-                                  <div className="w-8 h-8 rounded-md bg-slate-800/60 flex items-center justify-center shrink-0">
+                                  <div className="w-8 h-8 rounded-md bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                                     <Tag className="w-3.5 h-3.5 text-slate-600" />
                                   </div>
                                   <div className="flex-1 min-w-0">
-                                    <p className="text-sm text-slate-200 font-medium truncate">{v.variantTitle}</p>
+                                    <p className="text-sm text-[var(--text-primary)] font-medium truncate">{v.variantTitle}</p>
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       {v.sku && <span className="text-xs font-mono text-slate-500">{v.sku}</span>}
                                       {v.barcode ? (
@@ -781,7 +781,7 @@ function AssignPageInner() {
                                 {v.barcode && (
                                   <button
                                     onClick={() => handleRemoveBarcode(cv)}
-                                    className="px-3 py-3 text-slate-600 hover:text-red-400 transition-colors shrink-0 bg-slate-950 hover:bg-slate-900"
+                                    className="px-3 py-3 text-slate-600 hover:text-red-400 transition-colors shrink-0 bg-[var(--bg-page)] hover:bg-[var(--bg-card)]"
                                     title="Remove barcode"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -801,7 +801,7 @@ function AssignPageInner() {
                   <button
                     onClick={handleLoadMore}
                     disabled={loadingMore}
-                    className="w-full py-3 bg-slate-900 border border-slate-700 hover:border-purple-500/50 hover:bg-slate-800 rounded-xl text-sm text-slate-400 transition-all flex items-center justify-center gap-2 min-h-[48px]"
+                    className="w-full py-3 bg-[var(--bg-card)] border border-[var(--border-color)] hover:border-purple-500/50 hover:bg-[var(--bg-input)] rounded-xl text-sm text-slate-400 transition-all flex items-center justify-center gap-2 min-h-[48px]"
                   >
                     {loadingMore ? (
                       <><RefreshCw className="w-4 h-4 animate-spin" />Loading…</>
@@ -814,20 +814,20 @@ function AssignPageInner() {
             )}
 
             {/* Assign History */}
-            <div className="rounded-xl overflow-hidden border border-slate-700">
+            <div className="rounded-xl overflow-hidden border border-[var(--border-color)]">
               <button
                 onClick={toggleHistory}
-                className="w-full flex items-center gap-2 px-4 py-3 bg-slate-900 hover:bg-slate-800 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-4 py-3 bg-[var(--bg-card)] hover:bg-[var(--bg-input)] transition-colors text-left"
               >
                 <History className="w-4 h-4 text-slate-500" />
-                <span className="flex-1 text-sm font-medium text-slate-300">Assign History</span>
+                <span className="flex-1 text-sm font-medium text-[var(--text-secondary)]">Assign History</span>
                 {historyLoaded && (
                   <span className="text-xs text-slate-500">{auditHistory.length} record{auditHistory.length !== 1 ? "s" : ""}</span>
                 )}
                 <ChevronDown className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-200 ${historyOpen ? "" : "-rotate-90"}`} />
               </button>
               {historyOpen && (
-                <div className="border-t border-slate-800 max-h-72 overflow-y-auto">
+                <div className="border-t border-[var(--border-color)] max-h-72 overflow-y-auto">
                   {historyLoading && (
                     <div className="flex items-center justify-center py-6">
                       <RefreshCw className="w-4 h-4 text-slate-500 animate-spin" />
@@ -837,9 +837,9 @@ function AssignPageInner() {
                     <p className="text-xs text-slate-500 text-center py-6">No barcode assignments yet</p>
                   )}
                   {!historyLoading && auditHistory.map((a) => (
-                    <div key={a.id} className="px-4 py-3 border-b border-slate-800/60 last:border-b-0">
+                    <div key={a.id} className="px-4 py-3 border-b border-[var(--border-color)] last:border-b-0">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm text-slate-200 font-medium truncate">
+                        <p className="text-sm text-[var(--text-primary)] font-medium truncate">
                           {a.variantTitle && a.variantTitle !== "Default Title" ? `${a.productTitle} — ${a.variantTitle}` : a.productTitle}
                         </p>
                         <span className={`text-xs px-1.5 py-0.5 rounded border shrink-0 ${AUDIT_ACTION_STYLES[a.action]}`}>
@@ -867,16 +867,16 @@ function AssignPageInner() {
           <>
             <div className="flex items-center gap-3 p-3 bg-purple-950/40 border border-purple-800/50 rounded-xl">
               {selectedVariant.imageUrl ? (
-                <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+                <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[var(--bg-input)] shrink-0">
                   <Image src={selectedVariant.imageUrl} alt={selectedVariant.productTitle} fill className="object-cover" sizes="40px" />
                 </div>
               ) : (
-                <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                <div className="w-10 h-10 rounded-lg bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                   <span className="text-lg">📦</span>
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-200 truncate">
+                <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                   {selectedVariant.variantTitle !== "Default Title" ? selectedVariant.variantTitle : selectedVariant.productTitle}
                 </p>
                 {selectedVariant.variantTitle !== "Default Title" && (
@@ -886,12 +886,12 @@ function AssignPageInner() {
                   <p className="text-xs text-orange-400 mt-0.5">Will replace: <span className="font-mono">{selectedVariant.barcode}</span></p>
                 )}
               </div>
-              <button onClick={handleReset} className="p-1.5 text-slate-500 hover:text-slate-300 transition-colors">
+              <button onClick={handleReset} className="p-1.5 text-slate-500 hover:text-[var(--text-secondary)] transition-colors">
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="space-y-1">
-              <p className="text-sm font-medium text-slate-300 flex items-center gap-2">
+              <p className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-2">
                 <ScanLine className="w-4 h-4 text-purple-400" />Scan the barcode label
               </p>
               <p className="text-xs text-slate-500">Point the camera at the product barcode or sticker.</p>
@@ -903,20 +903,20 @@ function AssignPageInner() {
         {/* ── Confirm ───────────────────────────────────────────────────── */}
         {(step === "confirm" || step === "saving") && selectedVariant && scannedBarcode && (
           <div className="space-y-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-4">
-              <h2 className="font-bold text-slate-100 text-base">Confirm Assignment</h2>
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-4">
+              <h2 className="font-bold text-[var(--text-primary)] text-base">Confirm Assignment</h2>
               <div className="flex items-center gap-3">
                 {selectedVariant.imageUrl ? (
-                  <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-slate-800 shrink-0">
+                  <div className="relative w-14 h-14 rounded-xl overflow-hidden bg-[var(--bg-input)] shrink-0">
                     <Image src={selectedVariant.imageUrl} alt={selectedVariant.productTitle} fill className="object-cover" sizes="56px" />
                   </div>
                 ) : (
-                  <div className="w-14 h-14 rounded-xl bg-slate-800 flex items-center justify-center shrink-0">
+                  <div className="w-14 h-14 rounded-xl bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                     <span className="text-2xl">📦</span>
                   </div>
                 )}
                 <div>
-                  <p className="font-semibold text-slate-100">
+                  <p className="font-semibold text-[var(--text-primary)]">
                     {selectedVariant.variantTitle !== "Default Title" ? selectedVariant.variantTitle : selectedVariant.productTitle}
                   </p>
                   {selectedVariant.variantTitle !== "Default Title" && (
@@ -927,7 +927,7 @@ function AssignPageInner() {
                   )}
                 </div>
               </div>
-              <div className="border-t border-slate-800 pt-3 space-y-2">
+              <div className="border-t border-[var(--border-color)] pt-3 space-y-2">
                 {selectedVariant.barcode && (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-slate-400">Current barcode</span>
@@ -935,7 +935,7 @@ function AssignPageInner() {
                   </div>
                 )}
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-slate-300 font-medium">New barcode</span>
+                  <span className="text-[var(--text-secondary)] font-medium">New barcode</span>
                   <span className="font-mono text-purple-300 text-base font-bold">{scannedBarcode}</span>
                 </div>
               </div>
@@ -951,7 +951,7 @@ function AssignPageInner() {
             <button
               onClick={() => { setStep("scan"); setScannedBarcode(null); }}
               disabled={step === "saving"}
-              className="w-full py-3 text-slate-400 hover:text-slate-200 text-sm transition-colors min-h-[48px]"
+              className="w-full py-3 text-slate-400 hover:text-[var(--text-primary)] text-sm transition-colors min-h-[48px]"
             >
               Re-scan barcode
             </button>
@@ -961,28 +961,28 @@ function AssignPageInner() {
         {/* ── Remove confirm ────────────────────────────────────────────── */}
         {(step === "remove-confirm" || step === "removing") && selectedVariant && (
           <div className="space-y-4">
-            <div className="bg-slate-900 border border-red-900/50 rounded-2xl p-4 space-y-4">
+            <div className="bg-[var(--bg-card)] border border-red-900/50 rounded-2xl p-4 space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-red-900/40 flex items-center justify-center shrink-0">
                   <Trash2 className="w-5 h-5 text-red-400" />
                 </div>
                 <div>
-                  <p className="font-semibold text-slate-100 text-sm">Remove barcode?</p>
+                  <p className="font-semibold text-[var(--text-primary)] text-sm">Remove barcode?</p>
                   <p className="text-xs text-slate-500">This will clear the barcode from Shopify.</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 {selectedVariant.imageUrl ? (
-                  <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+                  <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-[var(--bg-input)] shrink-0">
                     <Image src={selectedVariant.imageUrl} alt={selectedVariant.productTitle} fill className="object-cover" sizes="48px" />
                   </div>
                 ) : (
-                  <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                  <div className="w-12 h-12 rounded-lg bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                     <span className="text-xl">📦</span>
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-200 truncate">
+                  <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                     {selectedVariant.variantTitle !== "Default Title" ? selectedVariant.variantTitle : selectedVariant.productTitle}
                   </p>
                   {selectedVariant.variantTitle !== "Default Title" && (
@@ -1003,7 +1003,7 @@ function AssignPageInner() {
             <button
               onClick={handleReset}
               disabled={step === "removing"}
-              className="w-full py-3 text-slate-400 hover:text-slate-200 text-sm transition-colors min-h-[48px]"
+              className="w-full py-3 text-slate-400 hover:text-[var(--text-primary)] text-sm transition-colors min-h-[48px]"
             >
               Cancel
             </button>
@@ -1019,12 +1019,12 @@ function AssignPageInner() {
             <div className="text-center space-y-1">
               <h2 className="text-2xl font-bold text-purple-300">Barcode Saved!</h2>
               <p className="text-slate-400 text-sm">{selectedVariant.productTitle}</p>
-              <p className="font-mono text-slate-300 text-base mt-2">{scannedBarcode}</p>
+              <p className="font-mono text-[var(--text-secondary)] text-base mt-2">{scannedBarcode}</p>
             </div>
             <div className="flex flex-col gap-3 w-full max-w-xs mt-4">
               <button
                 onClick={() => { setStep("scan"); setScannedBarcode(null); setBanner(null); }}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 rounded-xl font-medium text-sm transition-colors min-h-[48px]"
+                className="w-full py-3 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl font-medium text-sm transition-colors min-h-[48px]"
               >
                 Assign another barcode to same product
               </button>
@@ -1074,7 +1074,7 @@ function CollectionMultiSelect({
       <button
         onClick={onToggleOpen}
         className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors min-h-[36px] ${
-          activeCount > 0 ? "bg-purple-900/40 border-purple-700/50 text-purple-300" : "bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200"
+          activeCount > 0 ? "bg-purple-900/40 border-purple-700/50 text-purple-300" : "bg-[var(--bg-card)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]"
         }`}
       >
         <Filter className="w-3.5 h-3.5" />
@@ -1083,8 +1083,8 @@ function CollectionMultiSelect({
         <ChevronDown className="w-3.5 h-3.5" />
       </button>
       {open && (
-        <div className="absolute left-0 top-full mt-1 z-20 bg-slate-900 border border-slate-700 rounded-lg shadow-lg overflow-hidden w-56 max-h-64 overflow-y-auto">
-          <p className="px-3 py-2 text-[11px] text-slate-500 border-b border-slate-800">Tap to include, tap again to exclude, tap again to clear</p>
+        <div className="absolute left-0 top-full mt-1 z-20 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg shadow-lg overflow-hidden w-56 max-h-64 overflow-y-auto">
+          <p className="px-3 py-2 text-[11px] text-slate-500 border-b border-[var(--border-color)]">Tap to include, tap again to exclude, tap again to clear</p>
           {options.map((c) => {
             const isIncluded = included.includes(c);
             const isExcluded = excluded.includes(c);
@@ -1092,13 +1092,13 @@ function CollectionMultiSelect({
               <button
                 key={c}
                 onClick={() => onCycleOption(c)}
-                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-input)] transition-colors"
               >
                 <span className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center ${
                   isIncluded ? "bg-green-600 border-green-600" : isExcluded ? "bg-red-600 border-red-600" : "border-slate-600"
                 }`}>
-                  {isIncluded && <CheckCircle2 className="w-3 h-3 text-white" />}
-                  {isExcluded && <X className="w-3 h-3 text-white" />}
+                  {isIncluded && <CheckCircle2 className="w-3 h-3 text-[var(--text-primary)]" />}
+                  {isExcluded && <X className="w-3 h-3 text-[var(--text-primary)]" />}
                 </span>
                 <span className="truncate">{c}</span>
               </button>
@@ -1117,7 +1117,7 @@ function StatusBadge({ status }: { status: "ACTIVE" | "DRAFT" | "ARCHIVED" }) {
   if (status === "DRAFT") {
     return <span className="text-xs px-1.5 py-0.5 bg-yellow-900/40 text-yellow-400 rounded border border-yellow-800/50">Draft</span>;
   }
-  return <span className="text-xs px-1.5 py-0.5 bg-slate-700/40 text-slate-500 rounded border border-slate-600/50">Archived</span>;
+  return <span className="text-xs px-1.5 py-0.5 bg-[var(--bg-elevated)]/40 text-slate-500 rounded border border-slate-600/50">Archived</span>;
 }
 
 function ProductRow({
@@ -1132,22 +1132,22 @@ function ProductRow({
   onRemove: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 bg-slate-900 border border-slate-700 hover:border-purple-500/50 rounded-xl transition-all duration-150">
+    <div className="flex items-center gap-2 bg-[var(--bg-card)] border border-[var(--border-color)] hover:border-purple-500/50 rounded-xl transition-all duration-150">
       <button
         onClick={onClick}
         className="flex-1 flex items-center gap-3 p-3 text-left active:scale-[0.98] min-w-0"
       >
         {product.imageUrl ? (
-          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-slate-800 shrink-0">
+          <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-[var(--bg-input)] shrink-0">
             <Image src={product.imageUrl} alt={product.productTitle} fill className="object-cover" sizes="48px" />
           </div>
         ) : (
-          <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+          <div className="w-12 h-12 rounded-lg bg-[var(--bg-input)] flex items-center justify-center shrink-0">
             <span className="text-xl">📦</span>
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="font-medium text-slate-100 text-sm leading-tight truncate">{product.productTitle}</p>
+          <p className="font-medium text-[var(--text-primary)] text-sm leading-tight truncate">{product.productTitle}</p>
           <div className="flex items-center gap-2 mt-1 flex-wrap">
             {product.vendor && <span className="text-xs text-slate-500">{product.vendor}</span>}
             <StatusBadge status={product.status} />

@@ -63,7 +63,7 @@ export default function HomePage() {
   // Silent check on first load — show nothing until resolved
   if (authState === "checking") {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-slate-950">
+      <main className="min-h-screen flex items-center justify-center bg-[var(--bg-page)]">
         <div className="flex gap-2">
           {[0, 1, 2].map((i) => (
             <div
@@ -79,13 +79,13 @@ export default function HomePage() {
 
   if (authState === "unauthenticated") {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950">
+      <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[var(--bg-page)]">
         <div className="w-full max-w-sm space-y-8">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 rounded-2xl bg-blue-600/20 flex items-center justify-center mx-auto">
               <Package className="w-8 h-8 text-blue-400" />
             </div>
-            <h1 className="text-2xl font-bold text-slate-100">
+            <h1 className="text-2xl font-bold text-[var(--text-primary)]">
               {process.env.NEXT_PUBLIC_APP_NAME || "ShipScan"}
             </h1>
             <p className="text-slate-400 text-sm" suppressHydrationWarning>
@@ -104,7 +104,7 @@ export default function HomePage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full px-4 py-3.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[52px]"
+                className="w-full px-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[52px]"
                 autoFocus
               />
             </div>
@@ -119,7 +119,7 @@ export default function HomePage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full px-4 py-3.5 bg-slate-900 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[52px]"
+                className="w-full px-4 py-3.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-[52px]"
               />
             </div>
 
@@ -141,13 +141,13 @@ export default function HomePage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-slate-950">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[var(--bg-page)]">
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-1">
           <div className="w-12 h-12 rounded-xl bg-blue-600/20 flex items-center justify-center mx-auto mb-3">
             <Package className="w-6 h-6 text-blue-400" />
           </div>
-          <h1 className="text-xl font-bold text-slate-100">
+          <h1 className="text-xl font-bold text-[var(--text-primary)]">
             {process.env.NEXT_PUBLIC_APP_NAME || "ShipScan"}
           </h1>
           <p className="text-slate-500 text-xs">Select a mode to begin</p>
@@ -157,7 +157,7 @@ export default function HomePage() {
 
         <button
           onClick={handleLogout}
-          className="w-full py-2 text-slate-500 hover:text-slate-300 text-sm transition-colors"
+          className="w-full py-2 text-slate-500 hover:text-[var(--text-secondary)] text-sm transition-colors"
         >
           Log out
         </button>

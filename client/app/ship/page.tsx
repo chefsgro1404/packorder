@@ -757,14 +757,14 @@ export default function ShipPage() {
 
   // ─── Top bar ──────────────────────────────────────────────────────────────────
   const renderTopBar = (title: string, onBack?: () => void, right?: React.ReactNode) => (
-    <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
+    <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-card)] border-b border-[var(--border-color)] shrink-0">
       <button
         onClick={onBack ?? (() => router.push("/"))}
-        className="p-2 -ml-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+        className="p-2 -ml-2 text-slate-400 hover:text-[var(--text-primary)] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
       >
         <ArrowLeft className="w-5 h-5" />
       </button>
-      <h1 className="font-bold text-slate-100">{title}</h1>
+      <h1 className="font-bold text-[var(--text-primary)]">{title}</h1>
       <div className="min-w-[44px] flex justify-end">{right ?? <div className="w-9" />}</div>
     </div>
   );
@@ -772,14 +772,14 @@ export default function ShipPage() {
   // ─── Staff name prompt ────────────────────────────────────────────────────────
   if (showNamePrompt) {
     return (
-      <main className="min-h-screen flex flex-col bg-slate-950">
+      <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
         {renderTopBar("Ship Mode")}
         <div className="flex-1 flex items-end">
-          <div className="w-full bg-slate-900 border-t border-slate-700 rounded-t-2xl p-6 space-y-4">
+          <div className="w-full bg-[var(--bg-card)] border-t border-[var(--border-color)] rounded-t-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
               <User className="w-6 h-6 text-green-400 shrink-0" />
               <div>
-                <h2 className="text-lg font-bold text-slate-100">Who is shipping today?</h2>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Who is shipping today?</h2>
                 <p className="text-sm text-slate-400">Your name will be recorded on each shipment</p>
               </div>
             </div>
@@ -799,7 +799,7 @@ export default function ShipPage() {
                 }
               }}
               autoFocus
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-600"
+              className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-4 py-3 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-green-600"
             />
             <button
               onClick={() => {
@@ -812,7 +812,7 @@ export default function ShipPage() {
                 setShowNamePrompt(false);
               }}
               disabled={!nameInput.trim()}
-              className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors"
+              className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
             >
               Start Shipping
             </button>
@@ -825,14 +825,14 @@ export default function ShipPage() {
   // ─── Once-per-session staff name confirmation ─────────────────────────────────
   if (showSessionPrompt) {
     return (
-      <main className="min-h-screen flex flex-col bg-slate-950">
+      <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
         {renderTopBar("Ship Mode")}
         <div className="flex-1 flex items-end">
-          <div className="w-full bg-slate-900 border-t border-slate-700 rounded-t-2xl p-6 space-y-4">
+          <div className="w-full bg-[var(--bg-card)] border-t border-[var(--border-color)] rounded-t-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
               <User className="w-6 h-6 text-green-400 shrink-0" />
               <div>
-                <h2 className="text-lg font-bold text-slate-100">Continue as {staffName}?</h2>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Continue as {staffName}?</h2>
                 <p className="text-sm text-slate-400">This name will be recorded on shipments this session</p>
               </div>
             </div>
@@ -841,7 +841,7 @@ export default function ShipPage() {
                 sessionStorage.setItem("shipscan_session_started", "1");
                 setShowSessionPrompt(false);
               }}
-              className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-xl transition-colors"
+              className="w-full py-3 bg-green-600 hover:bg-green-500 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
             >
               Continue as {staffName}
             </button>
@@ -852,7 +852,7 @@ export default function ShipPage() {
                 setShowSessionPrompt(false);
                 setShowNamePrompt(true);
               }}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+              className="w-full py-3 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-xl transition-colors"
             >
               Change Name
             </button>
@@ -865,19 +865,19 @@ export default function ShipPage() {
   // ─── Scanning step ────────────────────────────────────────────────────────────
   if (activeStep === "scanning" && selectedFulfillment) {
     return (
-      <main className="min-h-screen flex flex-col bg-slate-950">
+      <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
         {renderTopBar(
           `Scanning — ${selectedFulfillment.orderName}`,
           () => { setBanner(null); handleCancelScan(); setActiveStep("detail"); }
         )}
         <div className="flex-1 flex flex-col gap-4 p-4 overflow-y-auto">
           {/* Scan mode toggle */}
-          <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5 self-center">
+          <div className="flex items-center gap-1 bg-[var(--bg-input)] rounded-lg p-0.5 self-center">
             <button
               onClick={() => setScanMode("regular")}
               disabled={scanStep !== "idle"}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
-                scanMode === "regular" ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+                scanMode === "regular" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
               }`}
             >
               <ScanLine className="w-3.5 h-3.5" /> Regular
@@ -886,7 +886,7 @@ export default function ShipPage() {
               onClick={() => setScanMode("fast")}
               disabled={scanStep !== "idle"}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
-                scanMode === "fast" ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+                scanMode === "fast" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
               }`}
             >
               <Zap className="w-3.5 h-3.5" /> Fast Scan
@@ -911,7 +911,7 @@ export default function ShipPage() {
           ) : scanStep === "confirm" ? (
             <div className="flex flex-col gap-3">
               {/* Matched product */}
-              <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
+              <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-3">
                 {pendingItem && (
                   <div className="flex items-center gap-3">
                     {pendingItem.imageUrl && (
@@ -922,7 +922,7 @@ export default function ShipPage() {
                       />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-100 truncate">{pendingItem.productTitle}</p>
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">{pendingItem.productTitle}</p>
                       {pendingItem.variantTitle && (
                         <p className="text-xs text-slate-400 truncate">{pendingItem.variantTitle}</p>
                       )}
@@ -940,13 +940,13 @@ export default function ShipPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleCancelScan}
-                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+                  className="flex-1 py-3 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-xl transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleConfirmScan}
-                  className="flex-[2] py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
+                  className="flex-[2] py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
                 >
                   Confirm Scan
                 </button>
@@ -982,21 +982,21 @@ export default function ShipPage() {
                   onChange={(e) => setExtraReason(e.target.value)}
                   placeholder="Why is this item being added? (e.g. substitution, customer request, extra unit)"
                   rows={2}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 resize-none"
+                  className="w-full bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-amber-500 resize-none"
                 />
               </div>
 
               <div className="flex gap-2">
                 <button
                   onClick={handleDeclineExtra}
-                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+                  className="flex-1 py-3 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-xl transition-colors"
                 >
                   Decline
                 </button>
                 <button
                   onClick={handleAcceptExtra}
                   disabled={extraLoading || !extraReason.trim()}
-                  className="flex-[2] py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors"
+                  className="flex-[2] py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-40 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
                 >
                   {extraLoading ? "Adding…" : "Accept & Add Item"}
                 </button>
@@ -1009,12 +1009,12 @@ export default function ShipPage() {
             const { shipped, expected } = getTotals(selectedFulfillment);
             const pct = expected > 0 ? Math.round((shipped / expected) * 100) : 0;
             return (
-              <div className="bg-slate-900 border border-slate-700 rounded-xl p-3">
+              <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-xl p-3">
                 <div className="flex justify-between text-xs text-slate-400 mb-1.5">
                   <span>Progress</span>
                   <span>{shipped}/{expected} items ({pct}%)</span>
                 </div>
-                <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div className="h-2 bg-[var(--bg-elevated)] rounded-full overflow-hidden">
                   <div
                     className="h-full bg-green-500 rounded-full transition-all duration-300"
                     style={{ width: `${pct}%` }}
@@ -1026,7 +1026,7 @@ export default function ShipPage() {
 
           <button
             onClick={() => { setBanner(null); handleCancelScan(); setActiveStep("detail"); }}
-            className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+            className="w-full py-3 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-xl transition-colors"
           >
             Back to Order Details
           </button>
@@ -1051,7 +1051,7 @@ export default function ShipPage() {
       });
 
     return (
-      <main className="min-h-screen flex flex-col bg-slate-950">
+      <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
         {renderTopBar(
           selectedFulfillment.orderName,
           () => {
@@ -1066,13 +1066,13 @@ export default function ShipPage() {
           {banner && <StatusBanner type={banner.type} message={banner.message} />}
 
           {/* Tracking info */}
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-2">
             <div className="flex items-center gap-2">
               <Truck className="w-4 h-4 text-green-400 shrink-0" />
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Tracking</span>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-sm text-slate-100 break-all">{selectedFulfillment.trackingNumber}</span>
+              <span className="font-mono text-sm text-[var(--text-primary)] break-all">{selectedFulfillment.trackingNumber}</span>
               {selectedFulfillment.trackingUrl && (
                 <a
                   href={selectedFulfillment.trackingUrl}
@@ -1085,7 +1085,7 @@ export default function ShipPage() {
               )}
             </div>
             {selectedFulfillment.trackingCarrier && (
-              <span className="inline-flex text-xs px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400">
+              <span className="inline-flex text-xs px-2 py-0.5 rounded-full bg-[var(--bg-input)] border border-[var(--border-color)] text-slate-400">
                 {selectedFulfillment.trackingCarrier}
               </span>
             )}
@@ -1093,13 +1093,13 @@ export default function ShipPage() {
 
           {/* Customer info */}
           {(selectedFulfillment.customerName || selectedFulfillment.shippingAddress) && (
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-1">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-1">
               <div className="flex items-center gap-2 mb-1">
                 <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
                 <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Destination</span>
               </div>
               {selectedFulfillment.customerName && (
-                <p className="text-sm text-slate-100 font-medium">{selectedFulfillment.customerName}</p>
+                <p className="text-sm text-[var(--text-primary)] font-medium">{selectedFulfillment.customerName}</p>
               )}
               {selectedFulfillment.customerEmail && (
                 <p className="text-xs text-slate-500">{selectedFulfillment.customerEmail}</p>
@@ -1118,16 +1118,16 @@ export default function ShipPage() {
           )}
 
           {/* Progress */}
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-sm font-medium text-slate-300">
+              <span className="text-sm font-medium text-[var(--text-secondary)]">
                 {shipped} of {expected} items scanned
               </span>
               <span className={`text-sm font-bold ${allDone ? "text-green-400" : "text-yellow-400"}`}>
                 {pct}%
               </span>
             </div>
-            <div className="h-3 bg-slate-700 rounded-full overflow-hidden">
+            <div className="h-3 bg-[var(--bg-elevated)] rounded-full overflow-hidden">
               <div
                 className={`h-full rounded-full transition-all duration-300 ${allDone ? "bg-green-500" : "bg-yellow-500"}`}
                 style={{ width: `${pct}%` }}
@@ -1141,7 +1141,7 @@ export default function ShipPage() {
               {selectedFulfillment.orderTags.map((tag) => (
                 <span
                   key={tag}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-400"
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-[var(--bg-input)] border border-[var(--border-color)] text-slate-400"
                 >
                   <Tag className="w-3 h-3" />
                   {tag}
@@ -1151,7 +1151,7 @@ export default function ShipPage() {
           )}
 
           {/* Notes */}
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-2">
             <div className="flex items-center gap-2">
               <StickyNote className="w-4 h-4 text-slate-400 shrink-0" />
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Notes</span>
@@ -1167,7 +1167,7 @@ export default function ShipPage() {
               }}
               placeholder="e.g. added extra items, price issue, item damaged…"
               rows={2}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-green-600"
             />
           </div>
 
@@ -1179,23 +1179,23 @@ export default function ShipPage() {
               return (
                 <div
                   key={li.fulfillmentLineItemId}
-                  className={`bg-slate-900 border rounded-xl p-3 flex items-center gap-3 transition-colors ${
-                    done ? "border-green-800/50 bg-green-950/20" : "border-slate-700"
+                  className={`bg-[var(--bg-card)] border rounded-xl p-3 flex items-center gap-3 transition-colors ${
+                    done ? "border-green-800/50 bg-green-950/20" : "border-[var(--border-color)]"
                   }`}
                 >
                   {li.imageUrl ? (
                     <img
                       src={li.imageUrl}
                       alt={li.productTitle}
-                      className="w-12 h-12 rounded-lg object-cover bg-slate-800 shrink-0"
+                      className="w-12 h-12 rounded-lg object-cover bg-[var(--bg-input)] shrink-0"
                     />
                   ) : (
-                    <div className="w-12 h-12 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                    <div className="w-12 h-12 rounded-lg bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                       <Package className="w-6 h-6 text-slate-500" />
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-100 leading-tight truncate">
+                    <p className="text-sm font-medium text-[var(--text-primary)] leading-tight truncate">
                       {li.productTitle}
                     </p>
                     {li.variantTitle && (
@@ -1206,7 +1206,7 @@ export default function ShipPage() {
                         className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
                           done
                             ? "bg-green-900/40 border-green-700 text-green-300"
-                            : "bg-slate-800 border-slate-600 text-slate-300"
+                            : "bg-[var(--bg-input)] border-slate-600 text-[var(--text-secondary)]"
                         }`}
                       >
                         {li.quantityShipped}/{li.quantityExpected}
@@ -1220,7 +1220,7 @@ export default function ShipPage() {
                         </span>
                       )}
                       {isUnscannable(li) && !done && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 border border-slate-600 text-slate-500">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--bg-input)] border border-slate-600 text-slate-500">
                           No barcode
                         </span>
                       )}
@@ -1235,7 +1235,7 @@ export default function ShipPage() {
                     {li.quantityShipped > 0 && (
                       <button
                         onClick={() => handleDecrement(li)}
-                        className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-slate-300 transition-colors"
+                        className="p-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-slate-600 rounded-lg text-[var(--text-secondary)] transition-colors"
                         title="Remove one"
                       >
                         <Minus className="w-4 h-4" />
@@ -1244,7 +1244,7 @@ export default function ShipPage() {
                     {!done && isUnscannable(li) && (
                       <button
                         onClick={() => performScan(li, null)}
-                        className="px-3 py-1.5 bg-green-700 hover:bg-green-600 active:bg-green-800 text-white text-xs font-semibold rounded-lg transition-colors"
+                        className="px-3 py-1.5 bg-green-700 hover:bg-green-600 active:bg-green-800 text-[var(--text-primary)] text-xs font-semibold rounded-lg transition-colors"
                       >
                         Packed?
                       </button>
@@ -1258,10 +1258,10 @@ export default function ShipPage() {
         </div>
 
         {/* Bottom actions */}
-        <div className="fixed bottom-0 left-0 right-0 bg-slate-950 border-t border-slate-800 p-4 space-y-2">
+        <div className="fixed bottom-0 left-0 right-0 bg-[var(--bg-page)] border-t border-[var(--border-color)] p-4 space-y-2">
           <button
             onClick={() => { setBanner(null); rememberedExtraReasonsRef.current.clear(); setActiveStep("scanning"); }}
-            className="w-full py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
+            className="w-full py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
           >
             Scan Barcode
           </button>
@@ -1273,7 +1273,7 @@ export default function ShipPage() {
             }}
             className={`w-full py-3 font-semibold rounded-xl transition-colors ${
               allDone
-                ? "bg-slate-700 hover:bg-slate-600 text-slate-100"
+                ? "bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)]"
                 : "bg-orange-900/60 hover:bg-orange-800/60 border border-orange-700 text-orange-200"
             }`}
           >
@@ -1288,10 +1288,10 @@ export default function ShipPage() {
             onClick={() => setShowCompleteModal(false)}
           >
             <div
-              className="bg-slate-900 border border-slate-700 rounded-t-2xl w-full max-w-md p-6 space-y-4"
+              className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-t-2xl w-full max-w-md p-6 space-y-4"
               onClick={(e) => e.stopPropagation()}
             >
-              <h2 className="text-lg font-bold text-slate-100">
+              <h2 className="text-lg font-bold text-[var(--text-primary)]">
                 {allDone ? "Confirm Shipment" : "Incomplete Shipment"}
               </h2>
 
@@ -1314,7 +1314,7 @@ export default function ShipPage() {
                   type="text"
                   value={completeStaffName}
                   onChange={(e) => setCompleteStaffName(e.target.value)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:border-green-600 text-sm"
+                  className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-4 py-2.5 text-[var(--text-primary)] focus:outline-none focus:border-green-600 text-sm"
                 />
               </div>
 
@@ -1327,7 +1327,7 @@ export default function ShipPage() {
                   onChange={(e) => setCompleteReason(e.target.value)}
                   placeholder={allDone ? "Optional shipping notes…" : "Why are items missing?"}
                   rows={3}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-600 text-sm resize-none"
+                  className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-4 py-2.5 text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-green-600 text-sm resize-none"
                 />
               </div>
 
@@ -1336,15 +1336,15 @@ export default function ShipPage() {
                 disabled={completeLoading || (!allDone && !completeReason.trim())}
                 className={`w-full py-3 font-semibold rounded-xl transition-colors disabled:opacity-40 ${
                   allDone
-                    ? "bg-green-600 hover:bg-green-500 text-white"
-                    : "bg-orange-600 hover:bg-orange-500 text-white"
+                    ? "bg-green-600 hover:bg-green-500 text-[var(--text-primary)]"
+                    : "bg-orange-600 hover:bg-orange-500 text-[var(--text-primary)]"
                 }`}
               >
                 {completeLoading ? "Saving…" : allDone ? "Confirm Shipped" : "Submit as Incomplete"}
               </button>
               <button
                 onClick={() => setShowCompleteModal(false)}
-                className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition-colors"
+                className="w-full py-3 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-xl transition-colors"
               >
                 Cancel
               </button>
@@ -1360,16 +1360,16 @@ export default function ShipPage() {
     const { shipped, expected } = getTotals(selectedHistory);
 
     return (
-      <main className="min-h-screen flex flex-col bg-slate-950">
+      <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
         {renderTopBar(
           selectedHistory.orderName,
           () => { setSelectedHistory(null); setHistoryScans([]); setExpandedHistoryItems(new Set()); }
         )}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-6">
           {/* Order summary */}
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <span className="font-mono text-sm text-slate-100">{selectedHistory.trackingNumber}</span>
+              <span className="font-mono text-sm text-[var(--text-primary)]">{selectedHistory.trackingNumber}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                 selectedHistory.isManualComplete
                   ? "bg-orange-900/40 border-orange-700 text-orange-300"
@@ -1381,7 +1381,7 @@ export default function ShipPage() {
             {selectedHistory.shippedAt && (
               <p className="text-xs text-slate-500">
                 Shipped {formatDate(selectedHistory.shippedAt)} by{" "}
-                <span className="text-slate-300">{selectedHistory.completedBy}</span>
+                <span className="text-[var(--text-secondary)]">{selectedHistory.completedBy}</span>
               </p>
             )}
             {selectedHistory.isManualComplete && selectedHistory.manualReason && (
@@ -1395,7 +1395,7 @@ export default function ShipPage() {
           </div>
 
           {/* Notes */}
-          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 space-y-2">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-2">
             <div className="flex items-center gap-2">
               <StickyNote className="w-4 h-4 text-slate-400 shrink-0" />
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Notes</span>
@@ -1411,7 +1411,7 @@ export default function ShipPage() {
               }}
               placeholder="e.g. added extra items, price issue, item damaged…"
               rows={2}
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 placeholder-slate-600 resize-none focus:outline-none focus:ring-2 focus:ring-green-600"
+              className="w-full bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] resize-none focus:outline-none focus:ring-2 focus:ring-green-600"
             />
           </div>
 
@@ -1427,8 +1427,8 @@ export default function ShipPage() {
               return (
                 <div
                   key={li.fulfillmentLineItemId}
-                  className={`bg-slate-900 border rounded-xl overflow-hidden ${
-                    done ? "border-green-800/50" : "border-slate-700"
+                  className={`bg-[var(--bg-card)] border rounded-xl overflow-hidden ${
+                    done ? "border-green-800/50" : "border-[var(--border-color)]"
                   }`}
                 >
                   <button
@@ -1449,21 +1449,21 @@ export default function ShipPage() {
                       <img
                         src={li.imageUrl}
                         alt={li.productTitle}
-                        className="w-10 h-10 rounded-lg object-cover bg-slate-800 shrink-0"
+                        className="w-10 h-10 rounded-lg object-cover bg-[var(--bg-input)] shrink-0"
                       />
                     ) : (
-                      <div className="w-10 h-10 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 rounded-lg bg-[var(--bg-input)] flex items-center justify-center shrink-0">
                         <Package className="w-5 h-5 text-slate-500" />
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-100 truncate">{li.productTitle}</p>
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">{li.productTitle}</p>
                       {li.variantTitle && <p className="text-xs text-slate-400">{li.variantTitle}</p>}
                     </div>
                     <span className={`text-xs font-mono px-2 py-0.5 rounded-full border shrink-0 ${
                       done
                         ? "bg-green-900/40 border-green-700 text-green-300"
-                        : "bg-slate-800 border-slate-600 text-slate-300"
+                        : "bg-[var(--bg-input)] border-slate-600 text-[var(--text-secondary)]"
                     }`}>
                       {li.quantityShipped}/{li.quantityExpected}
                     </span>
@@ -1476,7 +1476,7 @@ export default function ShipPage() {
                     )}
                   </button>
                   {isExpanded && liScans.length > 0 && (
-                    <div className="border-t border-slate-800 bg-slate-950/50 px-3 py-2 space-y-1">
+                    <div className="border-t border-[var(--border-color)] bg-[var(--bg-page)]/50 px-3 py-2 space-y-1">
                       {liScans.map((scan, i) => (
                         <div key={i} className="flex flex-col gap-0.5">
                           <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
@@ -1557,20 +1557,20 @@ export default function ShipPage() {
   });
 
   return (
-    <main className="min-h-screen flex flex-col bg-slate-950">
+    <main className="min-h-screen flex flex-col bg-[var(--bg-page)]">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 bg-[var(--bg-card)] border-b border-[var(--border-color)] shrink-0">
         <button
           onClick={() => router.push("/")}
-          className="p-2 -ml-2 text-slate-400 hover:text-slate-200 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+          className="p-2 -ml-2 text-slate-400 hover:text-[var(--text-primary)] transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
         >
           <ArrowLeft className="w-5 h-5" />
         </button>
-        <div className="flex items-center gap-1 bg-slate-800 rounded-lg p-0.5">
+        <div className="flex items-center gap-1 bg-[var(--bg-input)] rounded-lg p-0.5">
           <button
             onClick={() => setTab("active")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === "active" ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+              tab === "active" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
             }`}
           >
             Active
@@ -1578,7 +1578,7 @@ export default function ShipPage() {
           <button
             onClick={() => setTab("history")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === "history" ? "bg-green-600 text-white" : "text-slate-400 hover:text-slate-200"
+              tab === "history" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
             }`}
           >
             History
@@ -1592,7 +1592,7 @@ export default function ShipPage() {
                   setPendingSyncRange(syncRange);
                   setSyncFiltersOpen((o) => !o);
                 }}
-                className="relative p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
+                className="relative p-2 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-slate-400 hover:text-[var(--text-primary)] hover:border-slate-600 transition-colors"
               >
                 <Filter className="w-4 h-4" />
                 {(syncRange.from || syncRange.to) && (
@@ -1603,7 +1603,7 @@ export default function ShipPage() {
                 onClick={() => handleSync(syncRange.from || syncRange.to ? syncRange : undefined)}
                 disabled={syncLoading}
                 title={syncRange.from || syncRange.to ? `Sync ${syncRange.from || syncRange.to}–${syncRange.to || syncRange.from}` : "Sync today"}
-                className="p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors disabled:opacity-50"
+                className="p-2 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-slate-400 hover:text-[var(--text-primary)] hover:border-slate-600 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`w-4 h-4 ${syncLoading ? "animate-spin" : ""}`} />
               </button>
@@ -1615,11 +1615,11 @@ export default function ShipPage() {
                 setPendingFilters(historyFilters);
                 setHistoryFiltersOpen((o) => !o);
               }}
-              className="relative p-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 transition-colors"
+              className="relative p-2 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl text-slate-400 hover:text-[var(--text-primary)] transition-colors"
             >
               <Filter className="w-4 h-4" />
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-[var(--text-primary)] text-[10px] rounded-full flex items-center justify-center font-bold">
                   {activeFilterCount}
                 </span>
               )}
@@ -1635,7 +1635,7 @@ export default function ShipPage() {
             setNameInput(staffName);
             setShowNamePrompt(true);
           }}
-          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors"
+          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-[var(--text-primary)] transition-colors"
         >
           <User className="w-3 h-3" />
           <span>{staffName}</span>
@@ -1647,7 +1647,7 @@ export default function ShipPage() {
         <>
           {/* Sync date range panel */}
           {syncFiltersOpen && (
-            <div className="px-4 pt-3 pb-2 shrink-0 bg-slate-900 border-b border-slate-800 space-y-3">
+            <div className="px-4 pt-3 pb-2 shrink-0 bg-[var(--bg-card)] border-b border-[var(--border-color)] space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400">Fulfilled from</label>
@@ -1655,7 +1655,7 @@ export default function ShipPage() {
                     type="date"
                     value={pendingSyncRange.from}
                     onChange={(e) => setPendingSyncRange((p) => ({ ...p, from: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                    className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-green-600"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1664,7 +1664,7 @@ export default function ShipPage() {
                     type="date"
                     value={pendingSyncRange.to}
                     onChange={(e) => setPendingSyncRange((p) => ({ ...p, to: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                    className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-green-600"
                   />
                 </div>
               </div>
@@ -1677,7 +1677,7 @@ export default function ShipPage() {
                     handleSync(pendingSyncRange.from || pendingSyncRange.to ? pendingSyncRange : undefined);
                   }}
                   disabled={syncLoading}
-                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm transition-colors disabled:opacity-50"
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-[var(--text-primary)] font-semibold rounded-lg text-sm transition-colors disabled:opacity-50"
                 >
                   Sync
                 </button>
@@ -1688,7 +1688,7 @@ export default function ShipPage() {
                     setSyncRange(cleared);
                     setSyncFiltersOpen(false);
                   }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-sm transition-colors"
+                  className="px-4 py-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-lg text-sm transition-colors"
                 >
                   Clear
                 </button>
@@ -1708,12 +1708,12 @@ export default function ShipPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && filteredFulfillments.length === 0) handleSearchShopify();
                 }}
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-600"
+                className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl pl-9 pr-4 py-2.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-green-600"
               />
               {filterText && (
                 <button
                   onClick={() => setFilterText("")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-[var(--text-secondary)]"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1727,7 +1727,7 @@ export default function ShipPage() {
                 {syncLoading && <span className="text-green-400">Syncing…</span>}
                 <button
                   onClick={() => setOrderSort((s) => (s === "asc" ? "desc" : "asc"))}
-                  className="inline-flex items-center gap-1 px-2 py-1 bg-slate-800 border border-slate-700 rounded-lg text-slate-400 hover:text-slate-200 transition-colors"
+                  className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg text-slate-400 hover:text-[var(--text-primary)] transition-colors"
                   title={`Sort by order number (${orderSort === "asc" ? "ascending" : "descending"})`}
                 >
                   {orderSort === "asc" ? (
@@ -1769,7 +1769,7 @@ export default function ShipPage() {
                   <button
                     onClick={handleSearchShopify}
                     disabled={searchLoading}
-                    className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 text-sm font-medium transition-colors disabled:opacity-50"
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-lg text-[var(--text-secondary)] text-sm font-medium transition-colors disabled:opacity-50"
                   >
                     <Search className="w-4 h-4" />
                     {searchLoading ? "Searching…" : `Search Shopify for "${filterText}"`}
@@ -1788,17 +1788,17 @@ export default function ShipPage() {
                       setSelectedFulfillment(f);
                       setActiveStep("detail");
                     }}
-                    className="w-full text-left bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-2xl p-4 transition-colors"
+                    className="w-full text-left bg-[var(--bg-card)] border border-[var(--border-color)] hover:border-slate-500 rounded-2xl p-4 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-100 font-bold">{f.orderName}</span>
+                          <span className="text-[var(--text-primary)] font-bold">{f.orderName}</span>
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                               f.status === "partial"
                                 ? "bg-yellow-900/40 border-yellow-700 text-yellow-300"
-                                : "bg-slate-800 border-slate-700 text-slate-400"
+                                : "bg-[var(--bg-input)] border-[var(--border-color)] text-slate-400"
                             }`}
                           >
                             {f.status}
@@ -1808,7 +1808,7 @@ export default function ShipPage() {
                         <div className="flex items-center gap-2 mt-1">
                           <span className="font-mono text-xs text-slate-400 truncate">{f.trackingNumber}</span>
                           {f.trackingCarrier && (
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-slate-800 text-slate-500 shrink-0">
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-[var(--bg-input)] text-slate-500 shrink-0">
                               {f.trackingCarrier}
                             </span>
                           )}
@@ -1830,7 +1830,7 @@ export default function ShipPage() {
                         <span>{shipped}/{expected} items</span>
                         <span>{pct}%</span>
                       </div>
-                      <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                      <div className="h-1.5 bg-[var(--bg-elevated)] rounded-full overflow-hidden">
                         <div
                           className="h-full bg-green-500 rounded-full transition-all"
                           style={{ width: `${pct}%` }}
@@ -1843,7 +1843,7 @@ export default function ShipPage() {
                         {f.orderTags.slice(0, 3).map((tag) => (
                           <span
                             key={tag}
-                            className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700"
+                            className="text-xs px-2 py-0.5 rounded-full bg-[var(--bg-input)] text-slate-500 border border-[var(--border-color)]"
                           >
                             {tag}
                           </span>
@@ -1866,7 +1866,7 @@ export default function ShipPage() {
         <>
           {/* Filter panel */}
           {historyFiltersOpen && (
-            <div className="px-4 pt-3 pb-2 shrink-0 bg-slate-900 border-b border-slate-800 space-y-3">
+            <div className="px-4 pt-3 pb-2 shrink-0 bg-[var(--bg-card)] border-b border-[var(--border-color)] space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
                   <label className="text-xs text-slate-400">From</label>
@@ -1874,7 +1874,7 @@ export default function ShipPage() {
                     type="date"
                     value={pendingFilters.from}
                     onChange={(e) => setPendingFilters((p) => ({ ...p, from: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                    className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-green-600"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1883,7 +1883,7 @@ export default function ShipPage() {
                     type="date"
                     value={pendingFilters.to}
                     onChange={(e) => setPendingFilters((p) => ({ ...p, to: e.target.value }))}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                    className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-green-600"
                   />
                 </div>
               </div>
@@ -1894,7 +1894,7 @@ export default function ShipPage() {
                   placeholder="Filter by staff name"
                   value={pendingFilters.scannedBy}
                   onChange={(e) => setPendingFilters((p) => ({ ...p, scannedBy: e.target.value }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-green-600"
+                  className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-green-600"
                 />
               </div>
               <div className="space-y-1">
@@ -1902,7 +1902,7 @@ export default function ShipPage() {
                 <select
                   value={pendingFilters.type}
                   onChange={(e) => setPendingFilters((p) => ({ ...p, type: e.target.value as HistoryType }))}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-green-600"
+                  className="w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-green-600"
                 >
                   <option value="all">All shipments</option>
                   <option value="complete">Complete only</option>
@@ -1916,7 +1916,7 @@ export default function ShipPage() {
                     fetchHistory(pendingFilters);
                     setHistoryFiltersOpen(false);
                   }}
-                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm transition-colors"
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-[var(--text-primary)] font-semibold rounded-lg text-sm transition-colors"
                 >
                   Apply Filters
                 </button>
@@ -1928,7 +1928,7 @@ export default function ShipPage() {
                     fetchHistory(cleared);
                     setHistoryFiltersOpen(false);
                   }}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-sm transition-colors"
+                  className="px-4 py-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] text-[var(--text-secondary)] font-semibold rounded-lg text-sm transition-colors"
                 >
                   Clear
                 </button>
@@ -1969,12 +1969,12 @@ export default function ShipPage() {
                       setSelectedHistory(f);
                       fetchHistoryScans(f.fulfillmentId);
                     }}
-                    className="w-full text-left bg-slate-900 border border-slate-700 hover:border-slate-500 rounded-2xl p-4 transition-colors"
+                    className="w-full text-left bg-[var(--bg-card)] border border-[var(--border-color)] hover:border-slate-500 rounded-2xl p-4 transition-colors"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-100 font-bold">{f.orderName}</span>
+                          <span className="text-[var(--text-primary)] font-bold">{f.orderName}</span>
                           {f.isManualComplete ? (
                             <span className="text-xs px-2 py-0.5 rounded-full border bg-orange-900/40 border-orange-700 text-orange-300 font-medium">
                               Incomplete
@@ -2010,7 +2010,7 @@ export default function ShipPage() {
                         {f.orderTags.slice(0, 3).map((tag) => (
                           <span
                             key={tag}
-                            className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700"
+                            className="text-xs px-2 py-0.5 rounded-full bg-[var(--bg-input)] text-slate-500 border border-[var(--border-color)]"
                           >
                             {tag}
                           </span>

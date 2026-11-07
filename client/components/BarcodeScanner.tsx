@@ -201,7 +201,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
   return (
     <div className="relative w-full select-none">
       {cameraError ? (
-        <div className="flex flex-col items-center gap-4 p-6 bg-slate-900 rounded-2xl border border-slate-700">
+        <div className="flex flex-col items-center gap-4 p-6 bg-[var(--bg-card)] rounded-2xl border border-[var(--border-color)]">
           <div className="text-slate-400 text-sm text-center space-y-1">
             <p>Camera unavailable. Enter barcode manually.</p>
             <p className="text-xs text-red-400 break-all">{cameraError}</p>
@@ -212,7 +212,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
               value={manualInput}
               onChange={(e) => setManualInput(e.target.value)}
               placeholder="Scan or type barcode..."
-              className="flex-1 px-4 py-3 bg-slate-800 border border-slate-600 rounded-xl text-slate-100 placeholder-slate-500 text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 px-4 py-3 bg-[var(--bg-input)] border border-slate-600 rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
               autoFocus
             />
             <button
@@ -228,7 +228,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
           <div
             id="barcode-scanner-container"
             ref={containerRef}
-            className="scanner-container w-full h-72 sm:h-[480px] bg-slate-900"
+            className="scanner-container w-full h-72 sm:h-[480px] bg-[var(--bg-card)]"
           />
           <div className="absolute inset-0 pointer-events-none">
             {/* Full-area flash on scan */}
@@ -247,7 +247,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
           </div>
           {/* Status bar at the bottom */}
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-slate-900/90 to-transparent px-3 py-2 flex items-center justify-between">
-            <span className="text-xs text-slate-300">Point camera at any code — no need to center it</span>
+            <span className="text-xs text-[var(--text-secondary)]">Point camera at any code — no need to center it</span>
             {active && (
               <div className="flex gap-1">
                 {[0, 1, 2].map((i) => (
@@ -271,7 +271,7 @@ export const BarcodeScanner = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-full h-64 bg-slate-900 rounded-2xl flex items-center justify-center">
+      <div className="w-full h-64 bg-[var(--bg-card)] rounded-2xl flex items-center justify-center">
         <div className="text-slate-500 text-sm">Loading camera…</div>
       </div>
     ),

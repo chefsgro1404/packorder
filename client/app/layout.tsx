@@ -26,14 +26,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="screen-orientation" content="portrait" />
+        {/* Anti-flash: apply stored theme before first paint */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('shipScanTheme');document.documentElement.setAttribute('data-theme',t==='dark'?'dark':'light');}catch(e){}})();`,
+          }}
+        />
       </head>
-      <body className="bg-slate-950 text-slate-100 min-h-screen antialiased">
+      <body className="bg-[var(--bg-page)] text-[var(--text-primary)] min-h-screen antialiased">
 {children}
       </body>
     </html>

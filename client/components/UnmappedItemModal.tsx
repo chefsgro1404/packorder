@@ -66,11 +66,11 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
 
   return (
     <div className="fixed inset-0 z-50 bg-black/70 flex items-end sm:items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
+      <div className="w-full max-w-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5 flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-            <h2 className="text-sm font-semibold text-slate-200">
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">
               {hideSave ? 'No product loaded' : <>Item {itemNumber} isn&apos;t mapped</>}
             </h2>
           </div>
@@ -80,7 +80,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
         </div>
         <p className="text-xs text-slate-400">
           {hideSave
-            ? <>Scale weight is <span className="text-slate-300 font-medium">{weight}</span>. Search the catalog to find the product and print a label.</>
+            ? <>Scale weight is <span className="text-[var(--text-secondary)] font-medium">{weight}</span>. Search the catalog to find the product and print a label.</>
             : <>The scale recalled item {itemNumber} ({weight}), but it has no product mapped. Search the catalog to find it.</>
           }
         </p>
@@ -94,7 +94,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
                 value={query}
                 onChange={(e) => handleQueryChange(e.target.value)}
                 placeholder="Search by product title or SKU…"
-                className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-600"
               />
             </div>
             <div className="max-h-64 overflow-y-auto space-y-1.5">
@@ -103,13 +103,13 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
                 <p className="text-xs text-slate-500 text-center py-4">No matches</p>
               )}
               {results.map((p) => (
-                <div key={p.productId} className="bg-slate-950 border border-slate-800 rounded-lg p-2">
-                  <p className="text-xs font-medium text-slate-300 px-1 pb-1">{p.productTitle}</p>
+                <div key={p.productId} className="bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg p-2">
+                  <p className="text-xs font-medium text-[var(--text-secondary)] px-1 pb-1">{p.productTitle}</p>
                   {p.variants.map((v) => (
                     <button
                       key={v.variantId}
                       onClick={() => setChosen({ product: p, variant: v })}
-                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-slate-900 text-left"
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--bg-card)] text-left"
                     >
                       <span className="text-xs text-slate-400 truncate">{v.variantTitle}</span>
                       <span className="text-[10px] font-mono text-slate-500 shrink-0">{v.barcode || 'no barcode'}</span>
@@ -123,8 +123,8 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
 
         {chosenVariant && (
           <div className="flex flex-col gap-3">
-            <div className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5">
-              <p className="text-sm font-medium text-slate-200 truncate">{chosenVariant.productTitle}</p>
+            <div className="bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg px-3 py-2.5">
+              <p className="text-sm font-medium text-[var(--text-primary)] truncate">{chosenVariant.productTitle}</p>
               <p className="text-xs text-slate-500">{chosenVariant.variantTitle || 'Default'} · PLU {chosenVariant.plu || 'N/A'}</p>
             </div>
             {!hideSave && (
@@ -139,7 +139,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
                   value={pricePerLb}
                   onChange={(e) => setPricePerLb(e.target.value)}
                   placeholder="0.00"
-                  className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
             )}
@@ -161,7 +161,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
                   </button>
                   <button
                     onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
-                    className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all"
+                    className="w-full h-10 flex items-center justify-center gap-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] transition-all"
                   >
                     Print Only (don&apos;t save mapping)
                   </button>
@@ -169,7 +169,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
               )}
               <button
                 onClick={() => setChosen(null)}
-                className="w-full h-9 flex items-center justify-center text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                className="w-full h-9 flex items-center justify-center text-xs text-slate-500 hover:text-[var(--text-secondary)] transition-colors"
               >
                 <RefreshCw className="w-3 h-3 mr-1" /> Choose a different product
               </button>
@@ -179,7 +179,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
 
         <button
           onClick={onClose}
-          className="w-full h-9 flex items-center justify-center text-xs text-slate-500 hover:text-slate-300 transition-colors"
+          className="w-full h-9 flex items-center justify-center text-xs text-slate-500 hover:text-[var(--text-secondary)] transition-colors"
         >
           Cancel — don&apos;t print
         </button>

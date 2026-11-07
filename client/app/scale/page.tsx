@@ -106,11 +106,11 @@ function ScaleMonitor({
   if (state === 'disconnected') {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
-        <div className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center">
+        <div className="w-12 h-12 rounded-2xl bg-[var(--bg-input)] flex items-center justify-center">
           <Wifi className="w-5 h-5 text-slate-500" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-200">Scale not connected</p>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">Scale not connected</p>
           <p className="text-xs text-slate-500 mt-0.5">Connect the scale in Device Setup below</p>
         </div>
         {error && (
@@ -132,7 +132,7 @@ function ScaleMonitor({
           <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-slate-950 animate-pulse" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-200">Waiting for scale trigger…</p>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">Waiting for scale trigger…</p>
           <p className="text-xs text-slate-500 mt-0.5">RCL → 01 → M+ on the scale</p>
         </div>
         {error && (
@@ -155,7 +155,7 @@ function ScaleMonitor({
           <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-emerald-400 rounded-full border-2 border-slate-950 animate-pulse" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-200">Waiting for scale trigger…</p>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">Waiting for scale trigger…</p>
           <p className="text-xs text-slate-500 mt-0.5">RCL → 01 → M+ on the scale</p>
         </div>
         {error && (
@@ -178,7 +178,7 @@ function ScaleMonitor({
           </div>
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-200">Receiving data…</p>
+          <p className="text-sm font-semibold text-[var(--text-primary)]">Receiving data…</p>
           <p className="text-xs text-slate-500">
             {chunkCount} chunk{chunkCount !== 1 ? 's' : ''} received
           </p>
@@ -202,7 +202,7 @@ function ScaleMonitor({
         <RefreshCw className="w-5 h-5 text-violet-400 animate-spin" />
       </div>
       <div>
-        <p className="text-sm font-semibold text-slate-200">Processing…</p>
+        <p className="text-sm font-semibold text-[var(--text-primary)]">Processing…</p>
         <p className="text-xs text-slate-500">Parsing scale data</p>
       </div>
     </div>
@@ -245,7 +245,7 @@ function LabelPreview({
   if (!item) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
-        <div className="w-20 h-14 rounded-xl border-2 border-dashed border-slate-700 flex items-center justify-center bg-slate-900/50">
+        <div className="w-20 h-14 rounded-xl border-2 border-dashed border-[var(--border-color)] flex items-center justify-center bg-[var(--bg-card)]">
           <Package className="w-5 h-5 text-slate-600" />
         </div>
         <p className="text-sm text-slate-500">No label yet — trigger the scale</p>
@@ -312,28 +312,28 @@ function LabelPreview({
 
       {/* Item details */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
+        <div className="bg-[var(--bg-card)] rounded-xl px-3 py-2.5 border border-[var(--border-color)]">
           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">PLU</p>
-          <p className="text-sm font-mono text-slate-200 mt-0.5">
+          <p className="text-sm font-mono text-[var(--text-primary)] mt-0.5">
             {lookupLoading ? '…' : item.found ? item.plu : 'N/A'}
           </p>
         </div>
-        <div className="bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
+        <div className="bg-[var(--bg-card)] rounded-xl px-3 py-2.5 border border-[var(--border-color)]">
           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">Weight</p>
-          <p className="text-sm font-mono text-slate-200 mt-0.5">{item.itemWeight}</p>
+          <p className="text-sm font-mono text-[var(--text-primary)] mt-0.5">{item.itemWeight}</p>
         </div>
       </div>
 
       {/* QR payload row */}
-      <div className="flex items-center justify-between gap-2 bg-slate-900 rounded-xl px-3 py-2.5 border border-slate-800">
+      <div className="flex items-center justify-between gap-2 bg-[var(--bg-card)] rounded-xl px-3 py-2.5 border border-[var(--border-color)]">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">QR Payload — unencrypted format (printed QR will be encrypted)</p>
-          <p className="text-xs font-mono text-slate-300 truncate mt-0.5">{previewQrPayload}</p>
+          <p className="text-xs font-mono text-[var(--text-secondary)] truncate mt-0.5">{previewQrPayload}</p>
         </div>
         <button
           onClick={handleCopy}
           aria-label="Copy QR payload"
-          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-slate-800 transition-colors"
+          className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-lg hover:bg-[var(--bg-input)] transition-colors"
         >
           {copied ? (
             <Check className="w-3.5 h-3.5 text-emerald-400" />
@@ -368,14 +368,14 @@ function DeviceSetup({
     typeof navigator !== 'undefined' && 'serial' in navigator;
 
   return (
-    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+    <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-page)]">
       <button
-        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--bg-card)] transition-colors"
         onClick={() => setOpen((v) => !v)}
       >
         <div className="flex items-center gap-2">
           <Plug className="w-4 h-4 text-slate-500" />
-          <span className="text-sm font-semibold text-slate-200">Device Setup</span>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">Device Setup</span>
           <span className="text-xs text-slate-500">
             {scaleState !== 'disconnected' ? '— scale connected' : '— action needed'}
           </span>
@@ -388,7 +388,7 @@ function DeviceSetup({
       </button>
 
       {open && (
-        <div className="border-t border-slate-800 px-4 py-4 flex flex-col gap-4">
+        <div className="border-t border-[var(--border-color)] px-4 py-4 flex flex-col gap-4">
           {!isSerialSupported && (
             <p className="text-xs text-amber-400 bg-amber-950/40 border border-amber-900 rounded-xl px-3 py-2">
               Web Serial API not supported. Please use Chrome or Edge on a desktop.
@@ -401,19 +401,19 @@ function DeviceSetup({
               className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
                 scaleState !== 'disconnected'
                   ? 'bg-emerald-950/60 text-emerald-400'
-                  : 'bg-slate-900 text-slate-500'
+                  : 'bg-[var(--bg-card)] text-slate-500'
               }`}
             >
               <Scale className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium text-slate-200">Torrey Scale</p>
+                <p className="text-sm font-medium text-[var(--text-primary)]">Torrey Scale</p>
                 <span
                   className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
                     scaleState !== 'disconnected'
                       ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
-                      : 'bg-slate-900 text-slate-500 border border-slate-800'
+                      : 'bg-[var(--bg-card)] text-slate-500 border border-[var(--border-color)]'
                   }`}
                 >
                   {scaleState !== 'disconnected' ? 'Connected' : 'Disconnected'}
@@ -445,13 +445,13 @@ function DeviceSetup({
           {/* Printer device toggle */}
           <div className="flex items-center gap-3">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              isPrinterDevice ? 'bg-violet-950/60 text-violet-400' : 'bg-slate-900 text-slate-500'
+              isPrinterDevice ? 'bg-violet-950/60 text-violet-400' : 'bg-[var(--bg-card)] text-slate-500'
             }`}>
               <Printer className="w-4 h-4" />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="text-sm font-medium text-slate-200">Printer Device</p>
+                <p className="text-sm font-medium text-[var(--text-primary)]">Printer Device</p>
                 {isPrinterDevice && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-violet-950 text-violet-400 border border-violet-900">
                     Active
@@ -497,14 +497,14 @@ function PrintHistory({
   const [open, setOpen] = useState(true);
 
   return (
-    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+    <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-page)]">
       <button
-        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--bg-card)] transition-colors"
         onClick={() => setOpen((v) => !v)}
       >
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-slate-500" />
-          <span className="text-sm font-semibold text-slate-200">Print History</span>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">Print History</span>
           {records.length > 0 && (
             <span className="text-xs text-slate-500">— recent {records.length}</span>
           )}
@@ -517,7 +517,7 @@ function PrintHistory({
       </button>
 
       {open && (
-        <div className="border-t border-slate-800">
+        <div className="border-t border-[var(--border-color)]">
           {loading ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <RefreshCw className="w-5 h-5 text-slate-700 animate-spin" />
@@ -533,7 +533,7 @@ function PrintHistory({
               {records.map((r, idx) => (
                 <div
                   key={`${r.id}-${idx}`}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-slate-900/40 group transition-colors"
+                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-card)] group transition-colors"
                 >
                   <div className="flex-shrink-0 bg-white rounded-md p-0.5">
                     <QRCodeSVG
@@ -545,7 +545,7 @@ function PrintHistory({
                     />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-slate-200 truncate">{r.productTitle}</p>
+                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.productTitle}</p>
                     <p className="text-xs text-slate-500">
                       PLU {r.plu} · {r.itemWeight} · {r.printedAtEst} EST
                     </p>
@@ -554,7 +554,7 @@ function PrintHistory({
                     disabled={!canPrint}
                     onClick={() => onReprint(r)}
                     aria-label={`Reprint ${r.productTitle}`}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 disabled:opacity-30"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] disabled:opacity-30"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                   </button>
@@ -575,7 +575,7 @@ function PoStatusBadge({ status }: { status: string }) {
     return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-950 text-emerald-400 border border-emerald-900">Approved</span>;
   if (status === 'partial')
     return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-950 text-amber-400 border border-amber-900">Partial</span>;
-  return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-slate-800 text-slate-400 border border-slate-700">Pending</span>;
+  return <span className="text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-[var(--bg-input)] text-slate-400 border border-[var(--border-color)]">Pending</span>;
 }
 
 // ─── PO date grouping helpers ─────────────────────────────────────────────────
@@ -611,13 +611,13 @@ function poStatusChipStyle(status: string): string {
     case 'open':               return 'bg-blue-900/60 text-blue-300 border-blue-800';
     case 'partial':            return 'bg-amber-900/60 text-amber-300 border-amber-800';
     case 'fulfilled':          return 'bg-emerald-900/60 text-emerald-300 border-emerald-800';
-    case 'transferred':        return 'bg-slate-700/60 text-slate-300 border-slate-600';
+    case 'transferred':        return 'bg-[var(--bg-elevated)]/60 text-[var(--text-secondary)] border-slate-600';
     case 'draft':              return 'bg-purple-900/60 text-purple-300 border-purple-800';
     case 'ordered':            return 'bg-cyan-900/60 text-cyan-300 border-cyan-800';
     case 'partially_received': return 'bg-orange-900/60 text-orange-300 border-orange-800';
     case 'received':           return 'bg-teal-900/60 text-teal-300 border-teal-800';
     case 'cancelled':          return 'bg-rose-900/60 text-rose-300 border-rose-800';
-    default:                   return 'bg-slate-800 text-slate-400 border-slate-700';
+    default:                   return 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)]';
   }
 }
 
@@ -626,8 +626,8 @@ function poStatusPillStyle(status: string): string {
     case 'open':        return 'bg-blue-950 text-blue-400 border-blue-900';
     case 'partial':     return 'bg-amber-950 text-amber-400 border-amber-900';
     case 'fulfilled':   return 'bg-emerald-950 text-emerald-400 border-emerald-900';
-    case 'transferred': return 'bg-slate-800 text-slate-400 border-slate-700';
-    default:            return 'bg-slate-800 text-slate-400 border-slate-700';
+    case 'transferred': return 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)]';
+    default:            return 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)]';
   }
 }
 
@@ -724,15 +724,15 @@ function PoSuggestions({
   );
 
   return (
-    <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+    <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-page)]">
       {/* Panel header */}
       <button
-        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+        className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--bg-card)] transition-colors"
         onClick={() => setPanelOpen(v => !v)}
       >
         <div className="flex items-center gap-2">
           <ClipboardList className="w-4 h-4 text-slate-500" />
-          <span className="text-sm font-semibold text-slate-200">PO Suggestions</span>
+          <span className="text-sm font-semibold text-[var(--text-primary)]">PO Suggestions</span>
           {pendingCount > 0 && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-900 text-blue-300 border border-blue-800">
               {pendingCount} pending
@@ -743,16 +743,16 @@ function PoSuggestions({
       </button>
 
       {panelOpen && (
-        <div className="border-t border-slate-800">
+        <div className="border-t border-[var(--border-color)]">
           {/* Filter chips */}
           {!loading && orders.length > 0 && (
-            <div className="px-3 py-2.5 flex flex-wrap gap-1.5 border-b border-slate-800/60">
+            <div className="px-3 py-2.5 flex flex-wrap gap-1.5 border-b border-[var(--border-color)]">
               <button
                 onClick={clearFilters}
                 className={`text-[11px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
                   activeFilters.length === 0
                     ? 'bg-slate-200 text-slate-900 border-slate-300'
-                    : 'bg-slate-800/50 text-slate-400 border-slate-700 hover:bg-slate-800'
+                    : 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)] hover:bg-[var(--bg-input)]'
                 }`}
               >
                 All
@@ -765,7 +765,7 @@ function PoSuggestions({
                   className={`text-[11px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
                     activeFilters.includes(chip)
                       ? poStatusChipStyle(chip)
-                      : 'bg-slate-800/50 text-slate-500 border-slate-700 hover:bg-slate-800'
+                      : 'bg-[var(--bg-input)] text-slate-500 border-[var(--border-color)] hover:bg-[var(--bg-input)]'
                   }`}
                 >
                   {chip}
@@ -783,7 +783,7 @@ function PoSuggestions({
                   className={`text-[11px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
                     activeFilters.includes(chip)
                       ? poStatusChipStyle(chip)
-                      : 'bg-slate-800/50 text-slate-500 border-slate-700 hover:bg-slate-800'
+                      : 'bg-[var(--bg-input)] text-slate-500 border-[var(--border-color)] hover:bg-[var(--bg-input)]'
                   }`}
                 >
                   {chip.replace(/_/g, ' ')}
@@ -821,12 +821,12 @@ function PoSuggestions({
                   <div key={groupKey}>
                     {/* Date group header */}
                     <button
-                      className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-900/30 transition-colors"
+                      className="w-full flex items-center justify-between px-4 py-2 hover:bg-[var(--bg-card)]/30 transition-colors"
                       onClick={() => toggleGroupCollapse(groupKey)}
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">{groupKey}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--bg-input)] text-slate-500 border border-[var(--border-color)]">
                           {groupPOs.length}
                         </span>
                       </div>
@@ -847,12 +847,12 @@ function PoSuggestions({
                           return (
                             <div key={po.id}>
                               <button
-                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-900/40 transition-colors text-left"
+                                className="w-full flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-card)] transition-colors text-left"
                                 onClick={() => onToggleExpand(po.id)}
                               >
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-sm font-semibold text-slate-200">{po.poName}</span>
+                                    <span className="text-sm font-semibold text-[var(--text-primary)]">{po.poName}</span>
                                     {po.vendor && <span className="text-xs text-slate-500">{po.vendor}</span>}
                                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold border ${poStatusPillStyle(po.status)}`}>
                                       {po.status}
@@ -893,15 +893,15 @@ function PoSuggestions({
                                     <button
                                       key={li.id}
                                       onClick={() => onSelectItem(po, li)}
-                                      className="flex items-start gap-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl px-3 py-2.5 text-left transition-colors active:scale-[0.99]"
+                                      className="flex items-start gap-3 bg-[var(--bg-card)] hover:bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 py-2.5 text-left transition-colors active:scale-[0.99]"
                                     >
-                                      <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+                                      <div className="w-8 h-8 rounded-lg bg-[var(--bg-input)] flex items-center justify-center flex-shrink-0 mt-0.5">
                                         <Tag className="w-3.5 h-3.5 text-slate-500" />
                                       </div>
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-start justify-between gap-2">
                                           <div className="min-w-0">
-                                            <p className="text-sm font-medium text-slate-200 leading-snug">{li.productTitle}</p>
+                                            <p className="text-sm font-medium text-[var(--text-primary)] leading-snug">{li.productTitle}</p>
                                             {li.variantTitle && li.variantTitle !== 'Default Title' && (
                                               <p className="text-xs text-slate-400">{li.variantTitle}</p>
                                             )}
@@ -921,7 +921,7 @@ function PoSuggestions({
                                       {approvedItems.map(li => (
                                         <div
                                           key={li.id}
-                                          className="flex items-center gap-3 bg-slate-900/40 border border-slate-800/50 rounded-xl px-3 py-2 opacity-50"
+                                          className="flex items-center gap-3 bg-[var(--bg-card)] border border-[var(--border-color)]/50 rounded-xl px-3 py-2 opacity-50"
                                         >
                                           <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                                           <div className="flex-1 min-w-0">
@@ -982,7 +982,7 @@ function BulkPrintResultPanel({
   const failed = results.filter(r => r.status === 'failed').length;
 
   return (
-    <div className="flex flex-col gap-2 bg-slate-900/80 border border-slate-700 rounded-2xl p-3">
+    <div className="flex flex-col gap-2 bg-[var(--bg-card)]/80 border border-[var(--border-color)] rounded-2xl p-3">
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           {failed === 0 ? (
@@ -990,14 +990,14 @@ function BulkPrintResultPanel({
           ) : (
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
           )}
-          <span className="text-sm font-semibold text-slate-200">
+          <span className="text-sm font-semibold text-[var(--text-primary)]">
             {printed}/{results.length} labels printed
             {poQuantityOrdered > printed && ` · ${poQuantityOrdered - printed} short vs PO`}
           </span>
         </div>
         <button
           onClick={onDismiss}
-          className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-slate-300 transition-colors"
+          className="w-6 h-6 flex items-center justify-center rounded text-slate-500 hover:text-[var(--text-secondary)] transition-colors"
         >
           <X className="w-3.5 h-3.5" />
         </button>
@@ -1026,7 +1026,7 @@ function BulkPrintResultPanel({
           <div
             key={r.index}
             className={`flex items-center gap-2.5 rounded-xl px-3 py-2 ${
-              r.status === 'printed' ? 'bg-slate-800/60' : 'bg-rose-950/40 border border-rose-900/40'
+              r.status === 'printed' ? 'bg-[var(--bg-input)]' : 'bg-rose-950/40 border border-rose-900/40'
             }`}
           >
             <span className={`text-[10px] font-bold w-5 text-center ${r.status === 'printed' ? 'text-slate-500' : 'text-rose-400'}`}>
@@ -1034,14 +1034,14 @@ function BulkPrintResultPanel({
             </span>
             <div className="flex-1 min-w-0">
               {r.status === 'printed' ? (
-                <p className="text-xs text-slate-300 font-mono truncate">{r.sn}</p>
+                <p className="text-xs text-[var(--text-secondary)] font-mono truncate">{r.sn}</p>
               ) : (
                 <p className="text-xs text-rose-300">{r.error ?? 'Print failed'}</p>
               )}
             </div>
             <button
               onClick={() => onReprint(r)}
-              className="flex-shrink-0 flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-200 px-2 py-1 rounded-lg hover:bg-slate-700 transition-colors"
+              className="flex-shrink-0 flex items-center gap-1 text-[11px] text-slate-500 hover:text-[var(--text-primary)] px-2 py-1 rounded-lg hover:bg-[var(--bg-elevated)] transition-colors"
             >
               <RotateCcw className="w-3 h-3" /> Reprint
             </button>
@@ -2554,25 +2554,25 @@ export default function ScalePage() {
 
   return (
     <>
-      <main className="min-h-screen bg-slate-950 pb-safe">
+      <main className="min-h-screen bg-[var(--bg-page)] pb-safe">
 
         {/* ── Sticky header ─────────────────────────────────────────────────── */}
-        <div className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur border-b border-slate-800/60 px-4 py-3 flex items-center gap-3">
+        <div className="sticky top-0 z-20 bg-[var(--bg-page)] backdrop-blur border-b border-[var(--border-color)] px-4 py-3 flex items-center gap-3">
           <button
             onClick={() => router.push('/')}
-            className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors flex-shrink-0"
+            className="w-9 h-9 flex items-center justify-center rounded-xl bg-[var(--bg-card)] hover:bg-[var(--bg-input)] transition-colors flex-shrink-0"
             aria-label="Back to home"
           >
             <ArrowLeft className="w-4 h-4 text-slate-400" />
           </button>
           <div className="flex-1 min-w-0">
-            <h1 className="text-base font-bold text-slate-100 leading-tight">Scale &amp; Print</h1>
+            <h1 className="text-base font-bold text-[var(--text-primary)] leading-tight">Scale &amp; Print</h1>
             <p className="text-xs text-slate-500 leading-tight hidden sm:block">Barcode creation &amp; PO receiving</p>
           </div>
           <div className="flex items-center gap-1.5">
             <button
               onClick={handleDevTap}
-              className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 select-none"
+              className="flex items-center gap-1.5 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1 select-none"
               aria-label="Scale status"
             >
               <StatusDot status={scaleStatus} />
@@ -2581,7 +2581,7 @@ export default function ScalePage() {
             </button>
             <button
               onClick={() => router.push('/scale/settings')}
-              className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors"
+              className="w-9 h-9 flex items-center justify-center rounded-xl bg-[var(--bg-card)] hover:bg-[var(--bg-input)] transition-colors"
               aria-label="Scale settings"
             >
               <Settings className="w-4 h-4 text-slate-400" />
@@ -2612,7 +2612,7 @@ export default function ScalePage() {
           <div className="order-last lg:order-last flex flex-col gap-4">
 
             {/* ── ACTIVE WORK ZONE ─────────────────────────────────────────── */}
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
 
               {/* Zone header */}
               <div className="px-4 pt-4 pb-3 flex items-start justify-between gap-3">
@@ -2621,7 +2621,7 @@ export default function ScalePage() {
                   <div className="min-w-0">
                     {currentItem ? (
                       <>
-                        <p className="text-sm font-bold text-slate-100 leading-snug">
+                        <p className="text-sm font-bold text-[var(--text-primary)] leading-snug">
                           {applyMappings(currentItem.productTitle, textMappings)}
                         </p>
                         {currentItem.variantTitle && currentItem.variantTitle !== 'Default Title' && (
@@ -2641,7 +2641,7 @@ export default function ScalePage() {
                       </>
                     ) : (
                       <div>
-                        <p className="text-sm font-semibold text-slate-300">Active Print Zone</p>
+                        <p className="text-sm font-semibold text-[var(--text-secondary)]">Active Print Zone</p>
                         <p className="text-xs text-slate-500 mt-0.5">Scan from scale or select a product</p>
                       </div>
                     )}
@@ -2657,7 +2657,7 @@ export default function ScalePage() {
                     )}
                     <button
                       onClick={clearCurrentItem}
-                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-colors"
                       aria-label="Clear item"
                     >
                       <X className="w-3.5 h-3.5" />
@@ -2666,7 +2666,7 @@ export default function ScalePage() {
                 )}
               </div>
 
-              <div className="border-t border-slate-800" />
+              <div className="border-t border-[var(--border-color)]" />
 
               {/* ── Empty state: step guide + CTA ── */}
               {!currentItem ? (
@@ -2676,25 +2676,25 @@ export default function ScalePage() {
                   <div className="flex flex-col gap-3">
                     {/* Step 1 */}
                     <div className="flex items-start gap-3">
-                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-7 h-7 rounded-full bg-[var(--bg-input)] border border-[var(--border-color)] flex items-center justify-center flex-shrink-0 mt-0.5">
                         <span className="text-[11px] font-bold text-slate-400">1</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-200 leading-tight">Open a Purchase Order</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight">Open a Purchase Order</p>
                         <p className="text-xs text-slate-500 mt-0.5 leading-snug">Tap a PO below to expand it, then select the item you&apos;re weighing</p>
                       </div>
                     </div>
 
                     {/* connector line */}
-                    <div className="ml-3.5 w-px h-3 bg-slate-700 self-start" style={{marginLeft: '13px'}} />
+                    <div className="ml-3.5 w-px h-3 bg-[var(--bg-elevated)] self-start" style={{marginLeft: '13px'}} />
 
                     {/* Step 2 */}
                     <div className="flex items-start gap-3">
-                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-7 h-7 rounded-full bg-[var(--bg-input)] border border-[var(--border-color)] flex items-center justify-center flex-shrink-0 mt-0.5">
                         <span className="text-[11px] font-bold text-slate-400">2</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-200 leading-tight">Place item on the scale</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight">Place item on the scale</p>
                         <p className="text-xs text-slate-500 mt-0.5 leading-snug">
                           {scale.state === 'connected'
                             ? 'Scale connected — trigger a reading to get the weight'
@@ -2709,15 +2709,15 @@ export default function ScalePage() {
                     </div>
 
                     {/* connector line */}
-                    <div className="ml-3.5 w-px h-3 bg-slate-700 self-start" style={{marginLeft: '13px'}} />
+                    <div className="ml-3.5 w-px h-3 bg-[var(--bg-elevated)] self-start" style={{marginLeft: '13px'}} />
 
                     {/* Step 3 */}
                     <div className="flex items-start gap-3">
-                      <div className="w-7 h-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <div className="w-7 h-7 rounded-full bg-[var(--bg-input)] border border-[var(--border-color)] flex items-center justify-center flex-shrink-0 mt-0.5">
                         <span className="text-[11px] font-bold text-slate-400">3</span>
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-slate-200 leading-tight">Print the label</p>
+                        <p className="text-sm font-semibold text-[var(--text-primary)] leading-tight">Print the label</p>
                         <p className="text-xs text-slate-500 mt-0.5 leading-snug">The correct size is selected automatically — tap Print to finish</p>
                       </div>
                     </div>
@@ -2729,10 +2729,10 @@ export default function ScalePage() {
                     className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
                   >
                     <div className="w-8 h-8 rounded-lg bg-blue-500/40 flex items-center justify-center flex-shrink-0">
-                      <ListFilter className="w-4 h-4 text-white" />
+                      <ListFilter className="w-4 h-4 text-[var(--text-primary)]" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-bold text-white leading-tight">Select Product</p>
+                      <p className="text-sm font-bold text-[var(--text-primary)] leading-tight">Select Product</p>
                       <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog</p>
                     </div>
                   </button>
@@ -2760,7 +2760,7 @@ export default function ScalePage() {
                         </div>
                         <button
                           onClick={() => { setQrScanOpen(false); setQrScanError(null); }}
-                          className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                          className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-colors"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -2792,7 +2792,7 @@ export default function ScalePage() {
                     </div>
                     <button
                       onClick={() => router.push('/scale/products')}
-                      className="text-xs text-slate-500 hover:text-slate-200 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-800 transition-colors"
+                      className="text-xs text-slate-500 hover:text-[var(--text-primary)] flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-[var(--bg-input)] transition-colors"
                     >
                       <ListFilter className="w-3 h-3" /> Switch
                     </button>
@@ -2806,8 +2806,8 @@ export default function ScalePage() {
                         onClick={() => handleSizeChange(key)}
                         className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-colors ${
                           labelSizeKey === key
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-200'
+                            ? 'bg-blue-600 text-[var(--text-primary)]'
+                            : 'bg-[var(--bg-input)] text-slate-400 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
                         }`}
                       >
                         {label}
@@ -2824,7 +2824,7 @@ export default function ScalePage() {
                     hideUnmappedWarning={transformationOptions !== null || inventoryMappingOverride !== null}
                   />
 
-                  <div className="border-t border-slate-800" />
+                  <div className="border-t border-[var(--border-color)]" />
 
                   {/* ── Processing Session Header ── */}
                   {processingSession && (
@@ -2838,16 +2838,16 @@ export default function ScalePage() {
                           Close Session
                         </button>
                       </div>
-                      <p className="text-sm font-medium text-white truncate">{processingSession.mainProductTitle}</p>
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">{processingSession.mainProductTitle}</p>
                       <div className="flex gap-3 mt-1 text-xs text-slate-400">
-                        <span>PO: <span className="text-white font-semibold">{processingSession.poQty}</span></span>
+                        <span>PO: <span className="text-[var(--text-primary)] font-semibold">{processingSession.poQty}</span></span>
                         <span>Processed: <span className="text-emerald-300 font-semibold">{processingSession.cumulativeQty + processingSession.sessionQty}</span></span>
                         <span>Remaining: <span className={`font-semibold ${processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>{Math.max(0, processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty)}</span></span>
                       </div>
                       {Object.keys(processingSession.variantBreakdown).length > 0 && (
                         <div className="flex gap-2 mt-1.5 flex-wrap">
                           {Object.entries(processingSession.variantBreakdown).map(([label, qty]) => (
-                            <span key={label} className="text-xs bg-slate-700/60 text-slate-200 rounded px-2 py-0.5">{label}: {qty}</span>
+                            <span key={label} className="text-xs bg-[var(--bg-elevated)]/60 text-[var(--text-primary)] rounded px-2 py-0.5">{label}: {qty}</span>
                           ))}
                         </div>
                       )}
@@ -2908,8 +2908,8 @@ export default function ScalePage() {
                               }}
                               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
                                 isActive
-                                  ? 'bg-emerald-700 border-emerald-600 text-white'
-                                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:border-slate-600'
+                                  ? 'bg-emerald-700 border-emerald-600 text-[var(--text-primary)]'
+                                  : 'bg-[var(--bg-input)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:border-slate-600'
                               }`}
                             >
                               <span className="text-xs font-bold leading-tight">{r.label}</span>
@@ -2925,7 +2925,7 @@ export default function ScalePage() {
                       {autoDetect.noMatch && (
                         <button
                           onClick={handleSkipOutOfRange}
-                          className="w-full flex items-center justify-center gap-2 h-9 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-400 font-medium transition-colors"
+                          className="w-full flex items-center justify-center gap-2 h-9 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl text-xs text-slate-400 font-medium transition-colors"
                         >
                           <Ban className="w-3.5 h-3.5" />
                           Log out-of-range and skip
@@ -3034,7 +3034,7 @@ export default function ScalePage() {
                         value={manualWeight}
                         onChange={e => setManualWeight(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter') handleManualPrint(); }}
-                        className="h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500 transition-colors"
+                        className="h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-blue-500 transition-colors"
                       />
                     </div>
                   )}
@@ -3075,7 +3075,7 @@ export default function ScalePage() {
                     )}
                     <button
                       onClick={clearCurrentItem}
-                      className="w-full h-10 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all active:scale-[0.98]"
+                      className="w-full h-10 flex items-center justify-center gap-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] transition-all active:scale-[0.98]"
                     >
                       <ScanLine className="w-4 h-4" /> New Scan
                     </button>
@@ -3109,9 +3109,9 @@ export default function ScalePage() {
 
             {/* ── Diagnostics — dev mode only (tap Scale chip 5× to unlock) ── */}
             {devModeUnlocked && (
-              <div className="border border-violet-900/50 rounded-2xl overflow-hidden bg-slate-950">
+              <div className="border border-violet-900/50 rounded-2xl overflow-hidden bg-[var(--bg-page)]">
                 <button
-                  className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-slate-900/60 transition-colors"
+                  className="w-full flex items-center justify-between px-4 py-3.5 text-left hover:bg-[var(--bg-card)] transition-colors"
                   onClick={() => setDebugOpen(v => !v)}
                 >
                   <div className="flex items-center gap-2">
@@ -3123,14 +3123,14 @@ export default function ScalePage() {
                 </button>
                 {debugOpen && (
                   <div className="border-t border-violet-900/40 px-4 py-3 flex flex-col gap-1.5 text-xs font-mono text-slate-400">
-                    <p>state: <span className="text-slate-200">{scale.state}</span></p>
-                    <p>listenerActive: <span className="text-slate-200">{String(scale.listenerActive)}</span></p>
-                    <p>portLabel: <span className="text-slate-200">{scale.portLabel ?? 'null'}</span></p>
-                    <p>chunkCount: <span className="text-slate-200">{scale.chunkCount}</span></p>
-                    <p>error: <span className="text-slate-200">{scale.error ?? 'null'}</span></p>
-                    <p>lastReading.itemNumber: <span className="text-slate-200">{scale.lastReading?.itemNumber || '(none)'}</span></p>
-                    <p>lastReading.itemWeight: <span className="text-slate-200">{scale.lastReading?.itemWeight || '(none)'}</span></p>
-                    <p className="break-all">lastRawBuffer: <span className="text-slate-200">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
+                    <p>state: <span className="text-[var(--text-primary)]">{scale.state}</span></p>
+                    <p>listenerActive: <span className="text-[var(--text-primary)]">{String(scale.listenerActive)}</span></p>
+                    <p>portLabel: <span className="text-[var(--text-primary)]">{scale.portLabel ?? 'null'}</span></p>
+                    <p>chunkCount: <span className="text-[var(--text-primary)]">{scale.chunkCount}</span></p>
+                    <p>error: <span className="text-[var(--text-primary)]">{scale.error ?? 'null'}</span></p>
+                    <p>lastReading.itemNumber: <span className="text-[var(--text-primary)]">{scale.lastReading?.itemNumber || '(none)'}</span></p>
+                    <p>lastReading.itemWeight: <span className="text-[var(--text-primary)]">{scale.lastReading?.itemWeight || '(none)'}</span></p>
+                    <p className="break-all">lastRawBuffer: <span className="text-[var(--text-primary)]">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
                   </div>
                 )}
               </div>
@@ -3181,32 +3181,32 @@ export default function ScalePage() {
       {/* ── Lot Product Prompt ── */}
       {lotProductPrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-sm bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
+          <div className="relative w-full max-w-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-900/60 border border-amber-800 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <span className="text-lg">🏷️</span>
               </div>
               <div>
-                <p className="text-sm font-bold text-slate-100 leading-snug">Is this a lot product?</p>
+                <p className="text-sm font-bold text-[var(--text-primary)] leading-snug">Is this a lot product?</p>
                 <p className="text-xs text-slate-400 mt-1">
                   <span className="font-semibold text-amber-300">{lotProductPrompt.printedCount}</span> barcode{lotProductPrompt.printedCount !== 1 ? 's' : ''} printed,
-                  but PO quantity is <span className="font-semibold text-slate-200">{lotProductPrompt.li.quantityOrdered}</span>.
+                  but PO quantity is <span className="font-semibold text-[var(--text-primary)]">{lotProductPrompt.li.quantityOrdered}</span>.
                 </p>
                 <p className="text-xs text-slate-500 mt-2">
-                  <span className="font-medium text-slate-300">{lotProductPrompt.item.productTitle}</span> — Lot products (beef, lamb, goat, etc.) use the full PO quantity for inventory since barcodes are batch labels, not unit counts.
+                  <span className="font-medium text-[var(--text-secondary)]">{lotProductPrompt.item.productTitle}</span> — Lot products (beef, lamb, goat, etc.) use the full PO quantity for inventory since barcodes are batch labels, not unit counts.
                 </p>
               </div>
             </div>
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleMarkAsLot}
-                className="w-full h-11 bg-amber-600 hover:bg-amber-500 rounded-xl text-sm text-white font-bold transition-colors"
+                className="w-full h-11 bg-amber-600 hover:bg-amber-500 rounded-xl text-sm text-[var(--text-primary)] font-bold transition-colors"
               >
                 Mark as lot product — use PO qty ({lotProductPrompt.li.quantityOrdered})
               </button>
               <button
                 onClick={handleDeclineLot}
-                className="w-full h-11 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 font-medium transition-colors"
+                className="w-full h-11 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] font-medium transition-colors"
               >
                 No — record discrepancy of {Math.abs(lotProductPrompt.li.quantityOrdered - lotProductPrompt.printedCount)}
               </button>
@@ -3221,8 +3221,8 @@ export default function ScalePage() {
         const unaccounted = Math.max(0, processingSession.poQty - totalProcessed);
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="bg-slate-900 border border-slate-700 rounded-2xl p-5 w-full max-w-sm shadow-2xl">
-              <h3 className="text-base font-semibold text-white mb-1">Close Processing Session</h3>
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+              <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Close Processing Session</h3>
               <p className="text-sm text-slate-400 mb-3">
                 {totalProcessed} of {processingSession.poQty} units processed.
                 {unaccounted > 0 && <> <span className="text-amber-300 font-semibold">{unaccounted} unaccounted.</span></>}
@@ -3252,7 +3252,7 @@ export default function ScalePage() {
                 )}
                 <button
                   onClick={() => setSessionClosePrompt(false)}
-                  className="w-full text-slate-400 text-sm py-2 hover:text-slate-200 transition-colors"
+                  className="w-full text-slate-400 text-sm py-2 hover:text-[var(--text-primary)] transition-colors"
                 >
                   Cancel
                 </button>

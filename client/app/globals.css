@@ -4,6 +4,47 @@
 
 :root {
   --safe-bottom: env(safe-area-inset-bottom);
+  --radius: 0.5rem;
+
+  /* shadcn/ui tokens — light */
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 222.2 47.4% 11.2%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+  --muted: 210 40% 96.1%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 222.2 84% 4.9%;
+
+  /* ShipScan theme tokens — light (default) */
+  --bg-page:      #f8fafc;
+  --bg-card:      #ffffff;
+  --bg-input:     #f1f5f9;
+  --bg-elevated:  #e2e8f0;
+  --border-color: #cbd5e1;
+  --text-primary:   #0f172a;
+  --text-secondary: #475569;
+  --text-muted:     #94a3b8;
+  --accent-color:   #2563eb;
+  --accent-hover:   #1d4ed8;
+  --success:        #16a34a;
+  --warning:        #d97706;
+  --danger:         #dc2626;
+}
+
+[data-theme="dark"] {
+  /* shadcn/ui tokens — dark */
   --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
   --card: 222.2 84% 4.9%;
@@ -23,15 +64,24 @@
   --border: 217.2 32.6% 17.5%;
   --input: 217.2 32.6% 17.5%;
   --ring: 212.7 26.8% 83.9%;
-  --radius: 0.5rem;
+
+  /* ShipScan theme tokens — dark */
+  --bg-page:      #0f172a;
+  --bg-card:      #1e293b;
+  --bg-input:     #1e293b;
+  --bg-elevated:  #334155;
+  --border-color: #334155;
+  --text-primary:   #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted:     #475569;
 }
 
 body {
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  background-color: #020817;
-  color: #f8fafc;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
 }
 
 .pb-safe {

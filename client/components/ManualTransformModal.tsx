@@ -68,17 +68,17 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg bg-slate-900 border border-slate-700 rounded-t-3xl sm:rounded-2xl shadow-2xl px-5 py-6 flex flex-col gap-4 z-10 max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full sm:max-w-lg bg-[var(--bg-card)] border border-[var(--border-color)] rounded-t-3xl sm:rounded-2xl shadow-2xl px-5 py-6 flex flex-col gap-4 z-10 max-h-[90vh] overflow-y-auto">
 
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-bold text-slate-100">Select Output Product</p>
+            <p className="text-sm font-bold text-[var(--text-primary)]">Select Output Product</p>
             <p className="text-xs text-slate-400 mt-0.5">
               Source: <span className="text-violet-300">{parentProductTitle}</span>
             </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors">
+          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -96,7 +96,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
               value={query}
               onChange={handleQueryChange}
               autoFocus
-              className="w-full h-10 bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-violet-500 transition-colors"
+              className="w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl pl-9 pr-3 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500 transition-colors"
             />
             {searching && <RefreshCw className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 animate-spin" />}
           </div>
@@ -111,10 +111,10 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
                   <button
                     key={v.variantId}
                     onClick={() => { setChosen({ product: p, variant: v }); setResults([]); }}
-                    className="w-full flex items-start gap-2.5 text-left bg-slate-800/50 hover:bg-slate-800 border border-slate-700/60 rounded-xl px-3 py-2 mb-1 transition-colors"
+                    className="w-full flex items-start gap-2.5 text-left bg-[var(--bg-input)] hover:bg-[var(--bg-input)] border border-[var(--border-color)]/60 rounded-xl px-3 py-2 mb-1 transition-colors"
                   >
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-slate-200 leading-snug">{p.productTitle}</p>
+                      <p className="text-sm font-medium text-[var(--text-primary)] leading-snug">{p.productTitle}</p>
                       {v.variantTitle && v.variantTitle !== 'Default Title' && (
                         <p className="text-xs text-slate-400">{v.variantTitle}</p>
                       )}
@@ -156,7 +156,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
                 min={1}
                 value={parentUnits}
                 onChange={e => setParentUnits(e.target.value)}
-                className="h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm font-semibold text-slate-100 text-center focus:outline-none focus:border-violet-500 transition-colors"
+                className="h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm font-semibold text-[var(--text-primary)] text-center focus:outline-none focus:border-violet-500 transition-colors"
               />
             </div>
             <ArrowRight className="w-4 h-4 text-slate-600 flex-shrink-0 mt-4" />
@@ -167,7 +167,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
                 min={1}
                 value={childUnits}
                 onChange={e => setChildUnits(e.target.value)}
-                className="h-10 bg-slate-800 border border-slate-700 rounded-xl px-3 text-sm font-semibold text-slate-100 text-center focus:outline-none focus:border-violet-500 transition-colors"
+                className="h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm font-semibold text-[var(--text-primary)] text-center focus:outline-none focus:border-violet-500 transition-colors"
               />
             </div>
           </div>
@@ -180,14 +180,14 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
         <div className="flex gap-2">
           <button
             onClick={onClose}
-            className="flex-1 h-11 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 font-medium transition-colors"
+            className="flex-1 h-11 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] font-medium transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleConfirm}
             disabled={!chosen}
-            className="flex-1 h-11 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-white font-bold transition-colors"
+            className="flex-1 h-11 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-[var(--text-primary)] font-bold transition-colors"
           >
             Apply Transform
           </button>
