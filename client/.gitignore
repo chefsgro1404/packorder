@@ -13,6 +13,12 @@ out/
 # TypeScript build info
 tsconfig.tsbuildinfo
 
+# PWA — generated at build time
+public/sw.js
+public/sw.js.map
+public/workbox-*.js
+public/workbox-*.js.map
+
 # OS
 .DS_Store
 Thumbs.db

@@ -53,6 +53,7 @@ import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { usePrintQueue } from '@/hooks/usePrintQueue';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
+import { InstallBanner } from '@/components/InstallBanner';
 
 interface CurrentItem {
   itemNumber: string;
@@ -3177,6 +3178,8 @@ export default function ScalePage() {
       )}
 
       <PrintLabelPortal payload={printPayload} batchPayloads={batchPrintPayloads} labelSizeKey={labelSizeKey} />
+
+      <InstallBanner />
 
       {/* ── Lot Product Prompt ── */}
       {lotProductPrompt && (
