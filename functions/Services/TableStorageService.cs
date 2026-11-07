@@ -31,6 +31,7 @@ public class TableStorageService
     private readonly TableClient _lotProducts;
     private readonly TableClient _operationJobs;
     private readonly TableClient _operationLogs;
+    private readonly TableClient _outOfRangeEvents;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -59,6 +60,7 @@ public class TableStorageService
         _lotProducts               = tableServiceClient.GetTableClient("lotproducts");
         _operationJobs             = tableServiceClient.GetTableClient("operationjobs");
         _operationLogs             = tableServiceClient.GetTableClient("operationlogs");
+        _outOfRangeEvents          = tableServiceClient.GetTableClient("outofrangeevents");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -86,6 +88,7 @@ public class TableStorageService
         await _lotProducts.CreateIfNotExistsAsync();
         await _operationJobs.CreateIfNotExistsAsync();
         await _operationLogs.CreateIfNotExistsAsync();
+        await _outOfRangeEvents.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1728,6 +1731,25 @@ public class TableStorageService
             filter: $"PartitionKey eq '{safeKey}'"))
             results.Add(entity);
         return results;
+    }
+
+    // ─── Out-of-Range Events (CRH-272) ──────────────────────────────────────
+
+    public async Task LogOutOfRangeEventAsync(LogOutOfRangeEventRequest request)
+    {
+        var entity = new OutOfRangeEventEntity
+        {
+            PartitionKey = string.IsNullOrEmpty(request.ProductId) ? "unknown" : request.ProductId,
+            RowKey       = $"{DateTimeOffset.UtcNow.Ticks:D20}-{Guid.NewGuid():N}",
+            WeightLbs    = request.WeightLbs,
+            ProductTitle = request.ProductTitle,
+            VariantId    = request.VariantId,
+            PoId         = request.PoId,
+            SessionId    = request.SessionId,
+            Action       = string.IsNullOrEmpty(request.Action) ? "skipped" : request.Action,
+            CreatedAt    = DateTimeOffset.UtcNow,
+        };
+        await _outOfRangeEvents.AddEntityAsync(entity);
     }
 
     // ─── Operation Jobs (CRH-271) ────────────────────────────────────────────

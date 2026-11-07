@@ -439,6 +439,18 @@ export interface PurchaseOrderLineItem {
   printedBy: string | null;
 }
 
+// ─── Out-of-Range Events (CRH-272) ───────────────────────────────────────────
+
+export interface LogOutOfRangeEventPayload {
+  productId: string;
+  productTitle: string;
+  variantId: string | null;
+  poId: string | null;
+  sessionId: string | null;
+  weightLbs: number;
+  action: string; // "skipped" | "overridden_to:{tierLabel}"
+}
+
 // ─── Operation Jobs & Logs (CRH-271) ─────────────────────────────────────────
 
 export type OperationJobType =

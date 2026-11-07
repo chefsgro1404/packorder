@@ -1311,6 +1311,42 @@ public class ScaleFunction
         }
     }
 
+    // ── POST /api/scale/out-of-range-event (CRH-272) ─────────────────────────
+
+    [Function("ScaleOutOfRangeEvent")]
+    public async Task<HttpResponseData> OutOfRangeEvent(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "scale/out-of-range-event")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body    = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<LogOutOfRangeEventRequest>(body);
+
+            if (request == null || request.WeightLbs <= 0)
+                return await ResponseHelper.WriteError(req, "weightLbs is required and must be > 0", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            await _tableStorage.LogOutOfRangeEventAsync(request);
+            _logger.LogInformation(
+                "Out-of-range event logged: product={ProductTitle} weight={WeightLbs} action={Action}",
+                request.ProductTitle, request.WeightLbs, request.Action);
+
+            return await ResponseHelper.WriteSuccess(req, new { ok = true }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ScaleOutOfRangeEvent endpoint failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     private static Dictionary<string, string> ParseQueryString(string query)
     {
         return query.TrimStart('?')

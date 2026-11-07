@@ -32,6 +32,7 @@ import {
   QrCode,
   ArrowRight,
   Truck,
+  Ban,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -2507,6 +2508,37 @@ export default function ScalePage() {
     resetPrinted();
   };
 
+  // ── Out-of-range event logging (CRH-272) ─────────────────────────────────
+  const logOutOfRangeEvent = useCallback(async (action: string) => {
+    if (!currentItem || !autoDetect) return;
+    try {
+      await fetch('/api/scale/out-of-range-event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId:    currentItem.variantId ?? '',
+          productTitle: currentItem.productTitle,
+          variantId:    currentItem.variantId ?? null,
+          poId:         currentItem.poId ?? null,
+          sessionId:    processingSession?.poLineItemId ?? null,
+          weightLbs:    autoDetect.weightLbs,
+          action,
+        }),
+      });
+    } catch {
+      // fire-and-forget — non-fatal
+    }
+  }, [currentItem, autoDetect, processingSession]);
+
+  // "Log out-of-range and skip" — clears the reading, session stays open
+  const handleSkipOutOfRange = useCallback(async () => {
+    await logOutOfRangeEvent('skipped');
+    // Clear weight reading but keep item and session
+    setAutoDetect(null);
+    if (currentItem) setCurrentItem({ ...currentItem, itemWeight: '' });
+    setManualWeight('');
+  }, [logOutOfRangeEvent, currentItem]);
+
   // 5-tap unlock on the scale status chip reveals the Diagnostics panel
   const handleDevTap = () => {
     if (devTapTimer.current) clearTimeout(devTapTimer.current);
@@ -2825,49 +2857,79 @@ export default function ScalePage() {
                     </div>
                   )}
 
-                  {/* ── Weight auto-detection banner ── */}
-                  {autoDetect && (
-                    <div className={`flex flex-col gap-2 rounded-xl px-3 py-2.5 border ${
-                      autoDetect.noMatch
-                        ? 'bg-rose-950/40 border-rose-800/60'
-                        : 'bg-emerald-950/40 border-emerald-800/60'
-                    }`}>
-                      <div className="flex items-center gap-2">
-                        <Zap className={`w-4 h-4 flex-shrink-0 ${autoDetect.noMatch ? 'text-rose-400' : 'text-emerald-400'}`} />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-xs font-semibold ${autoDetect.noMatch ? 'text-rose-300' : 'text-emerald-300'}`}>
-                            {autoDetect.noMatch
-                              ? `No match — ${autoDetect.weightLbs.toFixed(2)} lbs falls outside all configured ranges`
-                              : `Auto-detected: ${autoDetect.matched!.label} — ${autoDetect.weightLbs.toFixed(2)} lbs`}
-                          </p>
-                          {!autoDetect.noMatch && autoDetect.matched && (
-                            <p className="text-[11px] text-emerald-400/70 mt-0.5">
-                              Range: ≥{autoDetect.matched.minLbs} lbs{autoDetect.matched.maxLbs != null ? ` · <${autoDetect.matched.maxLbs} lbs` : ''}
+                  {/* ── Weight tier button group (CRH-272) ── */}
+                  {autoDetect && weightRanges.length > 0 && (
+                    <div className="flex flex-col gap-2.5">
+
+                      {/* Warning banner for out-of-range */}
+                      {autoDetect.noMatch && (
+                        <div className="flex items-start gap-2 bg-rose-950/50 border border-rose-800/60 rounded-xl px-3 py-2.5">
+                          <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-rose-300">
+                              {autoDetect.weightLbs.toFixed(2)} lbs is outside all configured ranges
                             </p>
-                          )}
+                            <p className="text-[11px] text-rose-400/70 mt-0.5">
+                              Select a tier below to override, or skip this reading.
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                      {/* Override buttons for other tiers */}
-                      {weightRanges.length > 1 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          <span className="text-[10px] text-slate-500 self-center">Override:</span>
-                          {weightRanges.map(r => (
+                      )}
+
+                      {/* Matched tier info (non-noMatch) */}
+                      {!autoDetect.noMatch && autoDetect.matched && (
+                        <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-800/60 rounded-xl px-3 py-2">
+                          <Zap className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-emerald-300">
+                              Auto-detected: {autoDetect.matched.label} — {autoDetect.weightLbs.toFixed(2)} lbs
+                            </p>
+                            <p className="text-[11px] text-emerald-400/70 mt-0.5">
+                              ≥{autoDetect.matched.minLbs} lbs{autoDetect.matched.maxLbs != null ? ` · <${autoDetect.matched.maxLbs} lbs` : ''}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Full tier button group — all tiers always visible */}
+                      <div className={`grid gap-2 ${weightRanges.length <= 2 ? 'grid-cols-2' : weightRanges.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                        {weightRanges.map(r => {
+                          const isActive = autoDetect.matched?.variantId === r.variantId;
+                          return (
                             <button
                               key={r.variantId}
-                              onClick={() => {
+                              onClick={async () => {
+                                // If overriding an out-of-range, log the event first
+                                if (autoDetect.noMatch) {
+                                  await logOutOfRangeEvent(`overridden_to:${r.label}`);
+                                }
                                 setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect.weightLbs });
                                 if (currentItem) setCurrentItem({ ...currentItem, variantId: r.variantId, variantTitle: r.label });
                               }}
-                              className={`text-[11px] px-2 py-0.5 rounded-lg font-medium transition-colors ${
-                                autoDetect.matched?.variantId === r.variantId
-                                  ? 'bg-emerald-700 text-white'
-                                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                              className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
+                                isActive
+                                  ? 'bg-emerald-700 border-emerald-600 text-white'
+                                  : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700 hover:border-slate-600'
                               }`}
                             >
-                              {r.label}
+                              <span className="text-xs font-bold leading-tight">{r.label}</span>
+                              <span className={`text-[10px] leading-tight ${isActive ? 'text-emerald-200' : 'text-slate-500'}`}>
+                                ≥{r.minLbs}{r.maxLbs != null ? `–<${r.maxLbs}` : '+'} lbs
+                              </span>
                             </button>
-                          ))}
-                        </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Log and skip button for out-of-range */}
+                      {autoDetect.noMatch && (
+                        <button
+                          onClick={handleSkipOutOfRange}
+                          className="w-full flex items-center justify-center gap-2 h-9 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs text-slate-400 font-medium transition-colors"
+                        >
+                          <Ban className="w-3.5 h-3.5" />
+                          Log out-of-range and skip
+                        </button>
                       )}
                     </div>
                   )}

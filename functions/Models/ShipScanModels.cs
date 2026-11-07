@@ -1015,6 +1015,35 @@ public class InventoryAdjustRequest
     [JsonProperty("reason")]          public string Reason { get; set; } = "correction";
 }
 
+// ─── Out-of-Range Events (CRH-272) ───────────────────────────────────────────
+
+public class OutOfRangeEventEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "";  // productId (or variantId)
+    public string RowKey { get; set; } = "";         // {ticks:D20}-{guid}
+    public double WeightLbs { get; set; }
+    public string ProductTitle { get; set; } = "";
+    public string? VariantId { get; set; }
+    public string? PoId { get; set; }
+    public string? SessionId { get; set; }
+    // "skipped" | "overridden_to:{tierLabel}"
+    public string Action { get; set; } = "skipped";
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+}
+
+public class LogOutOfRangeEventRequest
+{
+    [JsonProperty("productId")]    public string ProductId { get; set; } = "";
+    [JsonProperty("productTitle")] public string ProductTitle { get; set; } = "";
+    [JsonProperty("variantId")]    public string? VariantId { get; set; }
+    [JsonProperty("poId")]         public string? PoId { get; set; }
+    [JsonProperty("sessionId")]    public string? SessionId { get; set; }
+    [JsonProperty("weightLbs")]    public double WeightLbs { get; set; }
+    [JsonProperty("action")]       public string Action { get; set; } = "skipped";
+}
+
 // ─── Operation Jobs & Logs (CRH-271) ─────────────────────────────────────────
 
 // Status lifecycle: queued → claimed → completed | failed → (retry) → dead | dismissed
