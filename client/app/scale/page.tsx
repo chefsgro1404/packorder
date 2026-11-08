@@ -51,6 +51,7 @@ import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { ManualTransformModal } from '@/components/ManualTransformModal';
 import { usePurchaseOrders } from '@/hooks/usePurchaseOrders';
 import { usePrintQueue } from '@/hooks/usePrintQueue';
+import { useOperationQueue } from '@/hooks/useOperationQueue';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelSizeKey } from '@/lib/labelSizes';
 import { InstallBanner } from '@/components/InstallBanner';
@@ -1211,6 +1212,7 @@ export default function ScalePage() {
   const [wasQrScanned, setWasQrScanned] = useState(false);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem, markTransferred } = usePurchaseOrders();
+  const { enqueueAndRun } = useOperationQueue();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
   const isPrinting = useRef(false);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
@@ -1473,42 +1475,56 @@ export default function ScalePage() {
     isCategorical?: boolean,
     mfgDate?: string | null,
   ) => {
+    const printLogPayload = {
+      itemNumber: item.itemNumber,
+      plu: item.found ? item.plu : 'N/A',
+      productTitle: item.productTitle,
+      itemWeight: item.itemWeight,
+      printedAtEst,
+      qrPayload,
+      sn,
+      variantId: item.variantId ?? null,
+      poId: item.poId ?? null,
+      poLineItemId: item.poLineItemId ?? null,
+      vendorName: item.vendorName ?? null,
+      lotNo: lotNo ?? null,
+      expiryDate: expiryDate ?? null,
+      mfgDate: mfgDate ?? null,
+    };
     try {
-      const res = await fetch('/api/scale/print-log', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          itemNumber: item.itemNumber,
-          plu: item.found ? item.plu : 'N/A',
-          productTitle: item.productTitle,
-          itemWeight: item.itemWeight,
-          printedAtEst,
-          qrPayload,
-          sn,
-          variantId: item.variantId ?? null,
-          poId: item.poId ?? null,
-          poLineItemId: item.poLineItemId ?? null,
-          vendorName: item.vendorName ?? null,
-          lotNo: lotNo ?? null,
-          expiryDate: expiryDate ?? null,
-          mfgDate: mfgDate ?? null,
-        }),
-      });
-      if (res.ok) {
-        fetchHistory();
-      } else {
-        console.error('[scale] failed to log printed label:', res.status, await res.text().catch(() => ''));
-      }
+      await enqueueAndRun(
+        'log-label',
+        printLogPayload,
+        `${sn}:log-label:${sn}`,
+        async () => {
+          const res = await fetch('/api/scale/print-log', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(printLogPayload),
+          });
+          if (!res.ok) throw new Error(`print-log ${res.status}: ${await res.text().catch(() => '')}`);
+          fetchHistory();
+        },
+      );
     } catch (err) {
-      console.error('[scale] failed to log printed label:', err, '| item:', item.itemNumber, '| qr:', qrPayload);
+      console.error('[scale] failed to log printed label:', err, '| item:', item.itemNumber, '| sn:', sn);
     }
 
     // Auto-approve PO line item if this print was for one (skipped during bulk print — approved in bulk after)
     if (!skipPoApproval && item.poId && item.poLineItemId) {
+      const poId = item.poId;
+      const poLineItemId = item.poLineItemId;
       try {
-        await approvePoItem(item.poId, item.poLineItemId, 1);
-        const fresh = await refreshLineItems(item.poId);
-        setPoLineItemsCache(prev => ({ ...prev, [item.poId!]: fresh }));
+        await enqueueAndRun(
+          'approve-line-item',
+          { poId, lineItemId: poLineItemId, quantityReceived: 1, forceApprove: false },
+          `${poId}:approve-line-item:${poLineItemId}:${sn}`,
+          async () => {
+            await approvePoItem(poId, poLineItemId, 1);
+            const fresh = await refreshLineItems(poId);
+            setPoLineItemsCache(prev => ({ ...prev, [poId]: fresh }));
+          },
+        );
       } catch (err) {
         console.error('[scale] PO approval failed:', err);
       }
@@ -1539,50 +1555,53 @@ export default function ScalePage() {
 
       if (parentDelta !== 0) {
         try {
-          const adjRes = await fetch('/api/scale/inventory-adjust', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              inventoryItemId: mapping.parentInventoryId,
-              locationId: mapping.parentLocationId,
-              delta: parentDelta,
-              reason: 'correction',
-            }),
-          });
-          if (!adjRes.ok) {
-            const errText = await adjRes.text().catch(() => '');
-            console.error('[scale] inventory adjustment failed:', adjRes.status, errText, '| parentInventoryId:', mapping.parentInventoryId, '| locationId:', mapping.parentLocationId);
-          } else {
-            setLastAdjustment({ delta: parentDelta, parentTitle: mapping.parentProductTitle });
-          }
+          await enqueueAndRun(
+            'adjust-inventory',
+            { inventoryItemId: mapping.parentInventoryId, locationId: mapping.parentLocationId, delta: parentDelta, reason: 'correction' },
+            `${mapping.parentInventoryId}:adjust-inventory:${sn}`,
+            async () => {
+              const adjRes = await fetch('/api/scale/inventory-adjust', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ inventoryItemId: mapping.parentInventoryId, locationId: mapping.parentLocationId, delta: parentDelta, reason: 'correction' }),
+              });
+              if (!adjRes.ok) {
+                const errText = await adjRes.text().catch(() => '');
+                throw new Error(`inventory-adjust ${adjRes.status}: ${errText}`);
+              }
+              setLastAdjustment({ delta: parentDelta, parentTitle: mapping.parentProductTitle });
+            },
+          );
         } catch (err) {
-          console.error('[scale] inventory adjustment failed:', err);
+          console.error('[scale] inventory adjustment failed:', err, '| parentInventoryId:', mapping.parentInventoryId);
         }
 
         // Increase child (transformation output) inventory
         if (mapping.childInventoryItemId && childDelta > 0) {
           try {
-            const childAdjRes = await fetch('/api/scale/inventory-adjust', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                inventoryItemId: mapping.childInventoryItemId,
-                locationId: mapping.parentLocationId,
-                delta: childDelta,
-                reason: 'correction',
-              }),
-            });
-            if (!childAdjRes.ok) {
-              const errText = await childAdjRes.text().catch(() => '');
-              console.error('[scale] child inventory adjustment failed:', childAdjRes.status, errText, '| childInventoryItemId:', mapping.childInventoryItemId);
-            }
+            await enqueueAndRun(
+              'adjust-inventory',
+              { inventoryItemId: mapping.childInventoryItemId, locationId: mapping.parentLocationId, delta: childDelta, reason: 'correction' },
+              `${mapping.childInventoryItemId}:adjust-inventory:${sn}`,
+              async () => {
+                const childAdjRes = await fetch('/api/scale/inventory-adjust', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ inventoryItemId: mapping.childInventoryItemId, locationId: mapping.parentLocationId, delta: childDelta, reason: 'correction' }),
+                });
+                if (!childAdjRes.ok) {
+                  const errText = await childAdjRes.text().catch(() => '');
+                  throw new Error(`child adjust ${childAdjRes.status}: ${errText}`);
+                }
+              },
+            );
           } catch (err) {
             console.error('[scale] child inventory increase failed:', err);
           }
         }
       }
     }
-  }, [fetchHistory, approvePoItem, refreshLineItems]);
+  }, [fetchHistory, approvePoItem, refreshLineItems, enqueueAndRun]);
 
   const handlePoToggle = useCallback(async (poId: string) => {
     setExpandedPoId(prev => (prev === poId ? null : poId));
@@ -1681,31 +1700,41 @@ export default function ScalePage() {
     const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : (isLotMethod ? li.quantityOrdered : printedCount);
     const inventoryDelta = isLotMethod ? li.quantityOrdered : printedCount;
     try {
-      await approvePoItem(po.id, li.id, approvalQty, true, discrepancyQty, discrepancyType);
-      const fresh = await refreshLineItems(po.id);
-      setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
+      await enqueueAndRun(
+        'approve-line-item',
+        { poId: po.id, lineItemId: li.id, quantityReceived: approvalQty, forceApprove: true, discrepancyQty, discrepancyType },
+        `${po.id}:approve-line-item:${li.id}`,
+        async () => {
+          await approvePoItem(po.id, li.id, approvalQty, true, discrepancyQty, discrepancyType);
+          const fresh = await refreshLineItems(po.id);
+          setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
+        },
+      );
     } catch (err) {
       console.error('[scale] PO bulk approval failed:', err);
     }
     if (inventoryItemId && inventoryDelta > 0) {
+      const bulkAdjPayload = { inventoryItemId, locationId: locationId || 'gid://shopify/Location/82125062435', delta: inventoryDelta, reason: 'receiving' };
       try {
-        const adjRes = await fetch('/api/scale/inventory-adjust', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            inventoryItemId,
-            locationId: locationId || 'gid://shopify/Location/82125062435',
-            delta: inventoryDelta,
-            reason: 'receiving',
-          }),
-        });
-        if (adjRes.ok) setBulkInventoryAdjusted(inventoryDelta);
-        else console.error('[bulk] inventory adjust failed:', adjRes.status);
+        await enqueueAndRun(
+          'adjust-inventory',
+          bulkAdjPayload,
+          `${inventoryItemId}:adjust-inventory:bulk-${li.id}`,
+          async () => {
+            const adjRes = await fetch('/api/scale/inventory-adjust', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(bulkAdjPayload),
+            });
+            if (!adjRes.ok) throw new Error(`bulk adjust ${adjRes.status}`);
+            setBulkInventoryAdjusted(inventoryDelta);
+          },
+        );
       } catch (err) {
         console.error('[bulk] inventory adjust error:', err);
       }
     }
-  }, [approvePoItem, refreshLineItems]);
+  }, [approvePoItem, refreshLineItems, enqueueAndRun]);
 
   const handleBulkPrint = useCallback(async (
     modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; inventoryItemId?: string; locationId?: string },
@@ -2306,16 +2335,20 @@ export default function ScalePage() {
         if (invRes.ok) {
           const invData = await invRes.json();
           if (invData?.inventoryItemId && invData?.locationId) {
-            await fetch('/api/scale/inventory-adjust', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                inventoryItemId: invData.inventoryItemId,
-                locationId: invData.locationId,
-                delta: -wastageQty,
-                reason: 'correction',
-              }),
-            });
+            const wastagePayload = { inventoryItemId: invData.inventoryItemId, locationId: invData.locationId, delta: -wastageQty, reason: 'correction' };
+            await enqueueAndRun(
+              'adjust-inventory',
+              wastagePayload,
+              null,
+              async () => {
+                const adjRes = await fetch('/api/scale/inventory-adjust', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(wastagePayload),
+                });
+                if (!adjRes.ok) throw new Error(`wastage adjust ${adjRes.status}`);
+              },
+            );
           }
         }
       } catch { /* non-fatal — session was already written */ }
@@ -2325,7 +2358,7 @@ export default function ScalePage() {
     setWeightRanges([]);
     setAutoDetect(null);
     setCurrentItem(null);
-  }, [processingSession]);
+  }, [processingSession, enqueueAndRun]);
 
   const handleQrScan = useCallback(async (scanned: string) => {
     setQrScanOpen(false);
