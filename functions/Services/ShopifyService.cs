@@ -1202,7 +1202,7 @@ public class ShopifyService
 
         var changes = data["inventoryAdjustQuantities"]?["inventoryAdjustmentGroup"]?["changes"] as JArray;
         return changes?.Count > 0
-            ? changes[0]["quantityAfterChange"]?.ToObject<int>()
+            ? changes[0]["quantityAfterChange"]?.ToObject<int?>()
             : null;
     }
 
