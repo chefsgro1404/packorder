@@ -1703,15 +1703,18 @@ export default function ScalePage() {
         `${po.id}:approve-line-item:${li.id}`,
         async () => {
           await approvePoItem(po.id, li.id, approvalQty, true, discrepancyQty, discrepancyType);
-          const fresh = await refreshLineItems(po.id);
-          setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
         },
       );
     } catch (err) {
       console.error('[scale] PO bulk approval failed:', err);
     }
+    // Always refresh line items after approval (whether the job ran fresh or was idempotent)
+    try {
+      const fresh = await refreshLineItems(po.id);
+      setPoLineItemsCache(prev => ({ ...prev, [po.id]: fresh }));
+    } catch { /* non-fatal */ }
     if (inventoryItemId && inventoryDelta > 0) {
-      const bulkAdjPayload = { inventoryItemId, locationId: locationId || 'gid://shopify/Location/82125062435', delta: inventoryDelta, reason: 'receiving' };
+      const bulkAdjPayload = { inventoryItemId, locationId: locationId || 'gid://shopify/Location/82125062435', delta: inventoryDelta, reason: 'received' };
       try {
         await enqueueAndRun(
           'adjust-inventory',
