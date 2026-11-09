@@ -840,23 +840,23 @@ function PoSuggestions({
                   <div key={groupKey}>
                     {/* Date group header */}
                     <button
-                      className="w-full flex items-center justify-between px-4 py-2 hover:bg-[var(--bg-card)]/30 transition-colors"
+                      className="w-full flex items-center justify-between px-4 py-2.5 bg-[var(--bg-elevated)]/50 hover:bg-[var(--bg-elevated)] transition-colors border-y border-[var(--border-color)]"
                       onClick={() => toggleGroupCollapse(groupKey)}
                     >
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest">{groupKey}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--bg-input)] text-slate-500 border border-[var(--border-color)]">
+                        <span className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-widest">{groupKey}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--bg-card)] text-[var(--text-secondary)] border border-[var(--border-color)] font-medium">
                           {groupPOs.length}
                         </span>
                       </div>
                       {isGroupCollapsed
-                        ? <ChevronDown className="w-3 h-3 text-slate-600" />
-                        : <ChevronUp className="w-3 h-3 text-slate-600" />
+                        ? <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                        : <ChevronUp className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                       }
                     </button>
 
                     {!isGroupCollapsed && (
-                      <div className="flex flex-col divide-y divide-slate-800/60">
+                      <div className="flex flex-col divide-y divide-[var(--border-color)]">
                         {groupPOs.map(po => {
                           const isExpanded = expandedPoId === po.id;
                           const items = lineItemsCache[po.id] ?? [];
