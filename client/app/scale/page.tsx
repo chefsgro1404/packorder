@@ -582,24 +582,41 @@ function PoStatusBadge({ status }: { status: string }) {
 
 // ─── PO date grouping helpers ─────────────────────────────────────────────────
 
-const PO_GROUP_ORDER = ['Today', 'Yesterday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday', 'Older'];
+function getEstToday(): Date {
+  const estStr = new Date().toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const d = new Date(estStr);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
 
 function getPoDateLabel(shopifyCreatedAt: string): string {
-  const date = new Date(shopifyCreatedAt);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const targetDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diffDays = Math.round((today.getTime() - targetDay.getTime()) / (1000 * 60 * 60 * 24));
+  const estStr = new Date(shopifyCreatedAt).toLocaleString('en-US', { timeZone: 'America/New_York' });
+  const dateEst = new Date(estStr);
+  const targetDay = new Date(dateEst.getFullYear(), dateEst.getMonth(), dateEst.getDate());
+  const diffDays = Math.round((getEstToday().getTime() - targetDay.getTime()) / (1000 * 60 * 60 * 24));
   if (diffDays <= 0) return 'Today';
   if (diffDays === 1) return 'Yesterday';
-  if (diffDays <= 6) return date.toLocaleDateString('en-US', { weekday: 'long' });
+  if (diffDays <= 6) return dateEst.toLocaleDateString('en-US', { weekday: 'long' });
   return 'Older';
 }
 
+// Builds sort order dynamically: Today → Yesterday → day-2 → ... → day-6 → Older
+function buildDynamicGroupOrder(): string[] {
+  const order: string[] = ['Today', 'Yesterday'];
+  const estNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  for (let i = 2; i <= 6; i++) {
+    const d = new Date(estNow);
+    d.setDate(d.getDate() - i);
+    order.push(d.toLocaleDateString('en-US', { weekday: 'long' }));
+  }
+  order.push('Older');
+  return order;
+}
+
 function sortPoGroupKeys(keys: string[]): string[] {
+  const order = buildDynamicGroupOrder();
   return [...keys].sort((a, b) => {
-    const ai = PO_GROUP_ORDER.indexOf(a);
-    const bi = PO_GROUP_ORDER.indexOf(b);
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
     return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
   });
 }
