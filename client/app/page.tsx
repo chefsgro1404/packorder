@@ -83,7 +83,7 @@ export default function HomePage() {
         <div className="w-full max-w-sm space-y-8">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 rounded-2xl bg-blue-600/20 flex items-center justify-center mx-auto">
-              <Package className="w-8 h-8 text-blue-400" />
+              <Package className="w-8 h-8 text-blue-600 dark:text-blue-400" />
             </div>
             <h1 className="text-2xl font-bold text-[var(--text-primary)]">
               {process.env.NEXT_PUBLIC_APP_NAME || "ShipScan"}
@@ -145,7 +145,7 @@ export default function HomePage() {
       <div className="w-full max-w-sm space-y-8">
         <div className="text-center space-y-1">
           <div className="w-12 h-12 rounded-xl bg-blue-600/20 flex items-center justify-center mx-auto mb-3">
-            <Package className="w-6 h-6 text-blue-400" />
+            <Package className="w-6 h-6 text-blue-600 dark:text-blue-400" />
           </div>
           <h1 className="text-xl font-bold text-[var(--text-primary)]">
             {process.env.NEXT_PUBLIC_APP_NAME || "ShipScan"}

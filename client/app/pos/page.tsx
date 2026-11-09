@@ -183,7 +183,7 @@ export default function POSPage() {
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
-                  className="w-2 h-2 rounded-full bg-blue-400 animate-bounce"
+                  className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 animate-bounce"
                   style={{ animationDelay: `${i * 150}ms` }}
                 />
               ))}

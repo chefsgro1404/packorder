@@ -53,54 +53,54 @@ export function SyncModal({ open, lastSync, onClose, onSynced, onError }: Props)
       className="fixed inset-0 z-50 bg-black/60 flex items-end sm:items-center justify-center p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-sm p-5 space-y-4">
+      <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl w-full max-w-sm p-5 space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-bold text-slate-100 text-base">Sync Products</h2>
-          <button onClick={onClose} className="text-slate-500 hover:text-slate-300">
+          <h2 className="font-bold text-[var(--text-primary)] text-base">Sync Products</h2>
+          <button onClick={onClose} className="text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-[var(--text-muted)]">
           Clears the product cache and re-syncs fresh data from Shopify.
           Leave filters empty to sync everything.
         </p>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-            Vendor <span className="text-slate-600 normal-case">(optional, comma-separated)</span>
+          <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+            Vendor <span className="text-[var(--text-muted)] normal-case">(optional, comma-separated)</span>
           </label>
           <input
             type="text"
             value={vendors}
             onChange={(e) => setVendors(e.target.value)}
             placeholder="e.g. Apple, Samsung"
-            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-xs font-medium text-slate-400 uppercase tracking-wide">
-            Tag <span className="text-slate-600 normal-case">(optional, comma-separated)</span>
+          <label className="text-xs font-medium text-[var(--text-muted)] uppercase tracking-wide">
+            Tag <span className="text-[var(--text-muted)] normal-case">(optional, comma-separated)</span>
           </label>
           <input
             type="text"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="e.g. seasonal, clearance"
-            className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-100 placeholder-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+            className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
         </div>
 
         {formattedLastSync && (
-          <p className="text-xs text-slate-500">Last synced: {formattedLastSync}</p>
+          <p className="text-xs text-[var(--text-muted)]">Last synced: {formattedLastSync}</p>
         )}
 
         <div className="flex gap-3 pt-1">
           <button
             onClick={onClose}
             disabled={syncing}
-            className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm font-medium text-slate-300 transition-colors"
+            className="flex-1 py-3 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] rounded-xl text-sm font-medium text-[var(--text-secondary)] transition-colors"
           >
             Cancel
           </button>

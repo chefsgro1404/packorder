@@ -10,10 +10,10 @@ interface OrderCardProps {
 }
 
 const fulfillmentColors: Record<string, string> = {
-  FULFILLED: "bg-green-900/50 text-green-400 border-green-800",
-  UNFULFILLED: "bg-slate-800 text-slate-400 border-slate-700",
-  PARTIAL: "bg-yellow-900/50 text-yellow-400 border-yellow-800",
-  IN_PROGRESS: "bg-blue-900/50 text-blue-400 border-blue-800",
+  FULFILLED: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/50 dark:text-green-400 dark:border-green-800",
+  UNFULFILLED: "bg-[var(--bg-elevated)] text-[var(--text-muted)] border-[var(--border-color)]",
+  PARTIAL: "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-900/50 dark:text-yellow-400 dark:border-yellow-800",
+  IN_PROGRESS: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/50 dark:text-blue-400 dark:border-blue-800",
 };
 
 export function OrderCard({ order, onFulfill, loading }: OrderCardProps) {
@@ -22,12 +22,12 @@ export function OrderCard({ order, onFulfill, loading }: OrderCardProps) {
   const carrier = order.trackingCarrier?.value;
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-2xl p-4 animate-in slide-in-from-bottom-4 duration-300 space-y-4">
+    <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 animate-in slide-in-from-bottom-4 duration-300 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-xl font-bold text-slate-100">{order.name}</h3>
+          <h3 className="text-xl font-bold text-[var(--text-primary)]">{order.name}</h3>
           {order.shippingAddress && (
-            <div className="flex items-center gap-1.5 mt-1 text-sm text-slate-400">
+            <div className="flex items-center gap-1.5 mt-1 text-sm text-[var(--text-secondary)]">
               <MapPin className="w-3.5 h-3.5" />
               <span>{order.shippingAddress.name} — {order.shippingAddress.city}, {order.shippingAddress.provinceCode}</span>
             </div>
@@ -41,26 +41,26 @@ export function OrderCard({ order, onFulfill, loading }: OrderCardProps) {
       <div className="space-y-1">
         {order.lineItems.edges.map(({ node }) => (
           <div key={node.id} className="flex items-center justify-between text-sm">
-            <div className="flex items-center gap-2 text-slate-300">
-              <Package className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+              <Package className="w-3.5 h-3.5 text-[var(--text-muted)] shrink-0" />
               <span className="truncate">{node.name}</span>
             </div>
-            <span className="text-slate-400 ml-2 shrink-0">×{node.quantity}</span>
+            <span className="text-[var(--text-muted)] ml-2 shrink-0">×{node.quantity}</span>
           </div>
         ))}
       </div>
 
       {trackingNumber ? (
-        <div className="bg-slate-800 rounded-xl p-3 space-y-1">
-          <div className="flex items-center gap-2 text-xs text-slate-400 uppercase tracking-wide font-medium">
+        <div className="bg-[var(--bg-elevated)] rounded-xl p-3 space-y-1">
+          <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] uppercase tracking-wide font-medium">
             <Truck className="w-3.5 h-3.5" />
             <span>Tracking</span>
           </div>
-          <p className="font-mono text-sm text-blue-300 break-all">{trackingNumber}</p>
-          {carrier && <p className="text-xs text-slate-500">{carrier}</p>}
+          <p className="font-mono text-sm text-blue-600 dark:text-blue-300 break-all">{trackingNumber}</p>
+          {carrier && <p className="text-xs text-[var(--text-muted)]">{carrier}</p>}
         </div>
       ) : (
-        <div className="bg-orange-950/50 border border-orange-900 rounded-xl p-3 text-sm text-orange-400">
+        <div className="bg-orange-50 border border-orange-200 dark:bg-orange-950/50 dark:border-orange-900 rounded-xl p-3 text-sm text-orange-700 dark:text-orange-400">
           No tracking number yet — create a label in XPS first.
         </div>
       )}

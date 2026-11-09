@@ -75,7 +75,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
           <div>
             <p className="text-sm font-bold text-[var(--text-primary)]">Select Output Product</p>
             <p className="text-xs text-slate-400 mt-0.5">
-              Source: <span className="text-violet-300">{parentProductTitle}</span>
+              Source: <span className="text-violet-700 dark:text-violet-300">{parentProductTitle}</span>
             </p>
           </div>
           <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-colors">
@@ -129,15 +129,15 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
 
         {/* Chosen product */}
         {chosen && (
-          <div className="flex items-center gap-2 bg-violet-950/40 border border-violet-800/60 rounded-xl px-3 py-2.5">
-            <ArrowRight className="w-4 h-4 text-violet-400 flex-shrink-0" />
+          <div className="flex items-center gap-2 bg-violet-50 border border-violet-200 dark:bg-violet-950/40 dark:border-violet-800/60 rounded-xl px-3 py-2.5">
+            <ArrowRight className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0" />
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-violet-200 leading-snug">{chosen.product.productTitle}</p>
+              <p className="text-sm font-semibold text-violet-900 dark:text-violet-200 leading-snug">{chosen.product.productTitle}</p>
               {chosen.variant.variantTitle && chosen.variant.variantTitle !== 'Default Title' && (
-                <p className="text-xs text-violet-400">{chosen.variant.variantTitle}</p>
+                <p className="text-xs text-violet-700 dark:text-violet-400">{chosen.variant.variantTitle}</p>
               )}
             </div>
-            <button onClick={() => setChosen(null)} className="w-6 h-6 flex items-center justify-center rounded text-violet-500 hover:text-violet-200 transition-colors">
+            <button onClick={() => setChosen(null)} className="w-6 h-6 flex items-center justify-center rounded text-violet-500 hover:text-violet-800 dark:hover:text-violet-200 transition-colors">
               <X className="w-3.5 h-3.5" />
             </button>
           </div>

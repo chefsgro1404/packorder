@@ -2762,11 +2762,11 @@ export default function ScalePage() {
                     onClick={() => router.push('/scale/products')}
                     className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
                   >
-                    <div className="w-8 h-8 rounded-lg bg-blue-500/40 flex items-center justify-center flex-shrink-0">
-                      <ListFilter className="w-4 h-4 text-[var(--text-primary)]" />
+                    <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0">
+                      <ListFilter className="w-4 h-4 text-white" />
                     </div>
                     <div className="text-left">
-                      <p className="text-sm font-bold text-[var(--text-primary)] leading-tight">Select Product</p>
+                      <p className="text-sm font-bold text-white leading-tight">Select Product</p>
                       <p className="text-xs text-blue-100 leading-tight">Browse or search the catalog</p>
                     </div>
                   </button>
@@ -2775,22 +2775,22 @@ export default function ScalePage() {
                   {!qrScanOpen ? (
                     <button
                       onClick={() => { setQrScanError(null); setQrScanOpen(true); }}
-                      className="w-full flex items-center gap-3 bg-amber-950/60 hover:bg-amber-900/50 border border-amber-800/40 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
+                      className="w-full flex items-center gap-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 dark:bg-amber-950/60 dark:hover:bg-amber-900/50 dark:border-amber-800/40 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
                     >
-                      <div className="w-8 h-8 rounded-lg bg-amber-900/50 flex items-center justify-center flex-shrink-0">
-                        <QrCode className="w-4 h-4 text-amber-400" />
+                      <div className="w-8 h-8 rounded-lg bg-amber-200 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
+                        <QrCode className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       </div>
                       <div className="text-left">
-                        <p className="text-sm font-bold text-amber-200 leading-tight">Process Label</p>
-                        <p className="text-xs text-amber-400/70 leading-tight">Scan a printed label to transform or reprocess</p>
+                        <p className="text-sm font-bold text-amber-900 dark:text-amber-200 leading-tight">Process Label</p>
+                        <p className="text-xs text-amber-700/70 dark:text-amber-400/70 leading-tight">Scan a printed label to transform or reprocess</p>
                       </div>
                     </button>
                   ) : (
-                    <div className="flex flex-col gap-2 rounded-xl border border-amber-800/40 bg-amber-950/30 px-3 py-3">
+                    <div className="flex flex-col gap-2 rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <QrCode className="w-3.5 h-3.5 text-amber-400" />
-                          <p className="text-sm font-semibold text-amber-200">Scan the label QR code</p>
+                          <QrCode className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                          <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">Scan the label QR code</p>
                         </div>
                         <button
                           onClick={() => { setQrScanOpen(false); setQrScanError(null); }}

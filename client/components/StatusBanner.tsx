@@ -13,10 +13,10 @@ interface StatusBannerProps {
 }
 
 const styles: Record<BannerType, string> = {
-  success: "bg-green-900/80 border-green-500 text-green-100",
-  error: "bg-red-900/80 border-red-500 text-red-100",
-  warning: "bg-orange-900/80 border-orange-500 text-orange-100",
-  info: "bg-blue-900/80 border-blue-500 text-blue-100",
+  success: "bg-green-50 border-green-400 text-green-800 dark:bg-green-900/80 dark:border-green-500 dark:text-green-100",
+  error: "bg-red-50 border-red-400 text-red-800 dark:bg-red-900/80 dark:border-red-500 dark:text-red-100",
+  warning: "bg-orange-50 border-orange-400 text-orange-800 dark:bg-orange-900/80 dark:border-orange-500 dark:text-orange-100",
+  info: "bg-blue-50 border-blue-400 text-blue-800 dark:bg-blue-900/80 dark:border-blue-500 dark:text-blue-100",
 };
 
 const icons: Record<BannerType, React.ReactNode> = {

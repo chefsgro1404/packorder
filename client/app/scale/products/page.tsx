@@ -199,23 +199,23 @@ export default function ScaleProductsPage() {
   const sortedProducts = [...products].sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   return (
-    <main className="min-h-screen bg-slate-950 pb-safe">
+    <main className="min-h-screen bg-[var(--bg-page)] pb-safe">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-slate-950/95 backdrop-blur border-b border-slate-800/60 px-4 py-3 flex items-center gap-3">
+      <div className="sticky top-0 z-10 bg-[var(--bg-page)]/95 backdrop-blur border-b border-[var(--border-color)] px-4 py-3 flex items-center gap-3">
         <button
           onClick={() => router.push('/scale')}
-          className="w-9 h-9 flex items-center justify-center rounded-xl bg-slate-900 hover:bg-slate-800 transition-colors flex-shrink-0"
+          className="w-9 h-9 flex items-center justify-center rounded-xl bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] transition-colors flex-shrink-0"
           aria-label="Back to Scale & Print"
         >
-          <ArrowLeft className="w-4 h-4 text-slate-400" />
+          <ArrowLeft className="w-4 h-4 text-[var(--text-muted)]" />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-base font-bold text-slate-100 leading-tight">Select Product</h1>
-          <p className="text-xs text-slate-500 leading-tight">Search the catalog or pick a saved product</p>
+          <h1 className="text-base font-bold text-[var(--text-primary)] leading-tight">Select Product</h1>
+          <p className="text-xs text-[var(--text-muted)] leading-tight">Search the catalog or pick a saved product</p>
         </div>
         <button
           onClick={openAddForm}
-          className="flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 transition-colors px-3 py-2 rounded-xl text-sm font-semibold"
+          className="flex items-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] transition-colors px-3 py-2 rounded-xl text-sm font-semibold text-[var(--text-secondary)]"
         >
           <Plus className="w-4 h-4" /> Slot Only
         </button>
@@ -223,43 +223,43 @@ export default function ScaleProductsPage() {
 
       <div className="px-4 py-5 flex flex-col gap-4">
         {error && (
-          <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5">
-            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-            <p className="text-sm text-rose-300 flex-1">{error}</p>
+          <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2.5">
+            <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+            <p className="text-sm text-rose-700 dark:text-rose-300 flex-1">{error}</p>
             <button onClick={() => setError(null)} aria-label="Dismiss">
-              <X className="w-4 h-4 text-rose-400" />
+              <X className="w-4 h-4 text-rose-500 dark:text-rose-400" />
             </button>
           </div>
         )}
 
         {/* Catalog search */}
-        <div className="border border-slate-800 rounded-2xl bg-slate-900 p-4 flex flex-col gap-3">
+        <div className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-card)] p-4 flex flex-col gap-3">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
             <input
               value={query}
               onChange={(e) => handleQueryChange(e.target.value)}
               placeholder="Search the synced catalog by product title or SKU…"
-              className="w-full pl-9 pr-3 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+              className="w-full pl-9 pr-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-600"
             />
           </div>
           {(searchLoading || searchResults.length > 0 || query.trim().length >= 2) && (
             <div className="max-h-72 overflow-y-auto space-y-1.5">
-              {searchLoading && <p className="text-xs text-slate-500 text-center py-4">Searching…</p>}
+              {searchLoading && <p className="text-xs text-[var(--text-muted)] text-center py-4">Searching…</p>}
               {!searchLoading && query.trim().length >= 2 && searchResults.length === 0 && (
-                <p className="text-xs text-slate-500 text-center py-4">No matches</p>
+                <p className="text-xs text-[var(--text-muted)] text-center py-4">No matches</p>
               )}
               {searchResults.map((p) => (
-                <div key={p.productId} className="bg-slate-950 border border-slate-800 rounded-lg p-2">
-                  <p className="text-xs font-medium text-slate-300 px-1 pb-1">{p.productTitle}</p>
+                <div key={p.productId} className="bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg p-2">
+                  <p className="text-xs font-medium text-[var(--text-secondary)] px-1 pb-1">{p.productTitle}</p>
                   {p.variants.map((v) => (
                     <button
                       key={v.variantId}
                       onClick={() => router.push(`/scale/products/${stripGid(v.variantId)}`)}
-                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-slate-900 text-left"
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--bg-elevated)] text-left"
                     >
-                      <span className="text-xs text-slate-400 truncate">{v.variantTitle}</span>
-                      <span className="text-[10px] font-mono text-slate-500 shrink-0">{v.barcode || 'no barcode'}</span>
+                      <span className="text-xs text-[var(--text-secondary)] truncate">{v.variantTitle}</span>
+                      <span className="text-[10px] font-mono text-[var(--text-muted)] shrink-0">{v.barcode || 'no barcode'}</span>
                     </button>
                   ))}
                 </div>
@@ -270,18 +270,18 @@ export default function ScaleProductsPage() {
 
         {/* Legacy slot-only add/edit form */}
         {showForm && (
-          <div className="border border-slate-800 rounded-2xl bg-slate-900 p-4 flex flex-col gap-3">
+          <div className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-card)] p-4 flex flex-col gap-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-200">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
                 {editingItemNumber ? `Edit Item ${editingItemNumber}` : 'Map a Scale Slot'}
               </h2>
               <button onClick={closeForm} aria-label="Cancel">
-                <X className="w-4 h-4 text-slate-500" />
+                <X className="w-4 h-4 text-[var(--text-muted)]" />
               </button>
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
+              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
                 Scale Item Number
               </label>
               <input
@@ -290,23 +290,23 @@ export default function ScaleProductsPage() {
                 value={form.itemNumber}
                 onChange={(e) => setForm((f) => ({ ...f, itemNumber: e.target.value }))}
                 placeholder="e.g. 12345"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">PLU</label>
+              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">PLU</label>
               <input
                 type="text"
                 value={form.plu}
                 onChange={(e) => setForm((f) => ({ ...f, plu: e.target.value }))}
                 placeholder="e.g. 4011"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
+              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
                 Product Title
               </label>
               <input
@@ -314,12 +314,12 @@ export default function ScaleProductsPage() {
                 value={form.productTitle}
                 onChange={(e) => setForm((f) => ({ ...f, productTitle: e.target.value }))}
                 placeholder="e.g. Ground Beef 80/20"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
+              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
                 Price per lb ($)
               </label>
               <input
@@ -329,14 +329,14 @@ export default function ScaleProductsPage() {
                 value={form.pricePerLb}
                 onChange={(e) => setForm((f) => ({ ...f, pricePerLb: e.target.value }))}
                 placeholder="0.00"
-                className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
             <div className="flex gap-2 mt-1">
               <button
                 onClick={closeForm}
-                className="flex-1 h-11 flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-700 rounded-xl text-sm text-slate-300 transition-all"
+                className="flex-1 h-11 flex items-center justify-center gap-2 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] rounded-xl text-sm text-[var(--text-secondary)] transition-all"
               >
                 Cancel
               </button>
@@ -353,33 +353,33 @@ export default function ScaleProductsPage() {
         )}
 
         {/* Mapped/saved products */}
-        <div className="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950">
+        <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-card)]">
           {loading ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <RefreshCw className="w-5 h-5 text-slate-700 animate-spin" />
-              <p className="text-sm text-slate-600">Loading products…</p>
+              <RefreshCw className="w-5 h-5 text-[var(--text-muted)] animate-spin" />
+              <p className="text-sm text-[var(--text-muted)]">Loading products…</p>
             </div>
           ) : sortedProducts.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <Package className="w-5 h-5 text-slate-700" />
-              <p className="text-sm text-slate-600">No products saved yet — search above to get started</p>
+              <Package className="w-5 h-5 text-[var(--text-muted)]" />
+              <p className="text-sm text-[var(--text-muted)]">No products saved yet — search above to get started</p>
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-slate-800/60">
+            <div className="flex flex-col divide-y divide-[var(--border-color)]">
               {sortedProducts.map((p) => {
                 const key = p.variantId ?? p.itemNumber ?? '';
                 return (
                   <div
                     key={key}
                     onClick={() => p.variantId && router.push(`/scale/products/${stripGid(p.variantId)}`)}
-                    className={`flex items-center gap-3 px-4 py-3 ${p.variantId ? 'cursor-pointer hover:bg-slate-900/60' : ''}`}
+                    className={`flex items-center gap-3 px-4 py-3 ${p.variantId ? 'cursor-pointer hover:bg-[var(--bg-elevated)]' : ''}`}
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-200 truncate">{p.productTitle}</p>
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">{p.productTitle}</p>
                       {p.variantTitle && p.variantTitle !== 'Default Title' && (
-                        <p className="text-xs text-slate-400 truncate">{p.variantTitle}</p>
+                        <p className="text-xs text-[var(--text-secondary)] truncate">{p.variantTitle}</p>
                       )}
-                      <p className="text-xs text-slate-500">
+                      <p className="text-xs text-[var(--text-muted)]">
                         {p.itemNumber ? `Item ${p.itemNumber} · ` : ''}PLU {p.plu} · ${p.pricePerLb.toFixed(2)}/lb
                       </p>
                     </div>
@@ -388,7 +388,7 @@ export default function ScaleProductsPage() {
                       disabled={pinningKey === key}
                       aria-label={p.pinned ? `Unpin ${p.productTitle}` : `Pin ${p.productTitle}`}
                       className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${
-                        p.pinned ? 'text-amber-400 hover:bg-amber-950/30' : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800'
+                        p.pinned ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
                       }`}
                     >
                       {p.pinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
@@ -397,7 +397,7 @@ export default function ScaleProductsPage() {
                       <button
                         onClick={(e) => { e.stopPropagation(); openEditForm(p); }}
                         aria-label={`Edit ${p.productTitle}`}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-200 hover:bg-slate-800 transition-colors"
+                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
                       >
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -406,7 +406,7 @@ export default function ScaleProductsPage() {
                       onClick={(e) => { e.stopPropagation(); handleDelete(p); }}
                       disabled={deletingKey === key}
                       aria-label={`Delete ${p.productTitle}`}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 transition-colors disabled:opacity-40"
+                      className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors disabled:opacity-40"
                     >
                       {deletingKey === key ? (
                         <RefreshCw className="w-3.5 h-3.5 animate-spin" />

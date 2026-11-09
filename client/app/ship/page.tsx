@@ -777,7 +777,7 @@ export default function ShipPage() {
         <div className="flex-1 flex items-end">
           <div className="w-full bg-[var(--bg-card)] border-t border-[var(--border-color)] rounded-t-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
-              <User className="w-6 h-6 text-green-400 shrink-0" />
+              <User className="w-6 h-6 text-green-600 dark:text-green-400 shrink-0" />
               <div>
                 <h2 className="text-lg font-bold text-[var(--text-primary)]">Who is shipping today?</h2>
                 <p className="text-sm text-slate-400">Your name will be recorded on each shipment</p>
@@ -830,7 +830,7 @@ export default function ShipPage() {
         <div className="flex-1 flex items-end">
           <div className="w-full bg-[var(--bg-card)] border-t border-[var(--border-color)] rounded-t-2xl p-6 space-y-4">
             <div className="flex items-center gap-3">
-              <User className="w-6 h-6 text-green-400 shrink-0" />
+              <User className="w-6 h-6 text-green-600 dark:text-green-400 shrink-0" />
               <div>
                 <h2 className="text-lg font-bold text-[var(--text-primary)]">Continue as {staffName}?</h2>
                 <p className="text-sm text-slate-400">This name will be recorded on shipments this session</p>
@@ -931,7 +931,7 @@ export default function ShipPage() {
                         {pendingQr?.weightGrams != null && ` · ${formatWeightGrams(pendingQr.weightGrams)}`}
                       </p>
                     </div>
-                    <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
+                    <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0" />
                   </div>
                 )}
               </div>
@@ -954,25 +954,25 @@ export default function ShipPage() {
             </div>
           ) : (
             <div className="flex flex-col gap-3">
-              <div className="bg-amber-900/30 border border-amber-700 rounded-xl p-4 space-y-2">
+              <div className="bg-amber-50 border border-amber-200 dark:bg-amber-900/30 dark:border-amber-700 rounded-xl p-4 space-y-2">
                 <div className="flex items-start gap-2">
-                  <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-amber-200">
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
                       {extraContext === "exceeded"
                         ? `${pendingItem?.productTitle ?? "This item"} is already fully packed (${pendingItem?.quantityShipped}/${pendingItem?.quantityExpected})`
                         : pendingQr
                         ? `"${pendingQr.productTitle}" is not in this order`
                         : "This item is not in this order"}
                     </p>
-                    <p className="text-xs text-amber-300/80 mt-0.5">
+                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-0.5">
                       {pendingQr ? (
                         <>PLU <span className="font-mono">{pendingQr.plu}</span> · {pendingQr.itemWeight}</>
                       ) : (
                         <>Scanned barcode: <span className="font-mono">{pendingBarcode}</span></>
                       )}
                     </p>
-                    <p className="text-xs text-amber-300/80 mt-1">
+                    <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-1">
                       Pack one more anyway? A reason is required — it will be recorded as an extra item.
                     </p>
                   </div>
@@ -1068,7 +1068,7 @@ export default function ShipPage() {
           {/* Tracking info */}
           <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-4 space-y-2">
             <div className="flex items-center gap-2">
-              <Truck className="w-4 h-4 text-green-400 shrink-0" />
+              <Truck className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
               <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Tracking</span>
             </div>
             <div className="flex items-center justify-between gap-2">
@@ -1078,7 +1078,7 @@ export default function ShipPage() {
                   href={selectedFulfillment.trackingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-green-400 shrink-0"
+                  className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 shrink-0"
                 >
                   Track <ExternalLink className="w-3 h-3" />
                 </a>
@@ -1123,7 +1123,7 @@ export default function ShipPage() {
               <span className="text-sm font-medium text-[var(--text-secondary)]">
                 {shipped} of {expected} items scanned
               </span>
-              <span className={`text-sm font-bold ${allDone ? "text-green-400" : "text-yellow-400"}`}>
+              <span className={`text-sm font-bold ${allDone ? "text-green-600 dark:text-green-400" : "text-yellow-600 dark:text-yellow-400"}`}>
                 {pct}%
               </span>
             </div>
@@ -1180,7 +1180,7 @@ export default function ShipPage() {
                 <div
                   key={li.fulfillmentLineItemId}
                   className={`bg-[var(--bg-card)] border rounded-xl p-3 flex items-center gap-3 transition-colors ${
-                    done ? "border-green-800/50 bg-green-950/20" : "border-[var(--border-color)]"
+                    done ? "border-green-200 bg-green-50 dark:border-green-800/50 dark:bg-green-950/20" : "border-[var(--border-color)]"
                   }`}
                 >
                   {li.imageUrl ? (
@@ -1205,7 +1205,7 @@ export default function ShipPage() {
                       <span
                         className={`text-xs font-mono px-2 py-0.5 rounded-full border ${
                           done
-                            ? "bg-green-900/40 border-green-700 text-green-300"
+                            ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/40 dark:border-green-700 dark:text-green-300"
                             : "bg-[var(--bg-input)] border-slate-600 text-[var(--text-secondary)]"
                         }`}
                       >
@@ -1215,7 +1215,7 @@ export default function ShipPage() {
                         <span className="text-xs text-slate-600 truncate">{li.sku}</span>
                       )}
                       {li.isExtra && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-700 text-amber-300">
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 dark:bg-amber-900/40 dark:border-amber-700 dark:text-amber-300">
                           Extra
                         </span>
                       )}
@@ -1226,7 +1226,7 @@ export default function ShipPage() {
                       )}
                     </div>
                     {li.isExtra && li.addedReason && (
-                      <p className="text-xs text-amber-400/80 mt-1 truncate">
+                      <p className="text-xs text-amber-700/80 dark:text-amber-400/80 mt-1 truncate">
                         {li.addedReason}{li.addedBy ? ` — ${li.addedBy}` : ""}
                       </p>
                     )}
@@ -1249,7 +1249,7 @@ export default function ShipPage() {
                         Packed?
                       </button>
                     )}
-                    {done && <CheckCircle2 className="w-5 h-5 text-green-400" />}
+                    {done && <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400" />}
                   </div>
                 </div>
               );
@@ -1274,7 +1274,7 @@ export default function ShipPage() {
             className={`w-full py-3 font-semibold rounded-xl transition-colors ${
               allDone
                 ? "bg-[var(--bg-elevated)] hover:bg-[var(--bg-elevated)] text-[var(--text-primary)]"
-                : "bg-orange-900/60 hover:bg-orange-800/60 border border-orange-700 text-orange-200"
+                : "bg-orange-100 hover:bg-orange-200 border border-orange-300 text-orange-800 dark:bg-orange-900/60 dark:hover:bg-orange-800/60 dark:border-orange-700 dark:text-orange-200"
             }`}
           >
             {allDone ? "Mark as Shipped" : "Mark as Shipped (Incomplete)"}
@@ -1296,11 +1296,11 @@ export default function ShipPage() {
               </h2>
 
               {!allDone && (
-                <div className="flex items-start gap-3 bg-orange-900/30 border border-orange-700 rounded-xl p-3">
-                  <AlertTriangle className="w-5 h-5 text-orange-400 shrink-0 mt-0.5" />
-                  <div className="text-sm text-orange-200">
+                <div className="flex items-start gap-3 bg-orange-50 border border-orange-200 dark:bg-orange-900/30 dark:border-orange-700 rounded-xl p-3">
+                  <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                  <div className="text-sm text-orange-800 dark:text-orange-200">
                     <p className="font-medium">Not all items scanned</p>
-                    <p className="text-orange-300 mt-0.5">
+                    <p className="text-orange-700 dark:text-orange-300 mt-0.5">
                       {expected - shipped} item{expected - shipped !== 1 ? "s" : ""} missing.
                       A reason is required.
                     </p>
@@ -1372,8 +1372,8 @@ export default function ShipPage() {
               <span className="font-mono text-sm text-[var(--text-primary)]">{selectedHistory.trackingNumber}</span>
               <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                 selectedHistory.isManualComplete
-                  ? "bg-orange-900/40 border-orange-700 text-orange-300"
-                  : "bg-green-900/40 border-green-700 text-green-300"
+                  ? "bg-orange-50 border-orange-200 text-orange-700 dark:bg-orange-900/40 dark:border-orange-700 dark:text-orange-300"
+                  : "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/40 dark:border-green-700 dark:text-green-300"
               }`}>
                 {selectedHistory.isManualComplete ? "Incomplete" : "Complete"}
               </span>
@@ -1385,7 +1385,7 @@ export default function ShipPage() {
               </p>
             )}
             {selectedHistory.isManualComplete && selectedHistory.manualReason && (
-              <p className="text-xs text-orange-300 bg-orange-900/20 border border-orange-800 rounded-lg px-3 py-2">
+              <p className="text-xs text-orange-700 bg-orange-50 border border-orange-200 dark:text-orange-300 dark:bg-orange-900/20 dark:border-orange-800 rounded-lg px-3 py-2">
                 Reason: {selectedHistory.manualReason}
               </p>
             )}
@@ -1428,7 +1428,7 @@ export default function ShipPage() {
                 <div
                   key={li.fulfillmentLineItemId}
                   className={`bg-[var(--bg-card)] border rounded-xl overflow-hidden ${
-                    done ? "border-green-800/50" : "border-[var(--border-color)]"
+                    done ? "border-green-200 dark:border-green-800/50" : "border-[var(--border-color)]"
                   }`}
                 >
                   <button
@@ -1462,7 +1462,7 @@ export default function ShipPage() {
                     </div>
                     <span className={`text-xs font-mono px-2 py-0.5 rounded-full border shrink-0 ${
                       done
-                        ? "bg-green-900/40 border-green-700 text-green-300"
+                        ? "bg-green-50 border-green-200 text-green-700 dark:bg-green-900/40 dark:border-green-700 dark:text-green-300"
                         : "bg-[var(--bg-input)] border-slate-600 text-[var(--text-secondary)]"
                     }`}>
                       {li.quantityShipped}/{li.quantityExpected}
@@ -1487,14 +1487,14 @@ export default function ShipPage() {
                             {scan.isVariableWeight && scan.weightGrams != null && (
                               <>
                                 <span className="text-slate-600">·</span>
-                                <span className="text-purple-400">{formatWeightGrams(scan.weightGrams)}</span>
+                                <span className="text-purple-600 dark:text-purple-400">{formatWeightGrams(scan.weightGrams)}</span>
                               </>
                             )}
                             {scan.isRemoval && (
-                              <span className="text-red-400">(removed)</span>
+                              <span className="text-red-600 dark:text-red-400">(removed)</span>
                             )}
                             {scan.isExtra && (
-                              <span className="text-amber-400">
+                              <span className="text-amber-700 dark:text-amber-400">
                                 (extra{scan.extraReason ? `: ${scan.extraReason}` : ""})
                               </span>
                             )}
@@ -1521,7 +1521,7 @@ export default function ShipPage() {
                 {[0, 1, 2].map((i) => (
                   <div
                     key={i}
-                    className="w-2 h-2 rounded-full bg-green-400 animate-bounce"
+                    className="w-2 h-2 rounded-full bg-green-600 dark:bg-green-400 animate-bounce"
                     style={{ animationDelay: `${i * 150}ms` }}
                   />
                 ))}
@@ -1724,7 +1724,7 @@ export default function ShipPage() {
                 {filteredFulfillments.length} pending shipment{filteredFulfillments.length !== 1 ? "s" : ""}
               </span>
               <div className="flex items-center gap-2">
-                {syncLoading && <span className="text-green-400">Syncing…</span>}
+                {syncLoading && <span className="text-green-600 dark:text-green-400">Syncing…</span>}
                 <button
                   onClick={() => setOrderSort((s) => (s === "asc" ? "desc" : "asc"))}
                   className="inline-flex items-center gap-1 px-2 py-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg text-slate-400 hover:text-[var(--text-primary)] transition-colors"
@@ -1752,7 +1752,7 @@ export default function ShipPage() {
                   {[0, 1, 2].map((i) => (
                     <div
                       key={i}
-                      className="w-2 h-2 rounded-full bg-green-400 animate-bounce"
+                      className="w-2 h-2 rounded-full bg-green-600 dark:bg-green-400 animate-bounce"
                       style={{ animationDelay: `${i * 150}ms` }}
                     />
                   ))}
@@ -1797,13 +1797,13 @@ export default function ShipPage() {
                           <span
                             className={`text-xs px-2 py-0.5 rounded-full border font-medium ${
                               f.status === "partial"
-                                ? "bg-yellow-900/40 border-yellow-700 text-yellow-300"
+                                ? "bg-yellow-50 border-yellow-300 text-yellow-700 dark:bg-yellow-900/40 dark:border-yellow-700 dark:text-yellow-300"
                                 : "bg-[var(--bg-input)] border-[var(--border-color)] text-slate-400"
                             }`}
                           >
                             {f.status}
                           </span>
-                          {f.notes && <StickyNote className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                          {f.notes && <StickyNote className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />}
                         </div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className="font-mono text-xs text-slate-400 truncate">{f.trackingNumber}</span>
@@ -1949,7 +1949,7 @@ export default function ShipPage() {
                   {[0, 1, 2].map((i) => (
                     <div
                       key={i}
-                      className="w-2 h-2 rounded-full bg-green-400 animate-bounce"
+                      className="w-2 h-2 rounded-full bg-green-600 dark:bg-green-400 animate-bounce"
                       style={{ animationDelay: `${i * 150}ms` }}
                     />
                   ))}
@@ -1976,15 +1976,15 @@ export default function ShipPage() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-[var(--text-primary)] font-bold">{f.orderName}</span>
                           {f.isManualComplete ? (
-                            <span className="text-xs px-2 py-0.5 rounded-full border bg-orange-900/40 border-orange-700 text-orange-300 font-medium">
+                            <span className="text-xs px-2 py-0.5 rounded-full border bg-orange-50 border-orange-300 text-orange-700 dark:bg-orange-900/40 dark:border-orange-700 dark:text-orange-300 font-medium">
                               Incomplete
                             </span>
                           ) : (
-                            <span className="text-xs px-2 py-0.5 rounded-full border bg-green-900/40 border-green-700 text-green-300 font-medium">
+                            <span className="text-xs px-2 py-0.5 rounded-full border bg-green-50 border-green-300 text-green-700 dark:bg-green-900/40 dark:border-green-700 dark:text-green-300 font-medium">
                               Complete
                             </span>
                           )}
-                          {f.notes && <StickyNote className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                          {f.notes && <StickyNote className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />}
                         </div>
                         <span className="font-mono text-xs text-slate-400">{f.trackingNumber}</span>
                       </div>

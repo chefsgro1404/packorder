@@ -650,29 +650,29 @@ export default function ScaleSettingsPage() {
             </p>
 
             {fullSyncError && (
-              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <p className="text-xs text-rose-300">{fullSyncError}</p>
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-700 dark:text-rose-300">{fullSyncError}</p>
               </div>
             )}
 
             {fullSyncResult && (
               <div className={`border rounded-xl px-3 py-2.5 flex flex-col gap-1.5 ${
-                fullSyncResult.ok ? 'bg-emerald-950/40 border-emerald-900' : 'bg-amber-950/40 border-amber-900'
+                fullSyncResult.ok ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900' : 'bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-900'
               }`}>
-                <p className={`text-xs font-semibold ${fullSyncResult.ok ? 'text-emerald-300' : 'text-amber-300'}`}>
+                <p className={`text-xs font-semibold ${fullSyncResult.ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
                   {fullSyncResult.ok ? 'Sync complete' : 'Sync completed with errors'}
                 </p>
                 {fullSyncResult.stages.map(s => (
                   <div key={s.stage} className="flex items-center gap-2 text-xs">
                     {s.ok
-                      ? <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                      : <X className="w-3 h-3 text-rose-400 flex-shrink-0" />
+                      ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                      : <X className="w-3 h-3 text-rose-500 dark:text-rose-400 flex-shrink-0" />
                     }
                     <span className="text-[var(--text-secondary)]">{stageName(s.stage)}</span>
                     {s.ok
                       ? <span className="text-slate-500 ml-auto">{s.count}</span>
-                      : <span className="text-rose-400 ml-auto truncate max-w-[140px]">{s.error}</span>
+                      : <span className="text-rose-600 dark:text-rose-400 ml-auto truncate max-w-[140px]">{s.error}</span>
                     }
                   </div>
                 ))}
@@ -713,9 +713,9 @@ export default function ScaleSettingsPage() {
             ) : (
               <>
                 {syncError && (
-                  <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
-                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                    <p className="text-xs text-rose-300">{syncError}</p>
+                  <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2">
+                    <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+                    <p className="text-xs text-rose-700 dark:text-rose-300">{syncError}</p>
                   </div>
                 )}
 
@@ -723,7 +723,7 @@ export default function ScaleSettingsPage() {
                   onClick={() => setSyncSettings(s => ({ ...s, autoSyncEnabled: !s.autoSyncEnabled }))}
                   className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
                     syncSettings.autoSyncEnabled
-                      ? 'bg-blue-950/40 border-blue-800 text-blue-300'
+                      ? 'bg-blue-50 border-blue-300 text-blue-800 dark:bg-blue-950/40 dark:border-blue-800 dark:text-blue-300'
                       : 'bg-[var(--bg-input)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]'
                   }`}
                 >
@@ -768,7 +768,7 @@ export default function ScaleSettingsPage() {
                     {syncSettings.lastSyncStages && syncSettings.lastSyncStages.length > 0 && (
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                         {syncSettings.lastSyncStages.map(s => (
-                          <span key={s.stage} className={`text-xs ${s.ok ? 'text-slate-500' : 'text-rose-400'}`}>
+                          <span key={s.stage} className={`text-xs ${s.ok ? 'text-slate-500' : 'text-rose-600 dark:text-rose-400'}`}>
                             {s.stage}: {s.ok ? s.count : `error — ${s.error ?? 'failed'}`}
                           </span>
                         ))}
@@ -778,7 +778,7 @@ export default function ScaleSettingsPage() {
                       <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                         <span className="text-xs text-slate-600">POs in DB:</span>
                         {Object.entries(syncSettings.poStatusCounts).sort().map(([status, count]) => (
-                          <span key={status} className={`text-xs ${status === 'open' || status === 'partial' ? 'text-emerald-400' : 'text-slate-500'}`}>
+                          <span key={status} className={`text-xs ${status === 'open' || status === 'partial' ? 'text-emerald-600 dark:text-emerald-400' : 'text-slate-500'}`}>
                             {status}: {count}
                           </span>
                         ))}
@@ -817,9 +817,9 @@ export default function ScaleSettingsPage() {
             </p>
 
             {vendorError && (
-              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <p className="text-xs text-rose-300">{vendorError}</p>
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-700 dark:text-rose-300">{vendorError}</p>
               </div>
             )}
 
@@ -850,7 +850,7 @@ export default function ScaleSettingsPage() {
             ) : vendors.length === 0 ? (
               <p className="text-sm text-slate-600 py-2 text-center">No vendors yet</p>
             ) : (
-              <div className="flex flex-col divide-y divide-slate-800/60">
+              <div className="flex flex-col divide-y divide-[var(--border-color)]">
                 {vendors.map(v => (
                   <div key={v.id} className="flex items-center gap-3 py-2.5 group">
                     <Building2 className="w-4 h-4 text-slate-600 flex-shrink-0" />
@@ -858,7 +858,7 @@ export default function ScaleSettingsPage() {
                     <button
                       onClick={() => handleDeleteVendor(v.id)}
                       disabled={deletingVendorId === v.id}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 flex-shrink-0"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex-shrink-0"
                       aria-label={`Delete vendor ${v.vendorName}`}
                     >
                       {deletingVendorId === v.id
@@ -876,7 +876,7 @@ export default function ScaleSettingsPage() {
         {/* ── Variant title abbreviations ──────────────────────────────────── */}
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-            <Type className="w-4 h-4 text-emerald-400" />
+            <Type className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">Title Abbreviations</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
@@ -886,9 +886,9 @@ export default function ScaleSettingsPage() {
             </p>
 
             {mappingsError && (
-              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <p className="text-xs text-rose-300">{mappingsError}</p>
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-700 dark:text-rose-300">{mappingsError}</p>
               </div>
             )}
 
@@ -931,20 +931,20 @@ export default function ScaleSettingsPage() {
             ) : mappings.length === 0 ? (
               <p className="text-sm text-slate-600 py-2 text-center">No abbreviations yet</p>
             ) : (
-              <div className="flex flex-col divide-y divide-slate-800/60">
+              <div className="flex flex-col divide-y divide-[var(--border-color)]">
                 {mappings.map(m => (
                   <div key={m.phrase} className="flex items-center gap-3 py-2.5 group">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-sm text-[var(--text-secondary)] break-all">{m.phrase}</span>
                         <span className="text-slate-600">→</span>
-                        <span className="text-sm font-semibold text-emerald-400">{m.abbreviation}</span>
+                        <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{m.abbreviation}</span>
                       </div>
                     </div>
                     <button
                       onClick={() => handleDeleteMapping(m.phrase)}
                       disabled={deletingPhrase === m.phrase}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-950/30 flex-shrink-0"
+                      className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 flex-shrink-0"
                       aria-label={`Delete mapping for "${m.phrase}"`}
                     >
                       {deletingPhrase === m.phrase ? (
@@ -963,7 +963,7 @@ export default function ScaleSettingsPage() {
         {/* ── Printer device ───────────────────────────────────────────────── */}
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
           <div className="px-4 pt-4 pb-2 flex items-center gap-2">
-            <Printer className="w-4 h-4 text-amber-400" />
+            <Printer className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">Printer Device</h2>
           </div>
           <div className="px-4 pb-4 flex flex-col gap-3">
@@ -976,7 +976,7 @@ export default function ScaleSettingsPage() {
               onClick={() => handleTogglePrinterDevice(!isPrinterDevice)}
               className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
                 isPrinterDevice
-                  ? 'bg-amber-950/40 border-amber-800 text-amber-300'
+                  ? 'bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300'
                   : 'bg-[var(--bg-input)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]'
               }`}
             >
@@ -986,7 +986,7 @@ export default function ScaleSettingsPage() {
               {isPrinterDevice ? 'This device is registered as the printer' : 'Register as printer device'}
             </button>
             {isPrinterDevice && (
-              <p className="text-xs text-amber-400/70">
+              <p className="text-xs text-amber-700/70 dark:text-amber-400/70">
                 Keep the Scale &amp; Print page open on this device to receive and execute remote print jobs.
               </p>
             )}
@@ -1039,22 +1039,22 @@ export default function ScaleSettingsPage() {
             )}
 
             {webhookError && (
-              <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2">
-                <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                <p className="text-xs text-rose-300">{webhookError}</p>
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-700 dark:text-rose-300">{webhookError}</p>
               </div>
             )}
 
             {webhookResult && (
               <div className={`border rounded-xl px-3 py-2.5 flex flex-col gap-1 ${
-                webhookResult.errors === 0 ? 'bg-emerald-950/40 border-emerald-900' : 'bg-amber-950/40 border-amber-900'
+                webhookResult.errors === 0 ? 'bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900' : 'bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-900'
               }`}>
                 <p className="text-xs font-semibold text-[var(--text-primary)]">
                   {webhookResult.registered} registered · {webhookResult.alreadyRegistered} already registered
                   {webhookResult.errors > 0 && ` · ${webhookResult.errors} errors`}
                 </p>
                 {webhookResult.results.filter(r => r.status === 'error').map(r => (
-                  <p key={r.topic} className="text-xs text-rose-400 font-mono">{r.topic}: {r.error}</p>
+                  <p key={r.topic} className="text-xs text-rose-600 dark:text-rose-400 font-mono">{r.topic}: {r.error}</p>
                 ))}
               </div>
             )}
@@ -1094,7 +1094,7 @@ export default function ScaleSettingsPage() {
         {/* ── Weight Ranges ─────────────────────────────────────────────── */}
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
-            <Scale className="w-4 h-4 text-violet-400" />
+            <Scale className="w-4 h-4 text-violet-600 dark:text-violet-400" />
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">Weight Ranges (Categorical Products)</h2>
           </div>
           <p className="text-xs text-slate-400 mb-3">
@@ -1114,7 +1114,7 @@ export default function ScaleSettingsPage() {
                     onClick={() => handleWrSelectProduct(p.productId, p.productTitle)}
                     className={`w-full flex items-center justify-between text-left px-3 py-2 rounded-xl border text-sm transition-colors ${
                       wrProductId === p.productId
-                        ? 'bg-violet-900/50 border-violet-600 text-violet-200'
+                        ? 'bg-violet-50 border-violet-300 text-violet-800 dark:bg-violet-900/50 dark:border-violet-600 dark:text-violet-200'
                         : 'bg-[var(--bg-input)] border-[var(--border-color)]/60 text-[var(--text-primary)] hover:bg-[var(--bg-input)] hover:border-slate-600'
                     }`}
                   >
@@ -1160,7 +1160,7 @@ export default function ScaleSettingsPage() {
 
           {wrProductId && (
             <div>
-              <p className="text-xs text-violet-300 font-medium mb-3">{wrProductTitle}</p>
+              <p className="text-xs text-violet-700 dark:text-violet-300 font-medium mb-3">{wrProductTitle}</p>
               {wrLoading ? (
                 <p className="text-xs text-slate-400">Loading…</p>
               ) : (
@@ -1178,7 +1178,7 @@ export default function ScaleSettingsPage() {
                               placeholder="Label (auto-filled from product)"
                               className="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                             />
-                            <button onClick={() => handleWrRemoveRule(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-1">
+                            <button onClick={() => handleWrRemoveRule(idx)} className="text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors p-1">
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
@@ -1202,7 +1202,7 @@ export default function ScaleSettingsPage() {
                           {/* Target product */}
                           {tier.targetProductTitle ? (
                             <div className="flex items-center gap-2">
-                              <span className="text-xs text-emerald-400 flex-1 truncate">{tier.targetProductTitle}</span>
+                              <span className="text-xs text-emerald-600 dark:text-emerald-400 flex-1 truncate">{tier.targetProductTitle}</span>
                               {tier.targetVariants.length > 1 && (
                                 <select
                                   value={rule.variantId}
@@ -1215,7 +1215,7 @@ export default function ScaleSettingsPage() {
                                   ))}
                                 </select>
                               )}
-                              <button onClick={() => handleWrTierClear(idx)} className="text-slate-500 hover:text-rose-400 transition-colors p-0.5">
+                              <button onClick={() => handleWrTierClear(idx)} className="text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 transition-colors p-0.5">
                                 <X className="w-3.5 h-3.5" />
                               </button>
                             </div>
@@ -1269,7 +1269,7 @@ export default function ScaleSettingsPage() {
           )}
 
           {wrError && (
-            <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
+            <div className="flex items-center gap-2 mt-2 text-xs text-rose-600 dark:text-rose-400">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {wrError}
             </div>
           )}
@@ -1278,7 +1278,7 @@ export default function ScaleSettingsPage() {
         {/* ── Lot Products ──────────────────────────────────────────────────── */}
         <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-4">
-            <Layers className="w-4 h-4 text-amber-400" />
+            <Layers className="w-4 h-4 text-amber-600 dark:text-amber-400" />
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">Lot Products</h2>
           </div>
           <p className="text-xs text-slate-400 mb-3">
@@ -1295,9 +1295,9 @@ export default function ScaleSettingsPage() {
                 {lotProducts.map(p => (
                   <div
                     key={p.productId}
-                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border bg-amber-900/20 border-amber-800/40 text-sm"
+                    className="w-full flex items-center justify-between px-3 py-2 rounded-xl border bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800/40 text-sm"
                   >
-                    <span className="text-amber-200 truncate">{p.productTitle}</span>
+                    <span className="text-amber-800 dark:text-amber-200 truncate">{p.productTitle}</span>
                     <span className="text-xs text-slate-500 ml-2 flex-shrink-0">
                       {p.configuredAt ? new Date(p.configuredAt).toLocaleDateString() : ''}
                     </span>
@@ -1338,7 +1338,7 @@ export default function ScaleSettingsPage() {
                 >
                   <span>{p.productTitle}</span>
                   {lotProducts.some(lp => lp.productId === p.productId) ? (
-                    <span className="text-xs text-amber-400 flex-shrink-0 ml-2">Already configured</span>
+                    <span className="text-xs text-amber-600 dark:text-amber-400 flex-shrink-0 ml-2">Already configured</span>
                   ) : (
                     <span className="text-xs text-slate-500 flex-shrink-0 ml-2">+ Mark as lot</span>
                   )}
@@ -1348,7 +1348,7 @@ export default function ScaleSettingsPage() {
           )}
 
           {lotProductError && (
-            <div className="flex items-center gap-2 mt-2 text-xs text-rose-400">
+            <div className="flex items-center gap-2 mt-2 text-xs text-rose-600 dark:text-rose-400">
               <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {lotProductError}
             </div>
           )}
@@ -1429,7 +1429,7 @@ export default function ScaleSettingsPage() {
               </div>
 
               {deadError && (
-                <div className="flex items-center gap-2 text-xs text-rose-400 mb-3">
+                <div className="flex items-center gap-2 text-xs text-rose-600 dark:text-rose-400 mb-3">
                   <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" /> {deadError}
                 </div>
               )}
@@ -1443,18 +1443,18 @@ export default function ScaleSettingsPage() {
                   {deadJobs.map(job => (
                     <div
                       key={job.id}
-                      className="bg-rose-950/30 border border-rose-900/40 rounded-xl p-3 flex flex-col gap-2"
+                      className="bg-rose-50 border border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/40 rounded-xl p-3 flex flex-col gap-2"
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-xs font-semibold text-rose-300">{jobTypeLabel(job.jobType)}</p>
+                          <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">{jobTypeLabel(job.jobType)}</p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
                             {job.failedAt ? new Date(job.failedAt).toLocaleString() : new Date(job.createdAt).toLocaleString()}
                             {job.deviceId && ` · ${job.deviceId}`}
                             {` · ${job.retryCount} retries`}
                           </p>
                           {job.failedReason && (
-                            <p className="text-[11px] text-rose-400/80 mt-1 break-all">{job.failedReason}</p>
+                            <p className="text-[11px] text-rose-600/80 dark:text-rose-400/80 mt-1 break-all">{job.failedReason}</p>
                           )}
                         </div>
                       </div>
@@ -1467,7 +1467,7 @@ export default function ScaleSettingsPage() {
                             setFailedOpsActing(null);
                           }}
                           disabled={failedOpsActing === job.id}
-                          className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-rose-800/60 hover:bg-rose-700/60 disabled:opacity-50 rounded-lg text-xs text-rose-200 font-medium transition-colors"
+                          className="flex-1 flex items-center justify-center gap-1.5 h-8 bg-rose-100 hover:bg-rose-200 dark:bg-rose-800/60 dark:hover:bg-rose-700/60 disabled:opacity-50 rounded-lg text-xs text-rose-800 dark:text-rose-200 font-medium transition-colors"
                         >
                           <RotateCcw className="w-3.5 h-3.5" />
                           Retry

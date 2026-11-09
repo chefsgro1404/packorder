@@ -61,11 +61,11 @@ export function BulkPrintModal({
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <div className={`w-10 h-10 rounded-xl border flex items-center justify-center flex-shrink-0 mt-0.5 ${
-              isLotReceiving ? 'bg-amber-900/60 border-amber-800' : 'bg-blue-900/60 border-blue-800'
+              isLotReceiving ? 'bg-amber-100 border-amber-200 dark:bg-amber-900/60 dark:border-amber-800' : 'bg-blue-100 border-blue-200 dark:bg-blue-900/60 dark:border-blue-800'
             }`}>
               {isLotReceiving
-                ? <Weight className="w-4 h-4 text-amber-400" />
-                : <Package className="w-4 h-4 text-blue-400" />
+                ? <Weight className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                : <Package className="w-4 h-4 text-blue-600 dark:text-blue-400" />
               }
             </div>
             <div className="min-w-0">
@@ -81,7 +81,7 @@ export function BulkPrintModal({
                   <p className="text-xs text-slate-500">PO ordered: {orderedQuantity} units</p>
                 )}
                 {vendorName && (
-                  <p className={`text-xs font-medium ${isLotReceiving ? 'text-amber-400' : 'text-blue-400'}`}>{vendorName}</p>
+                  <p className={`text-xs font-medium ${isLotReceiving ? 'text-amber-600 dark:text-amber-400' : 'text-blue-600 dark:text-blue-400'}`}>{vendorName}</p>
                 )}
               </div>
             </div>
@@ -157,14 +157,14 @@ export function BulkPrintModal({
               className="w-full h-11 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors"
             />
             {isCountValid && delta === 0 && (
-              <p className="text-xs text-emerald-400 flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+              <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400 inline-block" />
                 Full quantity received
               </p>
             )}
             {isCountValid && delta !== 0 && (
-              <p className={`text-xs flex items-center gap-1.5 ${delta > 0 ? 'text-amber-400' : 'text-violet-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full inline-block ${delta > 0 ? 'bg-amber-400' : 'bg-violet-400'}`} />
+              <p className={`text-xs flex items-center gap-1.5 ${delta > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-violet-600 dark:text-violet-400'}`}>
+                <span className={`w-1.5 h-1.5 rounded-full inline-block ${delta > 0 ? 'bg-amber-600 dark:bg-amber-400' : 'bg-violet-600 dark:bg-violet-400'}`} />
                 {delta > 0
                   ? `${delta} unit${delta !== 1 ? 's' : ''} short vs PO — printed qty will be added to inventory`
                   : `${Math.abs(delta)} extra unit${Math.abs(delta) !== 1 ? 's' : ''} vs PO — printed qty will be added to inventory`}
@@ -198,7 +198,7 @@ export function BulkPrintModal({
                 type="date"
                 value={mfgDate}
                 onChange={e => setMfgDate(e.target.value)}
-                className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] focus:outline-none transition-colors [color-scheme:dark] ${
+                className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] focus:outline-none transition-colors dark:[color-scheme:dark] ${
                   isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
                 }`}
               />
@@ -211,7 +211,7 @@ export function BulkPrintModal({
                 type="date"
                 value={expiryDate}
                 onChange={e => setExpiryDate(e.target.value)}
-                className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] focus:outline-none transition-colors [color-scheme:dark] ${
+                className={`w-full h-10 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-sm text-[var(--text-primary)] focus:outline-none transition-colors dark:[color-scheme:dark] ${
                   isLotReceiving ? 'focus:border-amber-500' : 'focus:border-blue-500'
                 }`}
               />

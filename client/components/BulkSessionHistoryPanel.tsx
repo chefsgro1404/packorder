@@ -137,7 +137,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
               <p className="text-sm text-slate-600">No bulk sessions recorded yet</p>
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-slate-800/60">
+            <div className="flex flex-col divide-y divide-[var(--border-color)]">
               {sessions.map(s => {
                 const isExpanded = expandedId === s.id;
                 const failed = s.parsedResults.filter(r => r.status !== 'printed');
@@ -157,7 +157,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                         )}
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                           <p className="text-xs text-slate-500">{s.sessionDateEst}</p>
-                          {s.vendorName && <p className="text-xs text-blue-400">{s.vendorName}</p>}
+                          {s.vendorName && <p className="text-xs text-blue-600 dark:text-blue-400">{s.vendorName}</p>}
                           {s.lotNo && <p className="text-xs text-slate-500 font-mono">Lot {s.lotNo}</p>}
                           {s.expiryDate && <p className="text-xs text-slate-500">Exp {s.expiryDate}</p>}
                         </div>
@@ -168,11 +168,11 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                           <p className="text-[10px] text-slate-500">printed</p>
                         </div>
                         {failed.length > 0 ? (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-950 text-rose-400 border border-rose-900 font-semibold">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950 dark:text-rose-400 dark:border-rose-900 font-semibold">
                             {failed.length} failed
                           </span>
                         ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-900 font-semibold">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-900 font-semibold">
                             OK
                           </span>
                         )}
@@ -190,10 +190,10 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                         {failed.length > 0 && (
                           <div className="flex flex-col gap-1 mb-1">
                             <div className="flex items-center justify-between">
-                              <p className="text-[10px] font-semibold text-rose-400 uppercase tracking-widest">Failed</p>
+                              <p className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 uppercase tracking-widest">Failed</p>
                               <button
                                 onClick={() => onReprintLabel(failed.filter(r => r.qrPayload).map(r => ({ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null })))}
-                                className="text-[10px] text-rose-400 hover:text-rose-200 px-2 py-1 rounded-lg hover:bg-rose-950/40 transition-colors"
+                                className="text-[10px] text-rose-600 hover:text-rose-900 dark:text-rose-400 dark:hover:text-rose-200 px-2 py-1 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
                               >
                                 Reprint all failed
                               </button>
@@ -201,15 +201,17 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                             {failed.map(r => (
                               <div
                                 key={r.index}
-                                className={`flex items-center gap-2 bg-rose-950/30 border rounded-xl px-3 py-2 transition-colors ${
-                                  selectedSns.has(r.sn) ? 'border-rose-500/70' : 'border-rose-900/40'
+                                className={`flex items-center gap-2 rounded-xl px-3 py-2 transition-colors border ${
+                                  selectedSns.has(r.sn)
+                                    ? 'bg-rose-50 border-rose-400 dark:bg-rose-950/30 dark:border-rose-500/70'
+                                    : 'bg-rose-50/60 border-rose-200 dark:bg-rose-950/30 dark:border-rose-900/40'
                                 }`}
                               >
-                                <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-rose-700 flex items-center justify-center bg-rose-950/60 hover:border-rose-400 transition-colors">
-                                  {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-rose-400" />}
+                                <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-rose-300 dark:border-rose-700 flex items-center justify-center bg-white dark:bg-rose-950/60 hover:border-rose-500 dark:hover:border-rose-400 transition-colors">
+                                  {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-rose-600 dark:bg-rose-400" />}
                                 </button>
                                 <span className="text-[10px] text-slate-500 font-bold w-5">#{r.index}</span>
-                                <p className="text-xs text-rose-300 flex-1 min-w-0 truncate">{r.error ?? 'Print failed'}</p>
+                                <p className="text-xs text-rose-700 dark:text-rose-300 flex-1 min-w-0 truncate">{r.error ?? 'Print failed'}</p>
                                 <button
                                   onClick={() => r.qrPayload && onReprintLabel([{ qrPayload: r.qrPayload, sn: r.sn, productTitle: s.productTitle, variantTitle: s.variantTitle ?? null }])}
                                   disabled={!r.qrPayload}
@@ -227,14 +229,14 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                           {printed.map(r => (
                             <div
                               key={r.index}
-                              className={`flex items-center gap-2 rounded-xl px-3 py-2 transition-colors ${
+                              className={`flex items-center gap-2 rounded-xl px-3 py-2 transition-colors border ${
                                 selectedSns.has(r.sn)
-                                  ? 'bg-blue-950/30 border border-blue-600/50'
-                                  : 'bg-[var(--bg-input)] border border-transparent'
+                                  ? 'bg-blue-50 border-blue-300 dark:bg-blue-950/30 dark:border-blue-600/50'
+                                  : 'bg-[var(--bg-input)] border-transparent'
                               }`}
                             >
                               <button onClick={() => toggleSn(r.sn)} className="flex-shrink-0 w-4 h-4 rounded border border-slate-600 flex items-center justify-center bg-[var(--bg-input)] hover:border-blue-400 transition-colors">
-                                {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-blue-400" />}
+                                {selectedSns.has(r.sn) && <div className="w-2 h-2 rounded-sm bg-blue-600 dark:bg-blue-400" />}
                               </button>
                               <span className="text-[10px] text-slate-500 font-bold w-5">#{r.index}</span>
                               <div className="flex-shrink-0 bg-white rounded p-0.5">

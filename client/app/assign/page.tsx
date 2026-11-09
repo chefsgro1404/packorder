@@ -94,9 +94,9 @@ function openPrintView(rows: ProductExportRow[]) {
 }
 
 const AUDIT_ACTION_STYLES: Record<BarcodeAudit["action"], string> = {
-  added: "bg-green-900/40 text-green-400 border-green-800/50",
-  changed: "bg-blue-900/40 text-blue-400 border-blue-800/50",
-  removed: "bg-red-900/40 text-red-400 border-red-800/50",
+  added: "bg-green-50 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400 dark:border-green-800/50",
+  changed: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/40 dark:text-blue-400 dark:border-blue-800/50",
+  removed: "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/40 dark:text-red-400 dark:border-red-800/50",
   rescanned: "bg-[var(--bg-elevated)]/40 text-slate-400 border-slate-600/50",
 };
 
@@ -511,7 +511,7 @@ function AssignPageInner() {
               <div key={s} className="flex items-center gap-2">
                 {i > 0 && <div className="w-6 h-px bg-[var(--bg-elevated)]" />}
                 <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${
-                  active ? "bg-purple-600 text-[var(--text-primary)]" : done ? "bg-purple-900/50 text-purple-400" : "bg-[var(--bg-input)] text-slate-500"
+                  active ? "bg-purple-600 text-[var(--text-primary)]" : done ? "bg-purple-100 text-purple-600 dark:bg-purple-900/50 dark:text-purple-400" : "bg-[var(--bg-input)] text-slate-500"
                 }`}>{i + 1}</div>
                 <span className={`text-xs ${active ? "text-[var(--text-primary)] font-medium" : "text-slate-500"}`}>
                   {s === "scan" ? "Scan" : "Confirm"}
@@ -660,7 +660,7 @@ function AssignPageInner() {
               <div className="flex items-center justify-center py-12">
                 <div className="flex gap-2">
                   {[0, 1, 2].map((i) => (
-                    <div key={i} className="w-2 h-2 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
+                    <div key={i} className="w-2 h-2 rounded-full bg-purple-600 dark:bg-purple-400 animate-bounce" style={{ animationDelay: `${i * 150}ms` }} />
                   ))}
                 </div>
               </div>
@@ -771,9 +771,9 @@ function AssignPageInner() {
                                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                       {v.sku && <span className="text-xs font-mono text-slate-500">{v.sku}</span>}
                                       {v.barcode ? (
-                                        <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+                                        <span className="text-xs px-1.5 py-0.5 bg-green-50 text-green-700 rounded border border-green-200 dark:bg-green-900/40 dark:text-green-400 dark:border-green-800/50">has barcode</span>
                                       ) : (
-                                        <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+                                        <span className="text-xs px-1.5 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-200 dark:bg-orange-900/40 dark:text-orange-400 dark:border-orange-800/50">no barcode</span>
                                       )}
                                     </div>
                                   </div>
@@ -865,7 +865,7 @@ function AssignPageInner() {
         {/* ── Scan ──────────────────────────────────────────────────────── */}
         {step === "scan" && selectedVariant && (
           <>
-            <div className="flex items-center gap-3 p-3 bg-purple-950/40 border border-purple-800/50 rounded-xl">
+            <div className="flex items-center gap-3 p-3 bg-purple-50 border border-purple-200 dark:bg-purple-950/40 dark:border-purple-800/50 rounded-xl">
               {selectedVariant.imageUrl ? (
                 <div className="relative w-10 h-10 rounded-lg overflow-hidden bg-[var(--bg-input)] shrink-0">
                   <Image src={selectedVariant.imageUrl} alt={selectedVariant.productTitle} fill className="object-cover" sizes="40px" />
@@ -883,7 +883,7 @@ function AssignPageInner() {
                   <p className="text-xs text-slate-500">{selectedVariant.productTitle}</p>
                 )}
                 {selectedVariant.barcode && (
-                  <p className="text-xs text-orange-400 mt-0.5">Will replace: <span className="font-mono">{selectedVariant.barcode}</span></p>
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">Will replace: <span className="font-mono">{selectedVariant.barcode}</span></p>
                 )}
               </div>
               <button onClick={handleReset} className="p-1.5 text-slate-500 hover:text-[var(--text-secondary)] transition-colors">
@@ -892,7 +892,7 @@ function AssignPageInner() {
             </div>
             <div className="space-y-1">
               <p className="text-sm font-medium text-[var(--text-secondary)] flex items-center gap-2">
-                <ScanLine className="w-4 h-4 text-purple-400" />Scan the barcode label
+                <ScanLine className="w-4 h-4 text-purple-600 dark:text-purple-400" />Scan the barcode label
               </p>
               <p className="text-xs text-slate-500">Point the camera at the product barcode or sticker.</p>
             </div>
@@ -936,7 +936,7 @@ function AssignPageInner() {
                 )}
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-[var(--text-secondary)] font-medium">New barcode</span>
-                  <span className="font-mono text-purple-300 text-base font-bold">{scannedBarcode}</span>
+                  <span className="font-mono text-purple-700 dark:text-purple-300 text-base font-bold">{scannedBarcode}</span>
                 </div>
               </div>
             </div>
@@ -961,10 +961,10 @@ function AssignPageInner() {
         {/* ── Remove confirm ────────────────────────────────────────────── */}
         {(step === "remove-confirm" || step === "removing") && selectedVariant && (
           <div className="space-y-4">
-            <div className="bg-[var(--bg-card)] border border-red-900/50 rounded-2xl p-4 space-y-4">
+            <div className="bg-[var(--bg-card)] border border-red-200 dark:border-red-900/50 rounded-2xl p-4 space-y-4">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-red-900/40 flex items-center justify-center shrink-0">
-                  <Trash2 className="w-5 h-5 text-red-400" />
+                <div className="w-10 h-10 rounded-full bg-red-100 dark:bg-red-900/40 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
                 </div>
                 <div>
                   <p className="font-semibold text-[var(--text-primary)] text-sm">Remove barcode?</p>
@@ -988,7 +988,7 @@ function AssignPageInner() {
                   {selectedVariant.variantTitle !== "Default Title" && (
                     <p className="text-xs text-slate-500 truncate">{selectedVariant.productTitle}</p>
                   )}
-                  <p className="text-xs font-mono text-red-400 mt-0.5">{selectedVariant.barcode}</p>
+                  <p className="text-xs font-mono text-red-600 dark:text-red-400 mt-0.5">{selectedVariant.barcode}</p>
                 </div>
               </div>
             </div>
@@ -1013,11 +1013,11 @@ function AssignPageInner() {
         {/* ── Done ──────────────────────────────────────────────────────── */}
         {step === "done" && selectedVariant && scannedBarcode && (
           <div className="flex flex-col items-center justify-center flex-1 gap-5 animate-in fade-in duration-300 py-8">
-            <div className="w-24 h-24 rounded-full bg-purple-900/50 border-2 border-purple-500 flex items-center justify-center">
-              <CheckCircle2 className="w-12 h-12 text-purple-400" />
+            <div className="w-24 h-24 rounded-full bg-purple-100 border-2 border-purple-400 dark:bg-purple-900/50 dark:border-purple-500 flex items-center justify-center">
+              <CheckCircle2 className="w-12 h-12 text-purple-600 dark:text-purple-400" />
             </div>
             <div className="text-center space-y-1">
-              <h2 className="text-2xl font-bold text-purple-300">Barcode Saved!</h2>
+              <h2 className="text-2xl font-bold text-purple-700 dark:text-purple-300">Barcode Saved!</h2>
               <p className="text-slate-400 text-sm">{selectedVariant.productTitle}</p>
               <p className="font-mono text-[var(--text-secondary)] text-base mt-2">{scannedBarcode}</p>
             </div>
@@ -1074,7 +1074,7 @@ function CollectionMultiSelect({
       <button
         onClick={onToggleOpen}
         className={`flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-colors min-h-[36px] ${
-          activeCount > 0 ? "bg-purple-900/40 border-purple-700/50 text-purple-300" : "bg-[var(--bg-card)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]"
+          activeCount > 0 ? "bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/40 dark:border-purple-700/50 dark:text-purple-300" : "bg-[var(--bg-card)] border-[var(--border-color)] text-slate-400 hover:text-[var(--text-primary)]"
         }`}
       >
         <Filter className="w-3.5 h-3.5" />
@@ -1112,10 +1112,10 @@ function CollectionMultiSelect({
 
 function StatusBadge({ status }: { status: "ACTIVE" | "DRAFT" | "ARCHIVED" }) {
   if (status === "ACTIVE") {
-    return <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">Active</span>;
+    return <span className="text-xs px-1.5 py-0.5 bg-green-50 text-green-700 rounded border border-green-200 dark:bg-green-900/40 dark:text-green-400 dark:border-green-800/50">Active</span>;
   }
   if (status === "DRAFT") {
-    return <span className="text-xs px-1.5 py-0.5 bg-yellow-900/40 text-yellow-400 rounded border border-yellow-800/50">Draft</span>;
+    return <span className="text-xs px-1.5 py-0.5 bg-yellow-50 text-yellow-700 rounded border border-yellow-200 dark:bg-yellow-900/40 dark:text-yellow-400 dark:border-yellow-800/50">Draft</span>;
   }
   return <span className="text-xs px-1.5 py-0.5 bg-[var(--bg-elevated)]/40 text-slate-500 rounded border border-slate-600/50">Archived</span>;
 }
@@ -1153,9 +1153,9 @@ function ProductRow({
             <StatusBadge status={product.status} />
             {variant.sku && <span className="text-xs font-mono text-slate-500">{variant.sku}</span>}
             {variant.barcode ? (
-              <span className="text-xs px-1.5 py-0.5 bg-green-900/40 text-green-400 rounded border border-green-800/50">has barcode</span>
+              <span className="text-xs px-1.5 py-0.5 bg-green-50 text-green-700 rounded border border-green-200 dark:bg-green-900/40 dark:text-green-400 dark:border-green-800/50">has barcode</span>
             ) : (
-              <span className="text-xs px-1.5 py-0.5 bg-orange-900/40 text-orange-400 rounded border border-orange-800/50">no barcode</span>
+              <span className="text-xs px-1.5 py-0.5 bg-orange-50 text-orange-700 rounded border border-orange-200 dark:bg-orange-900/40 dark:text-orange-400 dark:border-orange-800/50">no barcode</span>
             )}
           </div>
         </div>
