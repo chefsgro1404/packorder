@@ -295,11 +295,20 @@ function extractKeywords(text: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  const words = cleaned.toLowerCase().split(' ')
-    .map(w => w.replace(/[^a-z]/g, ''))
-    .filter(w => w.length > 1 && !STOP_WORDS.has(w))
+  // Split before lowercasing so uppercase single letters (variant designators: A, B, C…)
+  // are preserved, while lowercase single letters (articles like "a") are filtered out.
+  const rawTokens = cleaned.split(' ').map(w => w.replace(/[^a-zA-Z]/g, ''));
+  const words = rawTokens
+    .filter(w => {
+      if (!w) return false;
+      if (w.length === 1) return /[A-Z]/.test(w); // keep uppercase variant letters only
+      return !STOP_WORDS.has(w.toLowerCase());
+    })
     .slice(0, 3)
-    .map(w => WORD_ABBREVS[w] ?? (w.length > 8 ? w.slice(0, 8) : w));
+    .map(w => {
+      const lo = w.toLowerCase();
+      return WORD_ABBREVS[lo] ?? (lo.length > 8 ? lo.slice(0, 8) : lo);
+    });
 
   return words.join('-');
 }
