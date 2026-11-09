@@ -22,7 +22,7 @@ export function useDeadOperations(): DeadOperationsState {
     setLoading(true);
     setError(null);
     try {
-      const res = await window.fetch('/api/operations/jobs/dead');
+      const res = await window.fetch('/api/operations/jobs?status=dead');
       if (!res.ok) throw new Error('Failed to load failed operations');
       const data = await res.json();
       setDeadJobs(Array.isArray(data.jobs) ? data.jobs : []);

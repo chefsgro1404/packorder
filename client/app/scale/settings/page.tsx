@@ -454,7 +454,7 @@ export default function ScaleSettingsPage() {
     setLotProductSearching(true);
     setLotProductError(null);
     try {
-      const res = await fetch(`/api/scale/products/search?q=${encodeURIComponent(lotProductSearch.trim())}`);
+      const res = await fetch(`/api/products?search=${encodeURIComponent(lotProductSearch.trim())}&pageSize=20`);
       if (!res.ok) throw new Error('Search failed');
       const data = await res.json();
       setLotProductResults(data.products ?? []);
