@@ -1320,6 +1320,7 @@ export default function ScalePage() {
     const variantId = currentItem?.variantId;
     if (!variantId) { setTransformationOptions(null); return; }
     if (weightRanges.length > 0) { setTransformationOptions(null); return; }
+    setTransformationOptions(null); // clear stale options immediately before fetch
     let cancelled = false;
     (async () => {
       try {
