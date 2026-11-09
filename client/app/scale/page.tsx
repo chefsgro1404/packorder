@@ -1084,9 +1084,6 @@ function TransformationPanel({
   onSelect: (opt: TransformationOption) => void;
   onManualTransform?: () => void;
 }) {
-  const [toIdx, setToIdx] = useState(0);
-  const toOpt = options.length > 0 ? options[Math.min(toIdx, options.length - 1)] : null;
-
   return (
     <div className="flex flex-col gap-2.5 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-3">
       <div className="flex items-center gap-1.5">
@@ -1094,71 +1091,51 @@ function TransformationPanel({
         <p className="text-xs font-semibold text-violet-300">Transformation Ready</p>
       </div>
 
-      <div className="flex items-stretch gap-2">
-        {/* FROM panel */}
-        <div className="flex-1 bg-violet-900/20 rounded-lg px-2.5 py-2 min-w-0">
-          <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Source</p>
-          <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
-          {currentItem.plu && currentItem.plu !== 'N/A' && (
-            <p className="text-[10px] text-violet-400/50 mt-0.5">{currentItem.plu}</p>
-          )}
-        </div>
-
-        <div className="flex items-center text-violet-500 flex-shrink-0">
-          <ArrowRight className="w-4 h-4" />
-        </div>
-
-        {/* TO panel */}
-        <div className="flex-1 bg-violet-900/20 rounded-lg px-2.5 py-2 min-w-0">
-          <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Output</p>
-          {toOpt ? (
-            <>
-              {options.length > 1 ? (
-                <select
-                  value={toIdx}
-                  onChange={e => setToIdx(Number(e.target.value))}
-                  className="w-full bg-transparent text-xs font-semibold text-violet-200 outline-none cursor-pointer leading-tight"
-                >
-                  {options.map((opt, i) => (
-                    <option key={opt.variantId} value={i} className="bg-violet-950 text-violet-200">
-                      {opt.title}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{toOpt.title}</p>
-              )}
-              {(toOpt.weightPerUnit ?? 0) > 0 && (
-                <p className="text-[10px] text-violet-400/50 mt-0.5">
-                  {toOpt.weightPerUnit} unit{(toOpt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
-                </p>
-              )}
-            </>
-          ) : (
-            // No configured children — default to same product (A→A), allow searching
-            <>
-              <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
-              <p className="text-[10px] text-violet-400/50 mt-0.5">same product</p>
-            </>
-          )}
-        </div>
+      {/* Source */}
+      <div className="bg-violet-900/20 rounded-lg px-2.5 py-2">
+        <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Source</p>
+        <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
+        {currentItem.plu && currentItem.plu !== 'N/A' && (
+          <p className="text-[10px] text-violet-400/50 mt-0.5">{currentItem.plu}</p>
+        )}
       </div>
 
-      {toOpt ? (
-        <button
-          onClick={() => onSelect(toOpt)}
-          className="w-full text-xs font-semibold bg-violet-700/50 hover:bg-violet-600/60 active:bg-violet-600/80 text-violet-200 rounded-lg py-2 transition-colors"
-        >
-          Apply →
-        </button>
+      {options.length > 0 ? (
+        /* One button per output option — tap to apply immediately */
+        <div className="flex flex-col gap-1.5">
+          {options.map((opt) => (
+            <button
+              key={opt.variantId}
+              onClick={() => onSelect(opt)}
+              className="w-full flex items-center justify-between gap-2 bg-violet-900/20 hover:bg-violet-700/40 active:bg-violet-600/50 rounded-lg px-2.5 py-2 transition-colors text-left"
+            >
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{opt.title}</p>
+                {(opt.weightPerUnit ?? 0) > 0 && (
+                  <p className="text-[10px] text-violet-400/50 mt-0.5">
+                    {opt.weightPerUnit} unit{(opt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
+                  </p>
+                )}
+              </div>
+              <ArrowRight className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+            </button>
+          ))}
+        </div>
       ) : (
-        // A→A: open manual search so staff can confirm ratio or switch product
-        <button
-          onClick={onManualTransform}
-          className="w-full text-xs font-semibold bg-violet-700/50 hover:bg-violet-600/60 active:bg-violet-600/80 text-violet-200 rounded-lg py-2 transition-colors"
-        >
-          Set ratio / change product →
-        </button>
+        // No configured children — default to same product (A→A), allow searching
+        <>
+          <div className="bg-violet-900/20 rounded-lg px-2.5 py-2">
+            <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Output</p>
+            <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
+            <p className="text-[10px] text-violet-400/50 mt-0.5">same product</p>
+          </div>
+          <button
+            onClick={onManualTransform}
+            className="w-full text-xs font-semibold bg-violet-700/50 hover:bg-violet-600/60 active:bg-violet-600/80 text-violet-200 rounded-lg py-2 transition-colors"
+          >
+            Set ratio / change product →
+          </button>
+        </>
       )}
 
       {options.length > 0 && onManualTransform && (
@@ -1338,9 +1315,11 @@ export default function ScalePage() {
   // Fetch transformation options (source → output) when variant changes.
   // After a QR scan, always show the panel (even with empty options) so staff
   // can search for an output product manually, including A→A transformations.
+  // Categorical products (weightRanges.length > 0) never show transformation.
   useEffect(() => {
     const variantId = currentItem?.variantId;
     if (!variantId) { setTransformationOptions(null); return; }
+    if (weightRanges.length > 0) { setTransformationOptions(null); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -1362,7 +1341,7 @@ export default function ScalePage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [currentItem?.variantId, wasQrScanned]);
+  }, [currentItem?.variantId, wasQrScanned, weightRanges]);
 
   // Reset auto-detect whenever the loaded variant changes (new product, transformation, clear)
   useEffect(() => {
