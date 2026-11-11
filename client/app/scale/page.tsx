@@ -1517,14 +1517,18 @@ export default function ScalePage() {
           { poId, lineItemId: poLineItemId, quantityReceived: 1, forceApprove: false },
           `${poId}:approve-line-item:${poLineItemId}:${sn}`,
           async () => {
-            await approvePoItem(poId, poLineItemId, 1);
-            const fresh = await refreshLineItems(poId);
-            setPoLineItemsCache(prev => ({ ...prev, [poId]: fresh }));
+            const ok = await approvePoItem(poId, poLineItemId, 1);
+            if (!ok) throw new Error('approve-line-item failed');
           },
         );
       } catch (err) {
         console.error('[scale] PO approval failed:', err);
       }
+      // Always refresh after approval (whether fresh run or idempotent skip)
+      try {
+        const fresh = await refreshLineItems(poId);
+        setPoLineItemsCache(prev => ({ ...prev, [poId]: fresh }));
+      } catch { /* non-fatal */ }
     }
 
     // Adjust parent product inventory for wet/transformation products, then increase child inventory
@@ -1702,7 +1706,8 @@ export default function ScalePage() {
         { poId: po.id, lineItemId: li.id, quantityReceived: approvalQty, forceApprove: true, discrepancyQty, discrepancyType },
         `${po.id}:approve-line-item:${li.id}`,
         async () => {
-          await approvePoItem(po.id, li.id, approvalQty, true, discrepancyQty, discrepancyType);
+          const ok = await approvePoItem(po.id, li.id, approvalQty, true, discrepancyQty, discrepancyType);
+          if (!ok) throw new Error('approve-line-item failed');
         },
       );
     } catch (err) {
