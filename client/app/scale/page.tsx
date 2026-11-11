@@ -2410,14 +2410,25 @@ export default function ScalePage() {
     const snPart = parts.find(p => p.startsWith('SN:'));
     const sn = snPart ? snPart.replace('SN:', '').trim() : null;
 
-    let item = await lookupProduct({
-      itemNumber: plu !== 'N/A' ? plu : '',
-      itemName: titlePart,
-      itemWeight: weightPart,
-      qrPayload: '',
-      rawBuffer: '',
-      timestamp: new Date(),
-    });
+    // PLU: N/A products (chicken, beef, fish) have no scale item number — skip PLU lookup entirely.
+    // SN lookup is the primary resolver for all QR-scanned products.
+    let item: CurrentItem = plu !== 'N/A'
+      ? await lookupProduct({
+          itemNumber: plu,
+          itemName: titlePart,
+          itemWeight: weightPart,
+          qrPayload: '',
+          rawBuffer: '',
+          timestamp: new Date(),
+        })
+      : {
+          itemNumber: '',
+          itemName: titlePart,
+          itemWeight: weightPart,
+          plu: '',
+          productTitle: titlePart,
+          found: false,
+        };
 
     // Primary: SN-based lookup — resolves variantId and PO context from the original print log entry.
     // Always run when SN is present to capture PO context for session auto-start even if variantId is known.
@@ -2477,6 +2488,17 @@ export default function ScalePage() {
           const rulesData = await rulesRes.json();
           sessionRules = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
           hasAdjustments = !!rulesData?.hasAdjustments;
+          // Promote item to found using registry data — covers PLU:N/A products resolved via SN
+          if (rulesData?.found) {
+            item = {
+              ...item,
+              found: true,
+              plu: rulesData.plu ?? item.plu,
+              productTitle: rulesData.productTitle ?? item.productTitle,
+              variantTitle: (rulesData.variantTitle && rulesData.variantTitle !== 'Default Title')
+                ? rulesData.variantTitle : item.variantTitle,
+            };
+          }
           if (sessionRules.length > 0 && item.itemWeight) {
             const lbs = parseWeightToLbs(item.itemWeight);
             const matched = lbs !== null ? matchWeightRange(sessionRules, lbs) : null;
