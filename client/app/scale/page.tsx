@@ -2100,6 +2100,7 @@ export default function ScalePage() {
         return;
       }
       resetPrinted();
+      setWasQrScanned(false);
       setLookupLoading(true);
       const item = await lookupProduct(reading);
       setLookupLoading(false);
