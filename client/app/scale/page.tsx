@@ -2930,11 +2930,11 @@ export default function ScalePage() {
                   )}
 
                   {/* ── Weight tier button group (CRH-272) ── */}
-                  {autoDetect && weightRanges.length > 0 && (
+                  {weightRanges.length > 0 && (
                     <div className="flex flex-col gap-2.5">
 
                       {/* Warning banner for out-of-range */}
-                      {autoDetect.noMatch && (
+                      {autoDetect?.noMatch && (
                         <div className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl px-3 py-2.5">
                           <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
@@ -2949,7 +2949,7 @@ export default function ScalePage() {
                       )}
 
                       {/* Matched tier info (non-noMatch) */}
-                      {!autoDetect.noMatch && autoDetect.matched && (
+                      {autoDetect && !autoDetect.noMatch && autoDetect.matched && (
                         <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl px-3 py-2">
                           <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
@@ -2966,16 +2966,15 @@ export default function ScalePage() {
                       {/* Full tier button group — all tiers always visible */}
                       <div className={`grid gap-2 ${weightRanges.length <= 2 ? 'grid-cols-2' : weightRanges.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
                         {weightRanges.map(r => {
-                          const isActive = autoDetect.matched?.variantId === r.variantId;
+                          const isActive = autoDetect?.matched?.variantId === r.variantId;
                           return (
                             <button
                               key={r.variantId}
                               onClick={async () => {
-                                // If overriding an out-of-range, log the event first
-                                if (autoDetect.noMatch) {
+                                if (autoDetect?.noMatch) {
                                   await logOutOfRangeEvent(`overridden_to:${r.label}`);
                                 }
-                                setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect.weightLbs });
+                                setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect?.weightLbs ?? 0 });
                                 if (currentItem) setCurrentItem({ ...currentItem, variantId: r.variantId, variantTitle: r.label });
                               }}
                               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
@@ -2994,7 +2993,7 @@ export default function ScalePage() {
                       </div>
 
                       {/* Log and skip button for out-of-range */}
-                      {autoDetect.noMatch && (
+                      {autoDetect?.noMatch && (
                         <button
                           onClick={handleSkipOutOfRange}
                           className="w-full flex items-center justify-center gap-2 h-9 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl text-xs text-slate-400 font-medium transition-colors"

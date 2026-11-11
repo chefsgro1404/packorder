@@ -286,6 +286,20 @@ public class ScaleFunction
                         weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(variantEntity.WeightRanges) ?? new();
                     }
                     catch { }
+                    // Tier variants store identical weight ranges, but if this variant's row is stale
+                    // (e.g. synced before ranges were saved), fall back to any sibling that has them.
+                    if (weightRulesForVariant.Count == 0 && !string.IsNullOrWhiteSpace(variantEntity.ProductId))
+                    {
+                        try
+                        {
+                            var siblings = await _tableStorage.GetProductVariantsByProductIdAsync(variantEntity.ProductId);
+                            var withRanges = siblings.FirstOrDefault(v =>
+                                !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]");
+                            if (withRanges != null)
+                                weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(withRanges.WeightRanges) ?? new();
+                        }
+                        catch { }
+                    }
                 }
 
                 var hasAdjustments = !string.IsNullOrWhiteSpace(variantEntity?.Adjustments)
