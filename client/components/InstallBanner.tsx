@@ -19,8 +19,7 @@ export function InstallBanner() {
         <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={install}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-semibold transition-colors"
-            style={{ color: '#ffffff' }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-xl text-xs font-semibold text-white transition-colors"
             aria-label="Install ShipScan"
           >
             <Download className="w-3.5 h-3.5" />

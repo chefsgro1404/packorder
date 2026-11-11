@@ -127,7 +127,7 @@ export function BulkPrintModal({
                     onClick={() => setBarcodeCount(n)}
                     className={`flex-1 h-11 rounded-xl text-sm font-bold transition-colors ${
                       barcodeCount === n
-                        ? 'bg-amber-600 text-[var(--text-primary)]'
+                        ? 'bg-amber-600 text-white'
                         : 'bg-[var(--bg-input)] border border-[var(--border-color)] text-[var(--text-secondary)] hover:border-amber-700'
                     }`}
                   >
@@ -249,7 +249,7 @@ export function BulkPrintModal({
           <button
             onClick={handleConfirm}
             disabled={!isValid}
-            className={`flex-1 h-11 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-[var(--text-primary)] font-bold flex items-center justify-center gap-2 transition-colors ${
+            className={`flex-1 h-11 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-white font-bold flex items-center justify-center gap-2 transition-colors ${
               isLotReceiving
                 ? 'bg-amber-600 hover:bg-amber-500'
                 : 'bg-blue-600 hover:bg-blue-500'

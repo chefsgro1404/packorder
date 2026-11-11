@@ -187,7 +187,7 @@ export function ManualTransformModal({ parentProductTitle, onConfirm, onClose }:
           <button
             onClick={handleConfirm}
             disabled={!chosen}
-            className="flex-1 h-11 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-[var(--text-primary)] font-bold transition-colors"
+            className="flex-1 h-11 bg-violet-700 hover:bg-violet-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-white font-bold transition-colors"
           >
             Apply Transform
           </button>

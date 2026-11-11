@@ -258,7 +258,7 @@ export function BulkSessionHistoryPanel({ onReprintLabel }: BulkSessionHistoryPa
                         {selectedSns.size > 0 && (
                           <button
                             onClick={() => handleReprintSelected(s)}
-                            className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-[var(--text-primary)] rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors active:scale-[0.99]"
+                            className="mt-1 w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors active:scale-[0.99]"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
                             Reprint Selected ({selectedSns.size})

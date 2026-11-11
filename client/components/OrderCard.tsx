@@ -68,7 +68,7 @@ export function OrderCard({ order, onFulfill, loading }: OrderCardProps) {
       <button
         onClick={onFulfill}
         disabled={loading || !trackingNumber || order.displayFulfillmentStatus === "FULFILLED"}
-        className="w-full py-4 bg-green-700 hover:bg-green-600 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-bold text-base transition-all duration-150 min-h-[56px] flex items-center justify-center gap-2"
+        className="w-full py-4 bg-green-700 hover:bg-green-600 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl font-bold text-base text-white transition-all duration-150 min-h-[56px] flex items-center justify-center gap-2"
       >
         <Truck className="w-5 h-5" />
         {loading ? "Fulfilling..." : "Fulfill & Ship"}

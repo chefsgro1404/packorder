@@ -217,7 +217,7 @@ function BarcodeScannerInner({ onScan, onError, active }: BarcodeScannerProps) {
             />
             <button
               type="submit"
-              className="px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium transition-colors min-w-[48px]"
+              className="px-4 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium text-white transition-colors min-w-[48px]"
             >
               Go
             </button>

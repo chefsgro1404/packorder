@@ -45,7 +45,7 @@ export function CartDrawer({
             <ShoppingBag className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             Cart
             {items.length > 0 && (
-              <span className="text-sm bg-blue-600 px-2 py-0.5 rounded-full">{items.length}</span>
+              <span className="text-sm bg-blue-600 text-white px-2 py-0.5 rounded-full">{items.length}</span>
             )}
           </h2>
           <button
@@ -109,7 +109,7 @@ export function CartDrawer({
             <button
               onClick={onCheckout}
               disabled={checkoutLoading}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 rounded-xl font-bold text-base transition-all duration-150 min-h-[56px]"
+              className="w-full py-4 bg-blue-600 hover:bg-blue-500 active:scale-[0.98] disabled:opacity-50 rounded-xl font-bold text-base text-white transition-all duration-150 min-h-[56px]"
             >
               {checkoutLoading ? "Processing..." : "Complete Sale"}
             </button>

@@ -147,7 +147,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
               {hideSave ? (
                 <button
                   onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
-                  className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold transition-all"
+                  className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold text-white transition-all"
                 >
                   <Check className="w-4 h-4" /> Print Label
                 </button>
@@ -155,7 +155,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
                 <>
                   <button
                     onClick={() => onResolved(chosenVariant, { save: true, pricePerLb: parseFloat(pricePerLb) || 0 })}
-                    className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold transition-all"
+                    className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold text-white transition-all"
                   >
                     <Check className="w-4 h-4" /> Map Item {itemNumber} &amp; Print
                   </button>

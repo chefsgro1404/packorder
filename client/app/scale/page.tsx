@@ -1024,7 +1024,7 @@ function BulkPrintResultPanel({
       {pendingPrintCount > 0 && (
         <button
           onClick={onPrintAll}
-          className="w-full h-10 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+          className="w-full h-10 flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-500 rounded-xl font-bold text-sm text-white transition-all active:scale-[0.98]"
         >
           <Printer className="w-4 h-4" />
           Print {pendingPrintCount} label{pendingPrintCount !== 1 ? 's' : ''}
@@ -2109,6 +2109,7 @@ export default function ScalePage() {
         setUnmappedPrompt({ itemNumber: item.itemNumber, weight: item.itemWeight });
         return;
       }
+      setWeightRanges([]);
       setCurrentItem(item);
       // If the product has weight ranges (categorical), fetch them and run auto-detection
       // before printing. In categorical mode we show confirmation UI instead of auto-printing.
@@ -2177,6 +2178,17 @@ export default function ScalePage() {
       };
       setUnmappedPrompt(null);
       setCurrentItem(item);
+      // Check weight ranges in case user resolved to a categorical product
+      if (item.variantId) {
+        try {
+          const wr = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
+          if (wr.ok) {
+            const wrData = await wr.json();
+            const rules: WeightRangeRule[] = Array.isArray(wrData?.weightRanges) ? wrData.weightRanges : [];
+            if (rules.length > 0) { setWeightRanges(rules); return; }
+          }
+        } catch { /* non-fatal */ }
+      }
       await printItem(item);
     },
     [unmappedPrompt, printItem]
@@ -2464,15 +2476,11 @@ export default function ScalePage() {
           const rulesData = await rulesRes.json();
           sessionRules = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
           hasAdjustments = !!rulesData?.hasAdjustments;
-          if (sessionRules.length > 0) {
-            setWeightRanges(sessionRules);
-            // If the QR payload contained a weight, resolve the tier now
-            if (item.itemWeight) {
-              const lbs = parseWeightToLbs(item.itemWeight);
-              const matched = lbs !== null ? matchWeightRange(sessionRules, lbs) : null;
-              if (matched) {
-                item = { ...item, variantId: matched.variantId, variantTitle: matched.label };
-              }
+          if (sessionRules.length > 0 && item.itemWeight) {
+            const lbs = parseWeightToLbs(item.itemWeight);
+            const matched = lbs !== null ? matchWeightRange(sessionRules, lbs) : null;
+            if (matched) {
+              item = { ...item, variantId: matched.variantId, variantTitle: matched.label };
             }
           }
         }
@@ -2480,6 +2488,8 @@ export default function ScalePage() {
         // non-fatal — proceed with resolved item
       }
     }
+    // Always update weightRanges — clears stale categorical state when switching to a non-categorical product
+    setWeightRanges(sessionRules);
 
     // Auto-start processing session when a batch barcode has PO context and the product is
     // categorical (weight ranges) or standard session (beef — has adjustments but no weight ranges)
@@ -2860,7 +2870,7 @@ export default function ScalePage() {
                     lookupLoading={lookupLoading}
                     labelSizeKey={labelSizeKey}
                     textMappings={textMappings}
-                    hideUnmappedWarning={transformationOptions !== null || inventoryMappingOverride !== null}
+                    hideUnmappedWarning={transformationOptions !== null || inventoryMappingOverride !== null || weightRanges.length > 0}
                   />
 
                   <div className="border-t border-[var(--border-color)]" />
@@ -3103,7 +3113,7 @@ export default function ScalePage() {
                         <button
                           onClick={handleManualPrint}
                           disabled={!canPrint || autoDetect?.noMatch === true}
-                          className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm transition-all active:scale-[0.98]"
+                          className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm text-white transition-all active:scale-[0.98]"
                         >
                           <Printer className="w-4 h-4" />
                           {autoDetect?.matched

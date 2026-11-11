@@ -130,7 +130,7 @@ export default function HomePage() {
             <button
               type="submit"
               disabled={loading || !email || !password}
-              className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl font-bold text-base transition-all min-h-[56px]"
+              className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl font-bold text-base text-white transition-all min-h-[56px]"
             >
               {loading ? "Signing in…" : "Sign In"}
             </button>

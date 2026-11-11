@@ -682,7 +682,7 @@ export default function ScaleSettingsPage() {
             <button
               onClick={handleFullSync}
               disabled={fullSyncing}
-              className="w-full h-11 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
+              className="w-full h-11 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-sm font-bold text-white transition-all"
             >
               {fullSyncing ? (
                 <><RefreshCw className="w-4 h-4 animate-spin" /> Syncing…</>
@@ -790,7 +790,7 @@ export default function ScaleSettingsPage() {
                 <button
                   onClick={handleSaveSyncSettings}
                   disabled={syncSaving}
-                  className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
+                  className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-sm font-bold text-white transition-all"
                 >
                   {syncSaving ? (
                     <><RefreshCw className="w-4 h-4 animate-spin" /> Saving…</>
@@ -912,7 +912,7 @@ export default function ScaleSettingsPage() {
               <button
                 onClick={handleAddMapping}
                 disabled={mappingsSaving || !newPhrase.trim() || !newAbbr.trim()}
-                className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 transition-colors flex-shrink-0"
+                className="w-10 h-10 flex items-center justify-center rounded-xl bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 transition-colors flex-shrink-0 text-white"
                 aria-label="Add mapping"
               >
                 {mappingsSaving ? (
@@ -1138,7 +1138,7 @@ export default function ScaleSettingsPage() {
             <button
               onClick={handleWrSearch}
               disabled={wrSearching || !wrProductSearch.trim()}
-              className="px-4 py-2 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 rounded-xl text-sm font-medium transition-colors"
+              className="px-4 py-2 bg-violet-700 hover:bg-violet-600 disabled:opacity-50 rounded-xl text-sm font-medium text-white transition-colors"
             >
               {wrSearching ? <RefreshCw className="w-4 h-4 animate-spin" /> : 'Search'}
             </button>
@@ -1258,7 +1258,7 @@ export default function ScaleSettingsPage() {
                     <button
                       onClick={handleWrSave}
                       disabled={wrSaving}
-                      className="flex-1 flex items-center justify-center gap-1.5 text-xs bg-violet-700 hover:bg-violet-600 disabled:opacity-50 rounded-xl px-3 py-2 font-medium transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1.5 text-xs bg-violet-700 hover:bg-violet-600 disabled:opacity-50 rounded-xl px-3 py-2 font-medium text-white transition-colors"
                     >
                       {wrSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : wrSaved ? <><Check className="w-3.5 h-3.5 text-emerald-300" /> Saved</> : 'Save ranges'}
                     </button>
@@ -1399,7 +1399,7 @@ export default function ScaleSettingsPage() {
               <ShieldAlert className="w-4 h-4 text-rose-400" />
               <h2 className="text-sm font-semibold text-[var(--text-primary)]">Failed Operations</h2>
               {deadJobs.length > 0 && (
-                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-[var(--text-primary)] text-[10px] font-bold">
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-rose-600 text-white text-[10px] font-bold">
                   {deadJobs.length}
                 </span>
               )}

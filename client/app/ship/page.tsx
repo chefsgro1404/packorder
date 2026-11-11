@@ -812,7 +812,7 @@ export default function ShipPage() {
                 setShowNamePrompt(false);
               }}
               disabled={!nameInput.trim()}
-              className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
+              className="w-full py-3 bg-green-600 hover:bg-green-500 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors"
             >
               Start Shipping
             </button>
@@ -841,7 +841,7 @@ export default function ShipPage() {
                 sessionStorage.setItem("shipscan_session_started", "1");
                 setShowSessionPrompt(false);
               }}
-              className="w-full py-3 bg-green-600 hover:bg-green-500 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
+              className="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-xl transition-colors"
             >
               Continue as {staffName}
             </button>
@@ -877,7 +877,7 @@ export default function ShipPage() {
               onClick={() => setScanMode("regular")}
               disabled={scanStep !== "idle"}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
-                scanMode === "regular" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
+                scanMode === "regular" ? "bg-green-600 text-white" : "text-slate-400 hover:text-[var(--text-primary)]"
               }`}
             >
               <ScanLine className="w-3.5 h-3.5" /> Regular
@@ -886,7 +886,7 @@ export default function ShipPage() {
               onClick={() => setScanMode("fast")}
               disabled={scanStep !== "idle"}
               className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 disabled:opacity-50 ${
-                scanMode === "fast" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
+                scanMode === "fast" ? "bg-green-600 text-white" : "text-slate-400 hover:text-[var(--text-primary)]"
               }`}
             >
               <Zap className="w-3.5 h-3.5" /> Fast Scan
@@ -946,7 +946,7 @@ export default function ShipPage() {
                 </button>
                 <button
                   onClick={handleConfirmScan}
-                  className="flex-[2] py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
+                  className="flex-[2] py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
                 >
                   Confirm Scan
                 </button>
@@ -996,7 +996,7 @@ export default function ShipPage() {
                 <button
                   onClick={handleAcceptExtra}
                   disabled={extraLoading || !extraReason.trim()}
-                  className="flex-[2] py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-40 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
+                  className="flex-[2] py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-40 text-white font-semibold rounded-xl transition-colors"
                 >
                   {extraLoading ? "Adding…" : "Accept & Add Item"}
                 </button>
@@ -1244,7 +1244,7 @@ export default function ShipPage() {
                     {!done && isUnscannable(li) && (
                       <button
                         onClick={() => performScan(li, null)}
-                        className="px-3 py-1.5 bg-green-700 hover:bg-green-600 active:bg-green-800 text-[var(--text-primary)] text-xs font-semibold rounded-lg transition-colors"
+                        className="px-3 py-1.5 bg-green-700 hover:bg-green-600 active:bg-green-800 text-white text-xs font-semibold rounded-lg transition-colors"
                       >
                         Packed?
                       </button>
@@ -1261,7 +1261,7 @@ export default function ShipPage() {
         <div className="fixed bottom-0 left-0 right-0 bg-[var(--bg-page)] border-t border-[var(--border-color)] p-4 space-y-2">
           <button
             onClick={() => { setBanner(null); rememberedExtraReasonsRef.current.clear(); setActiveStep("scanning"); }}
-            className="w-full py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-[var(--text-primary)] font-semibold rounded-xl transition-colors"
+            className="w-full py-3 bg-green-600 hover:bg-green-500 active:bg-green-700 text-white font-semibold rounded-xl transition-colors"
           >
             Scan Barcode
           </button>
@@ -1336,8 +1336,8 @@ export default function ShipPage() {
                 disabled={completeLoading || (!allDone && !completeReason.trim())}
                 className={`w-full py-3 font-semibold rounded-xl transition-colors disabled:opacity-40 ${
                   allDone
-                    ? "bg-green-600 hover:bg-green-500 text-[var(--text-primary)]"
-                    : "bg-orange-600 hover:bg-orange-500 text-[var(--text-primary)]"
+                    ? "bg-green-600 hover:bg-green-500 text-white"
+                    : "bg-orange-600 hover:bg-orange-500 text-white"
                 }`}
               >
                 {completeLoading ? "Saving…" : allDone ? "Confirm Shipped" : "Submit as Incomplete"}
@@ -1570,7 +1570,7 @@ export default function ShipPage() {
           <button
             onClick={() => setTab("active")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === "active" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
+              tab === "active" ? "bg-green-600 text-white" : "text-slate-400 hover:text-[var(--text-primary)]"
             }`}
           >
             Active
@@ -1578,7 +1578,7 @@ export default function ShipPage() {
           <button
             onClick={() => setTab("history")}
             className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              tab === "history" ? "bg-green-600 text-[var(--text-primary)]" : "text-slate-400 hover:text-[var(--text-primary)]"
+              tab === "history" ? "bg-green-600 text-white" : "text-slate-400 hover:text-[var(--text-primary)]"
             }`}
           >
             History
@@ -1619,7 +1619,7 @@ export default function ShipPage() {
             >
               <Filter className="w-4 h-4" />
               {activeFilterCount > 0 && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-[var(--text-primary)] text-[10px] rounded-full flex items-center justify-center font-bold">
+                <span className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold">
                   {activeFilterCount}
                 </span>
               )}
@@ -1677,7 +1677,7 @@ export default function ShipPage() {
                     handleSync(pendingSyncRange.from || pendingSyncRange.to ? pendingSyncRange : undefined);
                   }}
                   disabled={syncLoading}
-                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-[var(--text-primary)] font-semibold rounded-lg text-sm transition-colors disabled:opacity-50"
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm transition-colors disabled:opacity-50"
                 >
                   Sync
                 </button>
@@ -1916,7 +1916,7 @@ export default function ShipPage() {
                     fetchHistory(pendingFilters);
                     setHistoryFiltersOpen(false);
                   }}
-                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-[var(--text-primary)] font-semibold rounded-lg text-sm transition-colors"
+                  className="flex-1 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg text-sm transition-colors"
                 >
                   Apply Filters
                 </button>
