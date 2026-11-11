@@ -286,8 +286,7 @@ public class ScaleFunction
                         weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(variantEntity.WeightRanges) ?? new();
                     }
                     catch { }
-                    // Tier variants store identical weight ranges, but if this variant's row is stale
-                    // (e.g. synced before ranges were saved), fall back to any sibling that has them.
+                    // Pass 1: same-product siblings (handles stale rows from sync timing).
                     if (weightRulesForVariant.Count == 0 && !string.IsNullOrWhiteSpace(variantEntity.ProductId))
                     {
                         try
@@ -297,6 +296,32 @@ public class ScaleFunction
                                 !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]");
                             if (withRanges != null)
                                 weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(withRanges.WeightRanges) ?? new();
+                        }
+                        catch { }
+                    }
+                    // Pass 2: cross-product reverse lookup.
+                    // Categorical products store tiers as separate Shopify products whose variant IDs
+                    // appear inside the PARENT product's WeightRanges JSON.  When a rescan gives us a
+                    // tier variant ID, neither the tier's row nor its siblings carry weight ranges —
+                    // scan every variant in cache for one whose WeightRanges list references this ID.
+                    if (weightRulesForVariant.Count == 0)
+                    {
+                        try
+                        {
+                            var strippedQuery = TableStorageService.StripGid(variantId);
+                            var all = await _tableStorage.GetAllProductVariantsAsync();
+                            foreach (var candidate in all)
+                            {
+                                if (string.IsNullOrWhiteSpace(candidate.WeightRanges) || candidate.WeightRanges == "[]")
+                                    continue;
+                                var candidateRules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(candidate.WeightRanges);
+                                if (candidateRules != null && candidateRules.Any(r =>
+                                    TableStorageService.StripGid(r.VariantId) == strippedQuery))
+                                {
+                                    weightRulesForVariant = candidateRules;
+                                    break;
+                                }
+                            }
                         }
                         catch { }
                     }
