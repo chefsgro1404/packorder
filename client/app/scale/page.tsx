@@ -627,24 +627,24 @@ const DEFAULT_FILTERS  = ['open', 'partial'];
 
 function poStatusChipStyle(status: string): string {
   switch (status) {
-    case 'open':               return 'bg-blue-900/60 text-blue-300 border-blue-800';
-    case 'partial':            return 'bg-amber-900/60 text-amber-300 border-amber-800';
-    case 'fulfilled':          return 'bg-emerald-900/60 text-emerald-300 border-emerald-800';
-    case 'transferred':        return 'bg-[var(--bg-elevated)]/60 text-[var(--text-secondary)] border-slate-600';
-    case 'draft':              return 'bg-purple-900/60 text-purple-300 border-purple-800';
-    case 'ordered':            return 'bg-cyan-900/60 text-cyan-300 border-cyan-800';
-    case 'partially_received': return 'bg-orange-900/60 text-orange-300 border-orange-800';
-    case 'received':           return 'bg-teal-900/60 text-teal-300 border-teal-800';
-    case 'cancelled':          return 'bg-rose-900/60 text-rose-300 border-rose-800';
+    case 'open':               return 'bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-800';
+    case 'partial':            return 'bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800';
+    case 'fulfilled':          return 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800';
+    case 'transferred':        return 'bg-[var(--bg-elevated)] text-[var(--text-secondary)] border-[var(--border-color)]';
+    case 'draft':              return 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 border-purple-300 dark:border-purple-800';
+    case 'ordered':            return 'bg-cyan-100 dark:bg-cyan-900/60 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-800';
+    case 'partially_received': return 'bg-orange-100 dark:bg-orange-900/60 text-orange-700 dark:text-orange-300 border-orange-300 dark:border-orange-800';
+    case 'received':           return 'bg-teal-100 dark:bg-teal-900/60 text-teal-700 dark:text-teal-300 border-teal-300 dark:border-teal-800';
+    case 'cancelled':          return 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 border-rose-300 dark:border-rose-800';
     default:                   return 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)]';
   }
 }
 
 function poStatusPillStyle(status: string): string {
   switch (status) {
-    case 'open':        return 'bg-blue-950 text-blue-400 border-blue-900';
-    case 'partial':     return 'bg-amber-950 text-amber-400 border-amber-900';
-    case 'fulfilled':   return 'bg-emerald-950 text-emerald-400 border-emerald-900';
+    case 'open':        return 'bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-900';
+    case 'partial':     return 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-900';
+    case 'fulfilled':   return 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900';
     case 'transferred': return 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)]';
     default:            return 'bg-[var(--bg-input)] text-slate-400 border-[var(--border-color)]';
   }
@@ -753,7 +753,7 @@ function PoSuggestions({
           <ClipboardList className="w-4 h-4 text-slate-500" />
           <span className="text-sm font-semibold text-[var(--text-primary)]">PO Suggestions</span>
           {pendingCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-900 text-blue-300 border border-blue-800">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border border-blue-300 dark:border-blue-800">
               {pendingCount} pending
             </span>
           )}
@@ -1031,12 +1031,12 @@ function BulkPrintResultPanel({
         </button>
       )}
       {inventoryAdjusted !== null && inventoryAdjusted < 0 && (
-        <p className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900/40 rounded-lg px-2.5 py-1.5">
+        <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/40 rounded-lg px-2.5 py-1.5">
           Shopify inventory adjusted by {inventoryAdjusted} for the {Math.abs(inventoryAdjusted)} unit shortfall
         </p>
       )}
       {inventoryAdjusted !== null && inventoryAdjusted > 0 && (
-        <p className="text-xs text-violet-300 bg-violet-950/40 border border-violet-900/40 rounded-lg px-2.5 py-1.5">
+        <p className="text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-900/40 rounded-lg px-2.5 py-1.5">
           Shopify inventory adjusted by +{inventoryAdjusted} for the {inventoryAdjusted} unit overage
         </p>
       )}
@@ -1045,17 +1045,17 @@ function BulkPrintResultPanel({
           <div
             key={r.index}
             className={`flex items-center gap-2.5 rounded-xl px-3 py-2 ${
-              r.status === 'printed' ? 'bg-[var(--bg-input)]' : 'bg-rose-950/40 border border-rose-900/40'
+              r.status === 'printed' ? 'bg-[var(--bg-input)]' : 'bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/40'
             }`}
           >
-            <span className={`text-[10px] font-bold w-5 text-center ${r.status === 'printed' ? 'text-slate-500' : 'text-rose-400'}`}>
+            <span className={`text-[10px] font-bold w-5 text-center ${r.status === 'printed' ? 'text-slate-500' : 'text-rose-600 dark:text-rose-400'}`}>
               #{r.index}
             </span>
             <div className="flex-1 min-w-0">
               {r.status === 'printed' ? (
                 <p className="text-xs text-[var(--text-secondary)] font-mono truncate">{r.sn}</p>
               ) : (
-                <p className="text-xs text-rose-300">{r.error ?? 'Print failed'}</p>
+                <p className="text-xs text-rose-700 dark:text-rose-300">{r.error ?? 'Print failed'}</p>
               )}
             </div>
             <button
@@ -1085,18 +1085,18 @@ function TransformationPanel({
   onManualTransform?: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-2.5 bg-violet-950/30 border border-violet-900/50 rounded-xl px-3 py-3">
+    <div className="flex flex-col gap-2.5 bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-900/50 rounded-xl px-3 py-3">
       <div className="flex items-center gap-1.5">
-        <Droplets className="w-3.5 h-3.5 text-violet-400 flex-shrink-0" />
-        <p className="text-xs font-semibold text-violet-300">Transformation Ready</p>
+        <Droplets className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400 flex-shrink-0" />
+        <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Transformation Ready</p>
       </div>
 
       {/* Source */}
-      <div className="bg-violet-900/20 rounded-lg px-2.5 py-2">
-        <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Source</p>
-        <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
+      <div className="bg-violet-100 dark:bg-violet-900/20 rounded-lg px-2.5 py-2">
+        <p className="text-[10px] font-semibold text-violet-500 dark:text-violet-400/60 uppercase tracking-wider mb-1">Source</p>
+        <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
         {currentItem.plu && currentItem.plu !== 'N/A' && (
-          <p className="text-[10px] text-violet-400/50 mt-0.5">{currentItem.plu}</p>
+          <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">{currentItem.plu}</p>
         )}
       </div>
 
@@ -1107,31 +1107,31 @@ function TransformationPanel({
             <button
               key={opt.variantId}
               onClick={() => onSelect(opt)}
-              className="w-full flex items-center justify-between gap-2 bg-violet-900/20 hover:bg-violet-700/40 active:bg-violet-600/50 rounded-lg px-2.5 py-2 transition-colors text-left"
+              className="w-full flex items-center justify-between gap-2 bg-violet-100 dark:bg-violet-900/20 hover:bg-violet-200 dark:hover:bg-violet-700/40 active:bg-violet-200 dark:active:bg-violet-600/50 rounded-lg px-2.5 py-2 transition-colors text-left"
             >
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{opt.title}</p>
+                <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{opt.title}</p>
                 {(opt.weightPerUnit ?? 0) > 0 && (
-                  <p className="text-[10px] text-violet-400/50 mt-0.5">
+                  <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">
                     {opt.weightPerUnit} unit{(opt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
                   </p>
                 )}
               </div>
-              <ArrowRight className="w-3.5 h-3.5 text-violet-500 flex-shrink-0" />
+              <ArrowRight className="w-3.5 h-3.5 text-violet-600 dark:text-violet-500 flex-shrink-0" />
             </button>
           ))}
         </div>
       ) : (
         // No configured children — default to same product (A→A), allow searching
         <>
-          <div className="bg-violet-900/20 rounded-lg px-2.5 py-2">
-            <p className="text-[10px] font-semibold text-violet-400/60 uppercase tracking-wider mb-1">Output</p>
-            <p className="text-xs font-semibold text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
-            <p className="text-[10px] text-violet-400/50 mt-0.5">same product</p>
+          <div className="bg-violet-100 dark:bg-violet-900/20 rounded-lg px-2.5 py-2">
+            <p className="text-[10px] font-semibold text-violet-500 dark:text-violet-400/60 uppercase tracking-wider mb-1">Output</p>
+            <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
+            <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">same product</p>
           </div>
           <button
             onClick={onManualTransform}
-            className="w-full text-xs font-semibold bg-violet-700/50 hover:bg-violet-600/60 active:bg-violet-600/80 text-violet-200 rounded-lg py-2 transition-colors"
+            className="w-full text-xs font-semibold bg-violet-200 dark:bg-violet-700/50 hover:bg-violet-300 dark:hover:bg-violet-600/60 text-violet-800 dark:text-violet-200 rounded-lg py-2 transition-colors"
           >
             Set ratio / change product →
           </button>
@@ -1141,7 +1141,7 @@ function TransformationPanel({
       {options.length > 0 && onManualTransform && (
         <button
           onClick={onManualTransform}
-          className="w-full text-[11px] text-violet-500 hover:text-violet-300 transition-colors"
+          className="w-full text-[11px] text-violet-600 dark:text-violet-500 hover:text-violet-800 dark:hover:text-violet-300 transition-colors"
         >
           Use different product
         </button>
@@ -2878,7 +2878,7 @@ export default function ScalePage() {
                         onClick={() => handleSizeChange(key)}
                         className={`text-[10px] px-2 py-1 rounded-lg font-medium transition-colors ${
                           labelSizeKey === key
-                            ? 'bg-blue-600 text-[var(--text-primary)]'
+                            ? 'bg-blue-600 text-white'
                             : 'bg-[var(--bg-input)] text-slate-400 hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]'
                         }`}
                       >
@@ -2900,9 +2900,9 @@ export default function ScalePage() {
 
                   {/* ── Processing Session Header ── */}
                   {processingSession && (
-                    <div className="bg-violet-900/30 border border-violet-700/50 rounded-xl p-3 mb-2">
+                    <div className="bg-violet-50 dark:bg-violet-900/30 border border-violet-200 dark:border-violet-700/50 rounded-xl p-3 mb-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-semibold text-violet-300 uppercase tracking-wide">Processing Session</span>
+                        <span className="text-xs font-semibold text-violet-700 dark:text-violet-300 uppercase tracking-wide">Processing Session</span>
                         <button
                           onClick={() => setSessionClosePrompt(true)}
                           className="text-xs bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 border border-rose-700/50 rounded-lg px-2.5 py-1 transition-colors"
@@ -2913,8 +2913,8 @@ export default function ScalePage() {
                       <p className="text-sm font-medium text-[var(--text-primary)] truncate">{processingSession.mainProductTitle}</p>
                       <div className="flex gap-3 mt-1 text-xs text-slate-400">
                         <span>PO: <span className="text-[var(--text-primary)] font-semibold">{processingSession.poQty}</span></span>
-                        <span>Processed: <span className="text-emerald-300 font-semibold">{processingSession.cumulativeQty + processingSession.sessionQty}</span></span>
-                        <span>Remaining: <span className={`font-semibold ${processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty > 0 ? 'text-amber-300' : 'text-emerald-300'}`}>{Math.max(0, processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty)}</span></span>
+                        <span>Processed: <span className="text-emerald-700 dark:text-emerald-300 font-semibold">{processingSession.cumulativeQty + processingSession.sessionQty}</span></span>
+                        <span>Remaining: <span className={`font-semibold ${processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{Math.max(0, processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty)}</span></span>
                       </div>
                       {Object.keys(processingSession.variantBreakdown).length > 0 && (
                         <div className="flex gap-2 mt-1.5 flex-wrap">
@@ -2924,7 +2924,7 @@ export default function ScalePage() {
                         </div>
                       )}
                       {autoPrintPending && (
-                        <p className="text-xs text-amber-300 mt-1 animate-pulse">Auto-printing in 1.5s…</p>
+                        <p className="text-xs text-amber-700 dark:text-amber-300 mt-1 animate-pulse">Auto-printing in 1.5s…</p>
                       )}
                     </div>
                   )}
@@ -2935,13 +2935,13 @@ export default function ScalePage() {
 
                       {/* Warning banner for out-of-range */}
                       {autoDetect.noMatch && (
-                        <div className="flex items-start gap-2 bg-rose-950/50 border border-rose-800/60 rounded-xl px-3 py-2.5">
-                          <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl px-3 py-2.5">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-rose-300">
+                            <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">
                               {autoDetect.weightLbs.toFixed(2)} lbs is outside all configured ranges
                             </p>
-                            <p className="text-[11px] text-rose-400/70 mt-0.5">
+                            <p className="text-[11px] text-rose-600 dark:text-rose-400/70 mt-0.5">
                               Select a tier below to override, or skip this reading.
                             </p>
                           </div>
@@ -2950,13 +2950,13 @@ export default function ScalePage() {
 
                       {/* Matched tier info (non-noMatch) */}
                       {!autoDetect.noMatch && autoDetect.matched && (
-                        <div className="flex items-center gap-2 bg-emerald-950/40 border border-emerald-800/60 rounded-xl px-3 py-2">
-                          <Zap className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl px-3 py-2">
+                          <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
                           <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold text-emerald-300">
+                            <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">
                               Auto-detected: {autoDetect.matched.label} — {autoDetect.weightLbs.toFixed(2)} lbs
                             </p>
-                            <p className="text-[11px] text-emerald-400/70 mt-0.5">
+                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400/70 mt-0.5">
                               ≥{autoDetect.matched.minLbs} lbs{autoDetect.matched.maxLbs != null ? ` · <${autoDetect.matched.maxLbs} lbs` : ''}
                             </p>
                           </div>
@@ -2980,12 +2980,12 @@ export default function ScalePage() {
                               }}
                               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
                                 isActive
-                                  ? 'bg-emerald-700 border-emerald-600 text-[var(--text-primary)]'
+                                  ? 'bg-emerald-700 border-emerald-600 text-white'
                                   : 'bg-[var(--bg-input)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:border-slate-600'
                               }`}
                             >
                               <span className="text-xs font-bold leading-tight">{r.label}</span>
-                              <span className={`text-[10px] leading-tight ${isActive ? 'text-emerald-200' : 'text-slate-500'}`}>
+                              <span className={`text-[10px] leading-tight ${isActive ? 'text-emerald-100' : 'text-slate-500'}`}>
                                 ≥{r.minLbs}{r.maxLbs != null ? `–<${r.maxLbs}` : '+'} lbs
                               </span>
                             </button>
@@ -3011,12 +3011,12 @@ export default function ScalePage() {
                   {!isPrinterDevice && remotePrintJob && (
                     <div className={`flex items-center gap-2.5 rounded-xl px-3 py-2.5 border text-sm ${
                       remotePrintJob.status === 'completed'
-                        ? 'bg-emerald-950/50 border-emerald-900 text-emerald-300'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/50 border-emerald-200 dark:border-emerald-900 text-emerald-700 dark:text-emerald-300'
                         : remotePrintJob.status === 'failed'
-                        ? 'bg-rose-950/50 border-rose-900 text-rose-300'
+                        ? 'bg-rose-50 dark:bg-rose-950/50 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300'
                         : remotePrintJob.status === 'claimed'
-                        ? 'bg-blue-950/50 border-blue-900 text-blue-300'
-                        : 'bg-amber-950/50 border-amber-900 text-amber-300'
+                        ? 'bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300'
+                        : 'bg-amber-50 dark:bg-amber-950/50 border-amber-200 dark:border-amber-900 text-amber-700 dark:text-amber-300'
                     }`}>
                       <Printer className="w-4 h-4 flex-shrink-0" />
                       <span className="flex-1 min-w-0 font-medium">
@@ -3034,16 +3034,16 @@ export default function ScalePage() {
                   )}
 
                   {printError && (
-                    <div className="flex items-center gap-2 bg-rose-950/50 border border-rose-900 rounded-xl px-3 py-2.5">
-                      <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                      <p className="text-sm text-rose-300 font-medium">{printError}</p>
+                    <div className="flex items-center gap-2 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-xl px-3 py-2.5">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0" />
+                      <p className="text-sm text-rose-700 dark:text-rose-300 font-medium">{printError}</p>
                     </div>
                   )}
 
                   {printedAt && (
-                    <div className="flex items-center gap-2 bg-emerald-950/50 border border-emerald-900 rounded-xl px-3 py-2.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                      <p className="text-sm text-emerald-300 font-medium">
+                    <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-900 rounded-xl px-3 py-2.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                      <p className="text-sm text-emerald-700 dark:text-emerald-300 font-medium">
                         Sent to print at {formatEst(printedAt)} EST
                       </p>
                     </div>
@@ -3068,25 +3068,25 @@ export default function ScalePage() {
                     const ratioLabel = (pUnits !== 1 || cUnits !== 1) ? ` (${pUnits}:${cUnits} ratio)` : '';
                     return (
                       <div className={`flex items-start gap-2 rounded-xl px-3 py-2.5 border ${
-                        lastAdjustment ? 'bg-emerald-950/40 border-emerald-800/60' : 'bg-amber-950/40 border-amber-800/60'
+                        lastAdjustment ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60' : 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60'
                       }`}>
-                        <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-400' : 'text-amber-400'}`} />
+                        <Droplets className={`w-4 h-4 flex-shrink-0 mt-0.5 ${lastAdjustment ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-300' : 'text-amber-300'}`}>
+                          <p className={`text-xs font-semibold leading-tight ${lastAdjustment ? 'text-emerald-700 dark:text-emerald-300' : 'text-amber-700 dark:text-amber-300'}`}>
                             {inventoryMappingOverride ? 'Manual Transformation' : 'Wet Product'}
                           </p>
                           {lastAdjustment ? (
-                            <p className="text-xs text-emerald-400/80 leading-tight mt-0.5">
+                            <p className="text-xs text-emerald-600 dark:text-emerald-400/80 leading-tight mt-0.5">
                               {Math.abs(lastAdjustment.delta)} unit{Math.abs(lastAdjustment.delta) !== 1 ? 's' : ''} deducted from {lastAdjustment.parentTitle}
                             </p>
                           ) : m.isWeighted ? (
-                            <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                            <p className="text-xs text-amber-600 dark:text-amber-400/80 leading-tight mt-0.5">
                               {currentItem.itemWeight
                                 ? `~${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / m.weightPerUnit)} unit${Math.round(parseFloat(currentItem.itemWeight.replace(/[^0-9.]/g, '')) / m.weightPerUnit) !== 1 ? 's' : ''} of ${m.parentProductTitle} will be deducted`
                                 : `Deducts from ${m.parentProductTitle} · ${m.weightPerUnit} lbs/unit`}
                             </p>
                           ) : (
-                            <p className="text-xs text-amber-400/80 leading-tight mt-0.5">
+                            <p className="text-xs text-amber-600 dark:text-amber-400/80 leading-tight mt-0.5">
                               {pUnits} unit{pUnits !== 1 ? 's' : ''} of {m.parentProductTitle} → {cUnits} child unit{cUnits !== 1 ? 's' : ''}{ratioLabel}
                             </p>
                           )}
@@ -3257,13 +3257,13 @@ export default function ScalePage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="relative w-full max-w-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
             <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-900/60 border border-amber-800 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-200 dark:border-amber-800 flex items-center justify-center flex-shrink-0 mt-0.5">
                 <span className="text-lg">🏷️</span>
               </div>
               <div>
                 <p className="text-sm font-bold text-[var(--text-primary)] leading-snug">Is this a lot product?</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  <span className="font-semibold text-amber-300">{lotProductPrompt.printedCount}</span> barcode{lotProductPrompt.printedCount !== 1 ? 's' : ''} printed,
+                  <span className="font-semibold text-amber-700 dark:text-amber-300">{lotProductPrompt.printedCount}</span> barcode{lotProductPrompt.printedCount !== 1 ? 's' : ''} printed,
                   but PO quantity is <span className="font-semibold text-[var(--text-primary)]">{lotProductPrompt.li.quantityOrdered}</span>.
                 </p>
                 <p className="text-xs text-slate-500 mt-2">
@@ -3274,7 +3274,7 @@ export default function ScalePage() {
             <div className="flex flex-col gap-2">
               <button
                 onClick={handleMarkAsLot}
-                className="w-full h-11 bg-amber-600 hover:bg-amber-500 rounded-xl text-sm text-[var(--text-primary)] font-bold transition-colors"
+                className="w-full h-11 bg-amber-600 hover:bg-amber-500 rounded-xl text-sm text-white font-bold transition-colors"
               >
                 Mark as lot product — use PO qty ({lotProductPrompt.li.quantityOrdered})
               </button>
@@ -3299,27 +3299,27 @@ export default function ScalePage() {
               <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Close Processing Session</h3>
               <p className="text-sm text-slate-400 mb-3">
                 {totalProcessed} of {processingSession.poQty} units processed.
-                {unaccounted > 0 && <> <span className="text-amber-300 font-semibold">{unaccounted} unaccounted.</span></>}
+                {unaccounted > 0 && <> <span className="text-amber-700 dark:text-amber-300 font-semibold">{unaccounted} unaccounted.</span></>}
               </p>
               <div className="flex flex-col gap-2">
                 {unaccounted > 0 && (
                   <button
                     onClick={() => closeSession('completed', unaccounted)}
-                    className="w-full bg-rose-900/50 hover:bg-rose-800/60 border border-rose-700/50 text-rose-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                    className="w-full bg-rose-50 dark:bg-rose-900/50 hover:bg-rose-100 dark:hover:bg-rose-800/60 border border-rose-200 dark:border-rose-700/50 text-rose-700 dark:text-rose-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
                   >
                     Mark {unaccounted} as wastage &amp; adjust inventory
                   </button>
                 )}
                 <button
                   onClick={() => closeSession('partial', 0)}
-                  className="w-full bg-amber-900/40 hover:bg-amber-800/50 border border-amber-700/50 text-amber-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                  className="w-full bg-amber-50 dark:bg-amber-900/40 hover:bg-amber-100 dark:hover:bg-amber-800/50 border border-amber-200 dark:border-amber-700/50 text-amber-700 dark:text-amber-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
                 >
                   Process later (save progress)
                 </button>
                 {unaccounted === 0 && (
                   <button
                     onClick={() => closeSession('completed', 0)}
-                    className="w-full bg-emerald-900/50 hover:bg-emerald-800/60 border border-emerald-700/50 text-emerald-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
+                    className="w-full bg-emerald-50 dark:bg-emerald-900/50 hover:bg-emerald-100 dark:hover:bg-emerald-800/60 border border-emerald-200 dark:border-emerald-700/50 text-emerald-700 dark:text-emerald-200 text-sm font-medium py-2.5 rounded-xl transition-colors"
                   >
                     Complete batch
                   </button>
