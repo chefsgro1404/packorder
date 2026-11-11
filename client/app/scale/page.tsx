@@ -2441,6 +2441,7 @@ export default function ScalePage() {
         const snRes = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(sn)}`);
         if (snRes.ok) {
           const snData = await snRes.json();
+          console.log('[qr] SN lookup:', { sn, found: snData?.found, variantId: snData?.variantId, poId: snData?.poId });
           if (snData?.found) {
             if (snData?.variantId && !item.variantId) {
               item = { ...item, variantId: snData.variantId };
@@ -2460,11 +2461,13 @@ export default function ScalePage() {
     }
 
     // Tertiary fallback: title-based lookup for unmapped products without a logged SN variantId
+    let titleWeightRanges: WeightRangeRule[] = [];
     if (!item.variantId && titlePart) {
       try {
         const titleRes = await fetch(`/api/scale/lookup-by-title?title=${encodeURIComponent(titlePart)}`);
         if (titleRes.ok) {
           const titleData = await titleRes.json();
+          console.log('[qr] title lookup:', titleData);
           if (titleData?.found && titleData?.variantId) {
             item = {
               ...item,
@@ -2472,6 +2475,8 @@ export default function ScalePage() {
               variantTitle: titleData.variantTitle && titleData.variantTitle !== 'Default Title'
                 ? titleData.variantTitle : null,
             };
+            // Capture weight ranges returned directly by title lookup (saves a by-variant round-trip)
+            titleWeightRanges = Array.isArray(titleData?.weightRanges) ? titleData.weightRanges : [];
           }
         }
       } catch {
@@ -2479,14 +2484,17 @@ export default function ScalePage() {
       }
     }
     // Fetch weight ranges for the resolved product and auto-match on weight if present in QR
-    let sessionRules: WeightRangeRule[] = [];
+    let sessionRules: WeightRangeRule[] = titleWeightRanges;
     let hasAdjustments = false;
     if (item.variantId) {
       try {
         const rulesRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
         if (rulesRes.ok) {
           const rulesData = await rulesRes.json();
-          sessionRules = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
+          console.log('[qr] by-variant:', { variantId: item.variantId, weightRangesCount: (rulesData?.weightRanges ?? []).length, found: rulesData?.found });
+          const byVariantRules: WeightRangeRule[] = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
+          // Prefer by-variant result; fall back to title-lookup ranges if by-variant came back empty
+          sessionRules = byVariantRules.length > 0 ? byVariantRules : titleWeightRanges;
           hasAdjustments = !!rulesData?.hasAdjustments;
           // Promote item to found using registry data — covers PLU:N/A products resolved via SN
           if (rulesData?.found) {
@@ -2511,6 +2519,7 @@ export default function ScalePage() {
         // non-fatal — proceed with resolved item
       }
     }
+    console.log('[qr] final state:', { plu, sn, variantId: item.variantId, found: item.found, weightRangesCount: sessionRules.length });
     // Always update weightRanges — clears stale categorical state when switching to a non-categorical product
     setWeightRanges(sessionRules);
 

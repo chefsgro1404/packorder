@@ -704,6 +704,23 @@ public class ScaleFunction
             if (match == null)
                 return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
 
+            // Also fetch weight ranges so the caller can skip a separate by-variant call.
+            // Check this variant first; if empty, scan siblings (same product) for ranges.
+            List<Models.WeightRangeRule> weightRules = new();
+            try
+            {
+                weightRules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(match.WeightRanges ?? "[]") ?? new();
+                if (weightRules.Count == 0 && !string.IsNullOrWhiteSpace(match.ProductId))
+                {
+                    var siblings = await _tableStorage.GetProductVariantsByProductIdAsync(match.ProductId);
+                    var withRanges = siblings.FirstOrDefault(v =>
+                        !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]");
+                    if (withRanges != null)
+                        weightRules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(withRanges.WeightRanges ?? "[]") ?? new();
+                }
+            }
+            catch { }
+
             return await ResponseHelper.WriteSuccess(req, new
             {
                 found         = true,
@@ -711,6 +728,8 @@ public class ScaleFunction
                 productTitle  = match.ProductTitle,
                 variantTitle  = match.VariantTitle,
                 inventoryItemId = match.InventoryItemId,
+                productId     = match.ProductId,
+                weightRanges  = weightRules,
             }, _allowedOrigins);
         }
         catch (Exception ex)
