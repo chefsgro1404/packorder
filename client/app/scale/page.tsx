@@ -1421,7 +1421,7 @@ export default function ScalePage() {
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
         const [parentInvRes, childInvRes] = await Promise.all([
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(currentItem.variantId!)}`),
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(processingSession.mainVariantId)}`),
           fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(matchedTier.variantId)}`),
         ]);
         if (parentInvRes.ok && childInvRes.ok) {
@@ -2287,7 +2287,11 @@ export default function ScalePage() {
       console.log('[scale] manual print inline match:', { weight: item.itemWeight, lbs, activeMatch });
     }
 
-    if (activeMatch && item.variantId !== activeMatch.variantId) {
+    // Use mainVariantId from the session as the parent — currentItem.variantId may have been
+    // overwritten by a previous tier print (setCurrentItem(itemWithVariant)), so item.variantId
+    // could already equal the last tier rather than the original scanned product.
+    const parentVariantId = processingSession ? processingSession.mainVariantId : item.variantId!;
+    if (activeMatch && parentVariantId !== activeMatch.variantId) {
       let itemWithVariant: CurrentItem = { ...item, variantId: activeMatch.variantId, variantTitle: activeMatch.label };
       try {
         const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(activeMatch.variantId)}`);
@@ -2305,7 +2309,7 @@ export default function ScalePage() {
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
         const [parentInvRes, childInvRes] = await Promise.all([
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId!)}`),
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(parentVariantId)}`),
           fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(activeMatch.variantId)}`),
         ]);
         if (parentInvRes.ok && childInvRes.ok) {
