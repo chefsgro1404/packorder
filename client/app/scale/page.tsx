@@ -1111,11 +1111,15 @@ function TransformationPanel({
             >
               <div className="min-w-0">
                 <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{opt.title}</p>
-                {(opt.weightPerUnit ?? 0) > 0 && (
+                {opt.isSelf ? (
+                  <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">
+                    Count as-is · no inventory change
+                  </p>
+                ) : (opt.weightPerUnit ?? 0) > 0 ? (
                   <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">
                     {opt.weightPerUnit} unit{(opt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
                   </p>
-                )}
+                ) : null}
               </div>
               <ArrowRight className="w-3.5 h-3.5 text-violet-600 dark:text-violet-500 flex-shrink-0" />
             </button>
@@ -1352,21 +1356,41 @@ export default function ScalePage() {
         if (!res.ok || cancelled) return;
         const data = await res.json();
         if (!cancelled) {
-          const opts = data?.options;
-          if (Array.isArray(opts) && opts.length > 0) {
-            // Only show after a QR scan — not when a PO item is selected
-            setTransformationOptions(wasQrScanned ? opts : null);
+          let opts: TransformationOption[] = Array.isArray(data?.options) && data.options.length > 0 ? data.options : [];
+          // For lot products scanned via QR, prepend a "count this bag as-is" self option
+          if (wasQrScanned && currentItem?.productId && lotProducts.has(currentItem.productId) && currentItem?.variantId) {
+            opts = [{
+              variantId: currentItem.variantId,
+              title: currentItem.productTitle,
+              productTitle: currentItem.productTitle,
+              inventoryItemId: '',
+              parentInventoryItemId: '',
+              locationId: '',
+              isSelf: true,
+            }, ...opts.filter(o => o.variantId !== currentItem?.variantId)];
+          }
+          setTransformationOptions(wasQrScanned ? opts : null);
+        }
+      } catch {
+        if (!cancelled) {
+          if (wasQrScanned && currentItem?.productId && lotProducts.has(currentItem.productId) && currentItem?.variantId) {
+            setTransformationOptions([{
+              variantId: currentItem.variantId,
+              title: currentItem.productTitle,
+              productTitle: currentItem.productTitle,
+              inventoryItemId: '',
+              parentInventoryItemId: '',
+              locationId: '',
+              isSelf: true,
+            }]);
           } else {
-            // Keep panel visible after a QR scan even with no configured children
             setTransformationOptions(wasQrScanned ? [] : null);
           }
         }
-      } catch {
-        if (!cancelled) setTransformationOptions(wasQrScanned ? [] : null);
       }
     })();
     return () => { cancelled = true; };
-  }, [currentItem?.variantId, wasQrScanned, weightRanges]);
+  }, [currentItem?.variantId, currentItem?.productId, wasQrScanned, weightRanges, lotProducts]);
 
   // Save session + weight ranges to localStorage whenever they change.
   // Never deletes here — explicit closeSession handles that — so the save-on-mount
@@ -1828,7 +1852,7 @@ export default function ScalePage() {
   }, [approvePoItem, refreshLineItems, enqueueAndRun]);
 
   const handleBulkPrint = useCallback(async (
-    modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; inventoryItemId?: string; locationId?: string },
+    modalState: { item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string },
     quantity: number,
     weight: string,
     lotNo: string,
@@ -1932,9 +1956,10 @@ export default function ScalePage() {
       }
     }
 
-    // Determine lot method: either in configured lot products list, or weight-based lot receiving
+    // Determine lot method: configured lot products, weight-based lot receiving, or Shopify isLotReceiving flag
     const productId = item.productId ?? null;
-    const isLotMethod = productId ? lotProducts.has(productId) : (lotTotalWeightLbs !== undefined);
+    const isLotReceivingFlag = modalState.isLotReceiving ?? false;
+    const isLotMethod = (productId ? lotProducts.has(productId) : false) || (lotTotalWeightLbs !== undefined) || isLotReceivingFlag;
     const { inventoryItemId: modalInvItemId, locationId: modalLocationId } = modalState;
 
     // Show first-discrepancy modal when count mismatches and product not yet configured
@@ -1945,6 +1970,54 @@ export default function ScalePage() {
 
     // No prompt needed — apply approval and inventory immediately
     await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, isLotMethod, modalInvItemId, modalLocationId);
+
+    // Start/update a processing session for lot products so the processed/remaining panel shows
+    if (isLotMethod && printedCount > 0) {
+      try {
+        await fetch('/api/scale/processing-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            poId: po.id,
+            poLineItemId: li.id,
+            poQty: li.quantityOrdered,
+            mainVariantId: item.variantId ?? '',
+            mainProductTitle: item.productTitle ?? '',
+            vendorName: item.vendorName ?? '',
+            lotNo: lotNo || '',
+            sessionQty: printedCount,
+            wastageQty: 0,
+            sessionStatus: 'partial',
+            variantBreakdown: {},
+          }),
+        });
+      } catch { /* non-fatal */ }
+      let priorCumulative = 0;
+      let priorBreakdown: Record<string, number> = {};
+      try {
+        const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(li.id)}`);
+        if (sessRes.ok) {
+          const sessData = await sessRes.json();
+          if (sessData?.sessionCount > 0) {
+            priorCumulative = sessData.cumulativeQty ?? 0;
+            priorBreakdown = sessData.variantBreakdown ?? {};
+          }
+        }
+      } catch { /* non-fatal */ }
+      lastSyncedQtyRef.current = 0;
+      setProcessingSession({
+        poId: po.id,
+        poLineItemId: li.id,
+        poQty: li.quantityOrdered,
+        mainVariantId: item.variantId ?? '',
+        mainProductTitle: item.productTitle ?? '',
+        vendorName: item.vendorName ?? '',
+        lotNo: lotNo || '',
+        sessionQty: 0,
+        cumulativeQty: priorCumulative,
+        variantBreakdown: priorBreakdown,
+      });
+    }
   }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, labelSizeKey, resetPrinted, lotProducts, applyBulkApprovalAndInventory]);
 
   const handleMarkAsLot = useCallback(async () => {
@@ -1975,6 +2048,14 @@ export default function ScalePage() {
 
   const handleTransformationSelect = useCallback((opt: TransformationOption) => {
     if (!currentItem) return;
+
+    // Self option — count the bag without inventory adjustment; just clear the panel
+    if (opt.isSelf) {
+      setWasQrScanned(false);
+      setTransformationOptions(null);
+      resetPrinted();
+      return;
+    }
 
     const DEFAULT_LOCATION = 'gid://shopify/Location/82125062435';
     const locId = opt.locationId || DEFAULT_LOCATION;
@@ -2598,6 +2679,7 @@ export default function ScalePage() {
     // Fetch weight ranges for the resolved product and auto-match on weight if present in QR
     let sessionRules: WeightRangeRule[] = titleWeightRanges;
     let hasAdjustments = false;
+    let isLotProduct = false;
     if (item.variantId) {
       try {
         const rulesRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
@@ -2608,6 +2690,7 @@ export default function ScalePage() {
           // Prefer by-variant result; fall back to title-lookup ranges if by-variant came back empty
           sessionRules = byVariantRules.length > 0 ? byVariantRules : titleWeightRanges;
           hasAdjustments = !!rulesData?.hasAdjustments;
+          isLotProduct = item.productId ? lotProducts.has(item.productId) : false;
           // Promote item to found using registry data — covers PLU:N/A products resolved via SN
           if (rulesData?.found) {
             item = {
@@ -2637,7 +2720,7 @@ export default function ScalePage() {
 
     // Auto-start processing session when a batch barcode has PO context and the product is
     // categorical (weight ranges) or standard session (beef — has adjustments but no weight ranges)
-    if (snPoId && snPoLineItemId && (sessionRules.length > 0 || hasAdjustments)) {
+    if (snPoId && snPoLineItemId && (sessionRules.length > 0 || hasAdjustments || isLotProduct)) {
       let poQty = 0;
       let priorCumulative = 0;
       let priorBreakdown: Record<string, number> = {};
@@ -2682,7 +2765,7 @@ export default function ScalePage() {
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
-  }, [lookupProduct, fetchLineItems]);
+  }, [lookupProduct, fetchLineItems, lotProducts]);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'

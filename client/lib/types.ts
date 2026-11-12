@@ -384,6 +384,7 @@ export interface TransformationOption {
   childUnits?: number;
   isWeighted?: boolean;
   weightPerUnit?: number;
+  isSelf?: boolean;
 }
 
 export interface PurchaseOrder {
