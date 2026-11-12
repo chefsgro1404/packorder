@@ -1173,7 +1173,15 @@ export default function ScalePage() {
   const [manualTransformModal, setManualTransformModal] = useState(false);
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
-  const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>([]);
+  const [weightRanges, setWeightRanges] = useState<WeightRangeRule[]>(() => {
+    try {
+      if (typeof window === 'undefined') return [];
+      const raw = localStorage.getItem('shipscan:activeSession');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed?.weightRanges) ? parsed.weightRanges : [];
+    } catch { return []; }
+  });
   const [autoDetect, setAutoDetect] = useState<{ matched: WeightRangeRule | null; noMatch: boolean; weightLbs: number } | null>(null);
   const [processingSession, setProcessingSession] = useState<{
     poId: string;
@@ -1186,7 +1194,16 @@ export default function ScalePage() {
     sessionQty: number;
     cumulativeQty: number;
     variantBreakdown: Record<string, number>;
-  } | null>(null);
+  } | null>(() => {
+    try {
+      if (typeof window === 'undefined') return null;
+      const raw = localStorage.getItem('shipscan:activeSession');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const s = parsed?.session;
+      return (s?.poId && s?.mainVariantId) ? s : null;
+    } catch { return null; }
+  });
   const [sessionClosePrompt, setSessionClosePrompt] = useState(false);
   const [wastageWarning, setWastageWarning] = useState<string | null>(null);
   const [autoPrintPending, setAutoPrintPending] = useState(false);
@@ -1210,6 +1227,7 @@ export default function ScalePage() {
   const { enqueueAndRun } = useOperationQueue();
   const [poLineItemsCache, setPoLineItemsCache] = useState<Record<string, PurchaseOrderLineItem[]>>({});
   const isPrinting = useRef(false);
+  const lastSyncedQtyRef = useRef(0);
   const [labelSizeKey, setLabelSizeKey] = useState<LabelSizeKey>(() => {
     if (typeof window === 'undefined') return '3x2';
     return (localStorage.getItem(LABEL_SIZE_STORAGE_KEY) as LabelSizeKey) ?? '3x2';
@@ -1345,30 +1363,42 @@ export default function ScalePage() {
     return () => { cancelled = true; };
   }, [currentItem?.variantId, wasQrScanned, weightRanges]);
 
-  // Persist processing session + weight ranges across page refreshes
+  // Save session + weight ranges to localStorage whenever they change.
+  // Never deletes here — explicit closeSession handles that — so the save-on-mount
+  // cycle cannot race with initialization and wipe a just-restored session.
   useEffect(() => {
+    if (!processingSession) return;
     try {
-      if (processingSession) {
-        localStorage.setItem('shipscan:activeSession', JSON.stringify({ session: processingSession, weightRanges }));
-      } else {
-        localStorage.removeItem('shipscan:activeSession');
-      }
+      localStorage.setItem('shipscan:activeSession', JSON.stringify({ session: processingSession, weightRanges }));
     } catch { /* non-fatal */ }
   }, [processingSession, weightRanges]);
 
-  // Restore session from localStorage on mount
+  // Auto-save session progress to server after every detection so another device
+  // can resume by scanning the same QR code without waiting for "Process Later".
+  // Posts only the delta since the last server sync to avoid double-counting.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('shipscan:activeSession');
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      const { session, weightRanges: savedRanges } = parsed ?? {};
-      if (session?.poId && session?.mainVariantId) {
-        setProcessingSession(session);
-        if (Array.isArray(savedRanges) && savedRanges.length > 0) setWeightRanges(savedRanges);
-      }
-    } catch { /* non-fatal */ }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!processingSession) return;
+    const delta = processingSession.sessionQty - lastSyncedQtyRef.current;
+    if (delta <= 0) return;
+    const snap = { ...processingSession };
+    fetch('/api/scale/processing-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        poId:             snap.poId,
+        poLineItemId:     snap.poLineItemId,
+        mainVariantId:    snap.mainVariantId,
+        mainProductTitle: snap.mainProductTitle,
+        poQty:            snap.poQty,
+        sessionQty:       delta,
+        wastageQty:       0,
+        sessionStatus:    'partial',
+        variantBreakdown: snap.variantBreakdown,
+        vendorName:       snap.vendorName,
+        lotNo:            snap.lotNo,
+      }),
+    }).then(() => { lastSyncedQtyRef.current = snap.sessionQty; }).catch(() => { /* non-fatal */ });
+  }, [processingSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset auto-detect whenever the loaded variant changes (new product, transformation, clear)
   useEffect(() => {
@@ -2404,7 +2434,7 @@ export default function ScalePage() {
           mainVariantId:    processingSession.mainVariantId,
           mainProductTitle: processingSession.mainProductTitle,
           poQty:            processingSession.poQty,
-          sessionQty:       processingSession.sessionQty,
+          sessionQty:       processingSession.sessionQty - lastSyncedQtyRef.current,
           wastageQty,
           sessionStatus:    status,
           variantBreakdown: processingSession.variantBreakdown,
@@ -2440,6 +2470,8 @@ export default function ScalePage() {
       } catch { /* non-fatal — session was already written */ }
     }
 
+    lastSyncedQtyRef.current = 0;
+    try { localStorage.removeItem('shipscan:activeSession'); } catch { /* non-fatal */ }
     setProcessingSession(null);
     setWeightRanges([]);
     setAutoDetect(null);
