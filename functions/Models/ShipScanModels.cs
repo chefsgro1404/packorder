@@ -1299,6 +1299,46 @@ public class ProcessingSessionEntity : ITableEntity
     [JsonProperty("processedAt")]      public string ProcessedAt { get; set; } = "";
 }
 
+public class PendingScanEntity : ITableEntity
+{
+    public string PartitionKey { get; set; } = "pending";
+    public string RowKey { get; set; } = "current";
+    public DateTimeOffset? Timestamp { get; set; }
+    public ETag ETag { get; set; }
+
+    [JsonProperty("variantId")]        public string VariantId { get; set; } = "";
+    [JsonProperty("productId")]        public string? ProductId { get; set; }
+    [JsonProperty("productTitle")]     public string ProductTitle { get; set; } = "";
+    [JsonProperty("variantTitle")]     public string? VariantTitle { get; set; }
+    [JsonProperty("itemNumber")]       public string? ItemNumber { get; set; }
+    [JsonProperty("plu")]              public string? Plu { get; set; }
+    [JsonProperty("sn")]               public string? Sn { get; set; }
+    [JsonProperty("poId")]             public string? PoId { get; set; }
+    [JsonProperty("poLineItemId")]     public string? PoLineItemId { get; set; }
+    [JsonProperty("vendorName")]       public string? VendorName { get; set; }
+    [JsonProperty("lotNo")]            public string? LotNo { get; set; }
+    [JsonProperty("weightRangesJson")] public string? WeightRangesJson { get; set; }
+    [JsonProperty("isLotProduct")]     public bool IsLotProduct { get; set; }
+    [JsonProperty("postedAt")]         public DateTimeOffset PostedAt { get; set; }
+}
+
+public class SavePendingScanRequest
+{
+    [JsonProperty("variantId")]        public string VariantId { get; set; } = "";
+    [JsonProperty("productId")]        public string? ProductId { get; set; }
+    [JsonProperty("productTitle")]     public string ProductTitle { get; set; } = "";
+    [JsonProperty("variantTitle")]     public string? VariantTitle { get; set; }
+    [JsonProperty("itemNumber")]       public string? ItemNumber { get; set; }
+    [JsonProperty("plu")]              public string? Plu { get; set; }
+    [JsonProperty("sn")]               public string? Sn { get; set; }
+    [JsonProperty("poId")]             public string? PoId { get; set; }
+    [JsonProperty("poLineItemId")]     public string? PoLineItemId { get; set; }
+    [JsonProperty("vendorName")]       public string? VendorName { get; set; }
+    [JsonProperty("lotNo")]            public string? LotNo { get; set; }
+    [JsonProperty("weightRangesJson")] public string? WeightRangesJson { get; set; }
+    [JsonProperty("isLotProduct")]     public bool IsLotProduct { get; set; }
+}
+
 public class SaveProcessingSessionRequest
 {
     [JsonProperty("poId")]             public string PoId { get; set; } = "";

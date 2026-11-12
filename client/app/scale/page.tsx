@@ -33,6 +33,7 @@ import {
   ArrowRight,
   Truck,
   Ban,
+  Smartphone,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
@@ -1248,6 +1249,8 @@ export default function ScalePage() {
   const [wasQrScanned, setWasQrScanned] = useState(false);
   const [selectedTransformVariantId, setSelectedTransformVariantId] = useState<string | null>(null);
   const [transformSourceItem, setTransformSourceItem] = useState<CurrentItem | null>(null);
+  const [remoteScanBanner, setRemoteScanBanner] = useState(false);
+  const [pendingScanSent, setPendingScanSent] = useState(false);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem, markTransferred } = usePurchaseOrders();
   const { enqueueAndRun } = useOperationQueue();
@@ -2824,7 +2827,113 @@ export default function ScalePage() {
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
+
+    // Cross-device sync: broadcast this scan so a scale-connected device can pick it up
+    if (item.variantId) {
+      fetch('/api/scale/pending-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          variantId:        item.variantId,
+          productId:        item.productId ?? null,
+          productTitle:     item.productTitle,
+          variantTitle:     item.variantTitle ?? null,
+          itemNumber:       item.itemNumber ?? null,
+          plu:              item.plu ?? null,
+          sn:               sn ?? null,
+          poId:             snPoId ?? null,
+          poLineItemId:     snPoLineItemId ?? null,
+          vendorName:       snVendorName ?? null,
+          lotNo:            snLotNo ?? null,
+          weightRangesJson: sessionRules.length > 0 ? JSON.stringify(sessionRules) : null,
+          isLotProduct,
+        }),
+      }).then(() => {
+        setPendingScanSent(true);
+        setTimeout(() => setPendingScanSent(false), 3000);
+      }).catch(() => {});
+    }
   }, [lookupProduct, fetchLineItems, lotProducts]);
+
+  // Cross-device sync: scale-connected device polls for scans from a mobile device
+  useEffect(() => {
+    if (scale.state === 'disconnected') return;
+    if (currentItem !== null) return;
+
+    let claimed = false;
+    const id = setInterval(async () => {
+      if (claimed) return;
+      try {
+        const res = await fetch('/api/scale/pending-scan');
+        if (!res.ok || claimed) return;
+        const data = await res.json();
+        if (!data?.found || claimed) return;
+        claimed = true;
+
+        // Claim it immediately so another device doesn't double-load
+        fetch('/api/scale/pending-scan', { method: 'DELETE' }).catch(() => {});
+
+        const remoteItem: CurrentItem = {
+          itemNumber:   data.itemNumber ?? '',
+          itemName:     data.productTitle,
+          itemWeight:   '',
+          plu:          data.plu ?? '',
+          productTitle: data.productTitle,
+          variantTitle: data.variantTitle ?? null,
+          found:        true,
+          productId:    data.productId ?? undefined,
+          variantId:    data.variantId,
+          poId:         data.poId ?? undefined,
+          poLineItemId: data.poLineItemId ?? undefined,
+          vendorName:   data.vendorName ?? undefined,
+        };
+
+        currentScannedSnRef.current = data.sn ?? null;
+        setCurrentItem(remoteItem);
+        setWasQrScanned(true);
+        setSelectedTransformVariantId(null);
+        setTransformSourceItem(null);
+
+        if (data.weightRangesJson) {
+          try {
+            const ranges: WeightRangeRule[] = JSON.parse(data.weightRangesJson);
+            if (ranges.length > 0) setWeightRanges(ranges);
+          } catch { /* ignore parse error */ }
+        }
+
+        // Resume processing session if the scan belongs to a PO line item
+        if (data.poLineItemId) {
+          try {
+            const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(data.poLineItemId)}`);
+            if (sessRes.ok) {
+              const sessData = await sessRes.json();
+              if (sessData?.poLineItemId) {
+                const breakdown: Record<string, number> = {};
+                try { Object.assign(breakdown, JSON.parse(sessData.variantBreakdown ?? '{}')); } catch {}
+                setProcessingSession({
+                  poId:             sessData.poId ?? data.poId ?? '',
+                  poLineItemId:     sessData.poLineItemId,
+                  poQty:            sessData.poQty ?? 0,
+                  mainVariantId:    sessData.mainVariantId ?? data.variantId,
+                  mainProductTitle: sessData.mainProductTitle ?? data.productTitle,
+                  vendorName:       sessData.vendorName ?? data.vendorName ?? '',
+                  lotNo:            sessData.lotNo ?? data.lotNo ?? '',
+                  sessionQty:       0,
+                  cumulativeQty:    sessData.cumulativeQty ?? 0,
+                  variantBreakdown: breakdown,
+                });
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        setRemoteScanBanner(true);
+        setTimeout(() => setRemoteScanBanner(false), 4000);
+      } catch { /* non-fatal — network hiccup */ }
+    }, 2500);
+
+    return () => { clearInterval(id); claimed = true; };
+  }, [scale.state, currentItem]);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
@@ -2850,6 +2959,7 @@ export default function ScalePage() {
     setWasQrScanned(false);
     setSelectedTransformVariantId(null);
     setTransformSourceItem(null);
+    setRemoteScanBanner(false);
     currentScannedSnRef.current = null;
     resetPrinted();
   };
@@ -3107,10 +3217,16 @@ export default function ScalePage() {
                       <div className="w-8 h-8 rounded-lg bg-amber-200 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
                         <QrCode className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                       </div>
-                      <div className="text-left">
+                      <div className="text-left flex-1 min-w-0">
                         <p className="text-sm font-bold text-amber-900 dark:text-amber-200 leading-tight">Process Label</p>
                         <p className="text-xs text-amber-700/70 dark:text-amber-400/70 leading-tight">Scan a printed label to transform or reprocess</p>
                       </div>
+                      {pendingScanSent && (
+                        <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 flex-shrink-0">
+                          <Check className="w-3.5 h-3.5" />
+                          <span className="text-[11px] font-semibold">Sent to scale</span>
+                        </div>
+                      )}
                     </button>
                   ) : (
                     <div className="flex flex-col gap-2 rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-3">
@@ -3177,6 +3293,13 @@ export default function ScalePage() {
                   </div>
 
                   {/* Label preview */}
+                  {remoteScanBanner && (
+                    <div className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-xl px-3 py-2">
+                      <Smartphone className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                      <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300">Loaded from mobile scan</p>
+                    </div>
+                  )}
+
                   <LabelPreview
                     item={currentItem}
                     lookupLoading={lookupLoading}

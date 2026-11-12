@@ -1400,6 +1400,93 @@ public class ScaleFunction
         }
     }
 
+    [Function("ScalePendingScan")]
+    public async Task<HttpResponseData> PendingScan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "delete", "options", Route = "scale/pending-scan")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            if (req.Method.Equals("DELETE", StringComparison.OrdinalIgnoreCase))
+            {
+                await _tableStorage.DeletePendingScanAsync();
+                return await ResponseHelper.WriteSuccess(req, new { deleted = true }, _allowedOrigins);
+            }
+
+            if (req.Method.Equals("POST", StringComparison.OrdinalIgnoreCase))
+            {
+                var body    = await req.ReadAsStringAsync() ?? "{}";
+                var request = JsonConvert.DeserializeObject<SavePendingScanRequest>(body);
+                if (request == null || string.IsNullOrWhiteSpace(request.VariantId))
+                    return await ResponseHelper.WriteError(req, "variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+                var entity = new PendingScanEntity
+                {
+                    VariantId        = request.VariantId,
+                    ProductId        = request.ProductId,
+                    ProductTitle     = request.ProductTitle,
+                    VariantTitle     = request.VariantTitle,
+                    ItemNumber       = request.ItemNumber,
+                    Plu              = request.Plu,
+                    Sn               = request.Sn,
+                    PoId             = request.PoId,
+                    PoLineItemId     = request.PoLineItemId,
+                    VendorName       = request.VendorName,
+                    LotNo            = request.LotNo,
+                    WeightRangesJson = request.WeightRangesJson,
+                    IsLotProduct     = request.IsLotProduct,
+                    PostedAt         = DateTimeOffset.UtcNow,
+                };
+                await _tableStorage.UpsertPendingScanAsync(entity);
+                _logger.LogInformation("Pending scan posted: {ProductTitle} variant={VariantId}", entity.ProductTitle, entity.VariantId);
+                return await ResponseHelper.WriteSuccess(req, new { posted = true }, _allowedOrigins);
+            }
+
+            // GET — poll for a pending scan
+            var scan = await _tableStorage.GetPendingScanAsync();
+            if (scan == null)
+                return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+
+            // Auto-expire after 5 minutes
+            if (DateTimeOffset.UtcNow - scan.PostedAt > TimeSpan.FromMinutes(5))
+            {
+                await _tableStorage.DeletePendingScanAsync();
+                return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
+            }
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                found            = true,
+                variantId        = scan.VariantId,
+                productId        = scan.ProductId,
+                productTitle     = scan.ProductTitle,
+                variantTitle     = scan.VariantTitle,
+                itemNumber       = scan.ItemNumber,
+                plu              = scan.Plu,
+                sn               = scan.Sn,
+                poId             = scan.PoId,
+                poLineItemId     = scan.PoLineItemId,
+                vendorName       = scan.VendorName,
+                lotNo            = scan.LotNo,
+                weightRangesJson = scan.WeightRangesJson,
+                isLotProduct     = scan.IsLotProduct,
+                postedAt         = scan.PostedAt.ToString("o"),
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "ScalePendingScan endpoint failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     private static Dictionary<string, string> ParseQueryString(string query)
     {
         return query.TrimStart('?')

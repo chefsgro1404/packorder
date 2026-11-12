@@ -32,6 +32,7 @@ public class TableStorageService
     private readonly TableClient _operationJobs;
     private readonly TableClient _operationLogs;
     private readonly TableClient _outOfRangeEvents;
+    private readonly TableClient _pendingScans;
     private readonly ILogger<TableStorageService> _logger;
 
     public TableStorageService(TableServiceClient tableServiceClient, ILogger<TableStorageService> logger)
@@ -61,6 +62,7 @@ public class TableStorageService
         _operationJobs             = tableServiceClient.GetTableClient("operationjobs");
         _operationLogs             = tableServiceClient.GetTableClient("operationlogs");
         _outOfRangeEvents          = tableServiceClient.GetTableClient("outofrangeevents");
+        _pendingScans              = tableServiceClient.GetTableClient("pendingscans");
     }
 
     public async Task EnsureTablesExistAsync()
@@ -89,6 +91,7 @@ public class TableStorageService
         await _operationJobs.CreateIfNotExistsAsync();
         await _operationLogs.CreateIfNotExistsAsync();
         await _outOfRangeEvents.CreateIfNotExistsAsync();
+        await _pendingScans.CreateIfNotExistsAsync();
         _logger.LogInformation("Table Storage tables verified");
     }
 
@@ -1937,5 +1940,28 @@ public class TableStorageService
             if (results.Count >= maxResults) break;
         }
         return results;
+    }
+
+    // ─── Pending cross-device scan ───────────────────────────────────────────
+
+    public async Task UpsertPendingScanAsync(PendingScanEntity entity)
+    {
+        await _pendingScans.UpsertEntityAsync(entity, TableUpdateMode.Replace);
+    }
+
+    public async Task<PendingScanEntity?> GetPendingScanAsync()
+    {
+        try
+        {
+            var response = await _pendingScans.GetEntityAsync<PendingScanEntity>("pending", "current");
+            return response.Value;
+        }
+        catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
+    }
+
+    public async Task DeletePendingScanAsync()
+    {
+        try { await _pendingScans.DeleteEntityAsync("pending", "current", ETag.All); }
+        catch (RequestFailedException ex) when (ex.Status == 404) { }
     }
 }
