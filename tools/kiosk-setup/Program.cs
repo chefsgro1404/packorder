@@ -19,17 +19,32 @@ if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 
 const string Flag = "--kiosk-printing";
 
-var shortcutDirs = new[]
+var shortcutDirs = new List<string>
 {
+    // User Start Menu programs — includes Google Chrome.lnk and Chrome Apps\ subfolder
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        @"Microsoft\Windows\Start Menu\Programs\Chrome Apps"),
-    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        @"Google\Chrome\User Data\Default\Web Applications"),
+        @"Microsoft\Windows\Start Menu\Programs"),
     Environment.GetFolderPath(Environment.SpecialFolder.Desktop),
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory)),
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         @"Microsoft\Windows\Start Menu\Programs"),
+    // Taskbar-pinned shortcuts
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        @"Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"),
 };
+
+// Add Web Applications folder for every Chrome profile (Default, Profile 1, Profile 2, …)
+var chromeUserData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    @"Google\Chrome\User Data");
+if (Directory.Exists(chromeUserData))
+{
+    foreach (var profileDir in Directory.GetDirectories(chromeUserData))
+    {
+        var webApps = Path.Combine(profileDir, "Web Applications");
+        if (Directory.Exists(webApps))
+            shortcutDirs.Add(webApps);
+    }
+}
 
 int patched = 0, skipped = 0, failed = 0;
 

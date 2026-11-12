@@ -2935,12 +2935,17 @@ export default function ScalePage() {
         }
 
         // Resume processing session if the scan belongs to a PO line item
-        if (data.poLineItemId) {
+        if (data.poLineItemId && data.poId) {
           try {
-            const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(data.poLineItemId)}`);
+            const [sessRes, lineItems] = await Promise.all([
+              fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(data.poLineItemId)}`),
+              fetchLineItems(data.poId as string),
+            ]);
             if (sessRes.ok) {
               const sessData = await sessRes.json();
               if (sessData?.poLineItemId) {
+                const li = lineItems.find(x => x.id === data.poLineItemId);
+                const poQty = li?.quantityOrdered ?? sessData.poQty ?? 0;
                 // variantBreakdown arrives as an already-parsed object from the server
                 const breakdown: Record<string, number> =
                   sessData.variantBreakdown && typeof sessData.variantBreakdown === 'object'
@@ -2949,7 +2954,7 @@ export default function ScalePage() {
                 setProcessingSession({
                   poId:             data.poId ?? '',
                   poLineItemId:     sessData.poLineItemId,
-                  poQty:            sessData.poQty ?? 0,
+                  poQty,
                   mainVariantId:    data.variantId,
                   mainProductTitle: data.productTitle,
                   vendorName:       data.vendorName ?? '',
@@ -2969,7 +2974,7 @@ export default function ScalePage() {
     }, 2500);
 
     return () => { clearInterval(id); claimed = true; };
-  }, [scale.state, currentItem, isPrinterDevice]);
+  }, [scale.state, currentItem, isPrinterDevice, fetchLineItems]);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
