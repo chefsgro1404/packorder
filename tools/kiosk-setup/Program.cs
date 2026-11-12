@@ -41,19 +41,19 @@ foreach (var dir in shortcutDirs)
     {
         try
         {
-            var (target, args) = ReadShortcut(lnkPath);
+            var (target, currentArgs) = ReadShortcut(lnkPath);
 
             if (!target.Contains("chrome.exe", StringComparison.OrdinalIgnoreCase))
                 continue;
 
-            if (args.Contains(Flag, StringComparison.OrdinalIgnoreCase))
+            if (currentArgs.Contains(Flag, StringComparison.OrdinalIgnoreCase))
             {
                 Console.WriteLine($"  Already configured : {Path.GetFileName(lnkPath)}");
                 skipped++;
                 continue;
             }
 
-            var newArgs = (args.Trim() + " " + Flag).Trim();
+            var newArgs = (currentArgs.Trim() + " " + Flag).Trim();
             WriteShortcutArgs(lnkPath, newArgs);
             Console.WriteLine($"  Configured         : {Path.GetFileName(lnkPath)}");
             patched++;
@@ -104,7 +104,7 @@ static void Pause()
 // Reads TargetPath and Arguments from a .lnk file by running a hidden PowerShell
 // command — avoids COM interop so the binary cross-compiles from Linux.
 
-static (string target, string args) ReadShortcut(string path)
+static (string target, string arguments) ReadShortcut(string path)
 {
     var result = RunPs($@"
 $s = (New-Object -ComObject WScript.Shell).CreateShortcut('{Esc(path)}');
