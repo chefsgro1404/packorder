@@ -2555,6 +2555,24 @@ export default function ScalePage() {
     }
 
     printVerbatim({ productTitle: record.productTitle, variantTitle: null, qrPayload: newQrPayload, itemWeight: record.itemWeight, printedAtEst, sn: reprintSn });
+
+    // Log reprint so the new SN is resolvable when scanned
+    fetch('/api/scale/print-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itemNumber: record.itemNumber,
+        plu: record.plu,
+        productTitle: record.productTitle,
+        itemWeight: record.itemWeight,
+        printedAtEst,
+        qrPayload: newQrPayload,
+        sn: reprintSn,
+        variantId: record.variantId ?? null,
+        poId: record.poId ?? null,
+        poLineItemId: record.poLineItemId ?? null,
+      }),
+    }).catch(() => {});
   };
 
   const handleHistoryReprint = useCallback((items: import('@/components/BulkSessionHistoryPanel').ReprintItem[]) => {

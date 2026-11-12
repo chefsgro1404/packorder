@@ -483,6 +483,7 @@ public class ScaleFunction
                     qrPayload = e.QrPayload,
                     printedBy = e.PrintedBy,
                     sn = e.Sn,
+                    variantId = e.VariantId,
                     poId = e.PoId,
                     poLineItemId = e.PoLineItemId,
                     vendorName = e.VendorName,

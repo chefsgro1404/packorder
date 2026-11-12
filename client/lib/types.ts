@@ -356,6 +356,9 @@ export interface PrintedLabel {
   qrPayload: string;
   printedBy: string | null;
   sn: string | null;
+  variantId?: string | null;
+  poId?: string | null;
+  poLineItemId?: string | null;
   expiryDate: string | null;
   mfgDate: string | null;
 }
