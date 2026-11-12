@@ -259,14 +259,6 @@ function extractBrand(title: string): { brand: string; remainder: string } {
 
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'of', 'in', 'with', 'and', 'for', 'from', 'into', 'by', 'at', 'on',
-  'powder', 'seeds', 'seed', 'masala',
-  'fresh', 'premium', 'special', 'new', 'best', 'quality', 'pure', 'natural', 'organic',
-  'pack', 'packs', 'packet', 'bag', 'tray', 'box', 'loose', 'container',
-  'pieces', 'piece', 'pcs', 'pc',
-  'cut', 'clean', 'cleaned', 'trimmed', 'whole',
-  'only', 'around', 'approximately', 'about', 'up', 'per', 'each', 'limited', 'time',
-  'fish', 'chicken', 'beef', 'goat', 'lamb', 'mutton', 'duck', 'bird',
-  'frozen', 'live',
 ]);
 
 const WORD_ABBREVS: Record<string, string> = {

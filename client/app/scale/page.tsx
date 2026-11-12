@@ -1492,7 +1492,7 @@ export default function ScalePage() {
       await enqueueAndRun(
         'log-label',
         printLogPayload,
-        `${sn}:log-label:${sn}`,
+        `${item.variantId ?? item.plu ?? item.productTitle}:log-label:${sn}`,
         async () => {
           const res = await fetch('/api/scale/print-log', {
             method: 'POST',

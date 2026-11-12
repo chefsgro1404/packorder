@@ -581,23 +581,9 @@ public class ScaleFunction
             if (string.IsNullOrWhiteSpace(request.Prefix))
                 return await ResponseHelper.WriteError(req, "prefix is required", HttpStatusCode.BadRequest, _allowedOrigins);
 
-            // Build a stable counter key: prefer variantId (numeric suffix only), fall back to PLU
-            string counterKey;
-            if (!string.IsNullOrWhiteSpace(request.VariantId))
-            {
-                var vid = request.VariantId.Trim();
-                // Strip "gid://shopify/ProductVariant/" GID prefix if present
-                var lastSlash = vid.LastIndexOf('/');
-                counterKey = lastSlash >= 0 ? vid[(lastSlash + 1)..] : vid;
-            }
-            else if (!string.IsNullOrWhiteSpace(request.Plu))
-            {
-                counterKey = $"plu:{request.Plu.Trim()}";
-            }
-            else
-            {
-                return await ResponseHelper.WriteError(req, "variantId or plu is required", HttpStatusCode.BadRequest, _allowedOrigins);
-            }
+            // Counter key = prefix so all products that share a prefix share one counter,
+            // making SN collisions across products architecturally impossible.
+            var counterKey = request.Prefix.Trim();
 
             var count = await _tableStorage.GetNextSnCountAsync(counterKey);
             var sn = $"{request.Prefix}-{100000 + count}";
