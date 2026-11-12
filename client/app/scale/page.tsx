@@ -1188,6 +1188,7 @@ export default function ScalePage() {
     variantBreakdown: Record<string, number>;
   } | null>(null);
   const [sessionClosePrompt, setSessionClosePrompt] = useState(false);
+  const [wastageWarning, setWastageWarning] = useState<string | null>(null);
   const [autoPrintPending, setAutoPrintPending] = useState(false);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
@@ -1344,6 +1345,31 @@ export default function ScalePage() {
     return () => { cancelled = true; };
   }, [currentItem?.variantId, wasQrScanned, weightRanges]);
 
+  // Persist processing session + weight ranges across page refreshes
+  useEffect(() => {
+    try {
+      if (processingSession) {
+        localStorage.setItem('shipscan:activeSession', JSON.stringify({ session: processingSession, weightRanges }));
+      } else {
+        localStorage.removeItem('shipscan:activeSession');
+      }
+    } catch { /* non-fatal */ }
+  }, [processingSession, weightRanges]);
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('shipscan:activeSession');
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      const { session, weightRanges: savedRanges } = parsed ?? {};
+      if (session?.poId && session?.mainVariantId) {
+        setProcessingSession(session);
+        if (Array.isArray(savedRanges) && savedRanges.length > 0) setWeightRanges(savedRanges);
+      }
+    } catch { /* non-fatal */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Reset auto-detect whenever the loaded variant changes (new product, transformation, clear)
   useEffect(() => {
     setAutoDetect(null);
@@ -1395,7 +1421,7 @@ export default function ScalePage() {
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
         const [parentInvRes, childInvRes] = await Promise.all([
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(itemWithVariant.variantId!)}`),
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(currentItem.variantId!)}`),
           fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(matchedTier.variantId)}`),
         ]);
         if (parentInvRes.ok && childInvRes.ok) {
@@ -2419,6 +2445,7 @@ export default function ScalePage() {
   const handleQrScan = useCallback(async (scanned: string) => {
     setQrScanOpen(false);
     setQrScanError(null);
+    setWastageWarning(null);
     setLookupLoading(true);
 
     let plaintext = scanned;
@@ -2570,12 +2597,18 @@ export default function ScalePage() {
       try {
         const lineItems = await fetchLineItems(snPoId);
         const li = lineItems.find(x => x.id === snPoLineItemId);
-        poQty = (li?.quantityReceived && li.quantityReceived > 0) ? li.quantityReceived : (li?.quantityOrdered ?? 0);
+        poQty = li?.quantityOrdered ?? 0;
       } catch { /* non-fatal */ }
       try {
         const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(snPoLineItemId)}`);
         if (sessRes.ok) {
           const sessData = await sessRes.json();
+          // If this batch was marked as wastage, block new processing and show warning
+          if (sessData?.sessionStatus === 'completed' && (sessData?.wastageQty ?? 0) > 0) {
+            setWastageWarning(`Batch "${item.productTitle ?? snPoLineItemId}" was marked as wastage — this QR code is disabled.`);
+            setLookupLoading(false);
+            return;
+          }
           if (sessData?.sessionStatus === 'partial' || sessData?.sessionCount > 0) {
             priorCumulative = sessData.cumulativeQty ?? 0;
             priorBreakdown = sessData.variantBreakdown ?? {};
@@ -2841,6 +2874,20 @@ export default function ScalePage() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Wastage warning — shown when scanning a QR from a completed-wastage batch */}
+                  {wastageWarning && (
+                    <div className="flex items-start gap-2.5 rounded-xl border border-rose-300 dark:border-rose-700/60 bg-rose-50 dark:bg-rose-950/40 px-3 py-3">
+                      <span className="text-rose-500 mt-0.5 flex-shrink-0">⚠</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-rose-700 dark:text-rose-300 leading-snug">Batch Marked as Wastage</p>
+                        <p className="text-xs text-rose-600 dark:text-rose-400 mt-0.5 leading-snug">{wastageWarning}</p>
+                      </div>
+                      <button onClick={() => setWastageWarning(null)} className="text-rose-400 hover:text-rose-600 flex-shrink-0">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
 
                   {/* Select Product CTA */}
                   <button

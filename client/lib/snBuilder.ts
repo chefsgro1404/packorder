@@ -259,6 +259,7 @@ function extractBrand(title: string): { brand: string; remainder: string } {
 
 const STOP_WORDS = new Set([
   'the', 'a', 'an', 'of', 'in', 'with', 'and', 'for', 'from', 'into', 'by', 'at', 'on',
+  'powder', 'seeds',
 ]);
 
 const WORD_ABBREVS: Record<string, string> = {
