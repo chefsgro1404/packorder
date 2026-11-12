@@ -1207,6 +1207,11 @@ export default function ScalePage() {
   const [sessionClosePrompt, setSessionClosePrompt] = useState(false);
   const [wastageWarning, setWastageWarning] = useState<string | null>(null);
   const [autoPrintPending, setAutoPrintPending] = useState(false);
+  // When a scale reading falls outside all ranges, latch this flag so the user MUST
+  // explicitly select a tier before auto-print resumes — scale re-reads that happen
+  // to land back in-range are not enough to unblock printing.
+  const [requiresTierSelect, setRequiresTierSelect] = useState(false);
+  const [noMatchWeightLbs, setNoMatchWeightLbs] = useState<number | null>(null);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
@@ -1400,9 +1405,11 @@ export default function ScalePage() {
     }).then(() => { lastSyncedQtyRef.current = snap.sessionQty; }).catch(() => { /* non-fatal */ });
   }, [processingSession]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset auto-detect whenever the loaded variant changes (new product, transformation, clear)
+  // Reset auto-detect and tier-select gate whenever the loaded variant changes (new product, transformation, clear)
   useEffect(() => {
     setAutoDetect(null);
+    setRequiresTierSelect(false);
+    setNoMatchWeightLbs(null);
   }, [currentItem?.variantId]);
 
   // Run auto-detection when weight is available and ranges are loaded
@@ -1417,11 +1424,15 @@ export default function ScalePage() {
     if (lbs === null) return;
     const matched = matchWeightRange(weightRanges, lbs);
     setAutoDetect({ matched, noMatch: matched === null, weightLbs: lbs });
+    if (matched === null) {
+      setRequiresTierSelect(true);
+      setNoMatchWeightLbs(lbs);
+    }
   }, [weightRanges, currentItem?.itemWeight]);
 
   // Auto-print when a categorical match is found and a processing session is active
   useEffect(() => {
-    if (!autoDetect?.matched || !processingSession || autoPrintPending) return;
+    if (!autoDetect?.matched || !processingSession || autoPrintPending || requiresTierSelect) return;
     setAutoPrintPending(true);
     const matchedTier = autoDetect.matched;
     const timer = setTimeout(async () => {
@@ -2692,6 +2703,8 @@ export default function ScalePage() {
     setManualTransformModal(false);
     setWeightRanges([]);
     setAutoDetect(null);
+    setRequiresTierSelect(false);
+    setNoMatchWeightLbs(null);
     setWasQrScanned(false);
     resetPrinted();
   };
@@ -2721,7 +2734,8 @@ export default function ScalePage() {
   // "Log out-of-range and skip" — clears the reading, session stays open
   const handleSkipOutOfRange = useCallback(async () => {
     await logOutOfRangeEvent('skipped');
-    // Clear weight reading but keep item and session
+    setRequiresTierSelect(false);
+    setNoMatchWeightLbs(null);
     setAutoDetect(null);
     if (currentItem) setCurrentItem({ ...currentItem, itemWeight: '' });
     setManualWeight('');
@@ -3063,16 +3077,16 @@ export default function ScalePage() {
                   {weightRanges.length > 0 && (
                     <div className="flex flex-col gap-2.5">
 
-                      {/* Warning banner for out-of-range */}
-                      {autoDetect?.noMatch && (
+                      {/* Warning banner for out-of-range — stays visible until user picks a tier or skips */}
+                      {requiresTierSelect && (
                         <div className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl px-3 py-2.5">
                           <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-rose-700 dark:text-rose-300">
-                              {autoDetect.weightLbs.toFixed(2)} lbs is outside all configured ranges
+                              {noMatchWeightLbs != null ? `${noMatchWeightLbs.toFixed(2)} lbs is outside all configured ranges` : 'Weight outside all configured ranges'}
                             </p>
                             <p className="text-[11px] text-rose-600 dark:text-rose-400/70 mt-0.5">
-                              Select a tier below to override, or skip this reading.
+                              Select a tier below before printing resumes, or skip this reading.
                             </p>
                           </div>
                         </div>
@@ -3101,10 +3115,12 @@ export default function ScalePage() {
                             <button
                               key={r.variantId}
                               onClick={async () => {
-                                if (autoDetect?.noMatch) {
+                                if (autoDetect?.noMatch || requiresTierSelect) {
                                   await logOutOfRangeEvent(`overridden_to:${r.label}`);
                                 }
-                                setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect?.weightLbs ?? 0 });
+                                setRequiresTierSelect(false);
+                                setNoMatchWeightLbs(null);
+                                setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect?.weightLbs ?? noMatchWeightLbs ?? 0 });
                                 if (currentItem) setCurrentItem({ ...currentItem, variantId: r.variantId, variantTitle: r.label });
                               }}
                               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
@@ -3123,7 +3139,7 @@ export default function ScalePage() {
                       </div>
 
                       {/* Log and skip button for out-of-range */}
-                      {autoDetect?.noMatch && (
+                      {requiresTierSelect && (
                         <button
                           onClick={handleSkipOutOfRange}
                           className="w-full flex items-center justify-center gap-2 h-9 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl text-xs text-slate-400 font-medium transition-colors"
@@ -3257,14 +3273,14 @@ export default function ScalePage() {
                   <div className="flex flex-col gap-2">
                     {!bulkPrintResults && transformationOptions === null && (
                       <>
-                        {autoDetect?.noMatch && (
+                        {(autoDetect?.noMatch || requiresTierSelect) && (
                           <p className="text-[11px] text-rose-400 text-center">
                             Select a size above before printing
                           </p>
                         )}
                         <button
                           onClick={handleManualPrint}
-                          disabled={!canPrint || autoDetect?.noMatch === true}
+                          disabled={!canPrint || autoDetect?.noMatch === true || requiresTierSelect}
                           className="w-full h-12 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 rounded-xl font-bold text-sm text-white transition-all active:scale-[0.98]"
                         >
                           <Printer className="w-4 h-4" />
