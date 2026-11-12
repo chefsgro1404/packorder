@@ -1189,6 +1189,7 @@ export default function ScalePage() {
   const skipNextInventoryFetch = useRef(false);
   const keepTransformOpts = useRef(false);     // suppress options re-fetch when user selects a transformation
   const currentScannedSnRef = useRef<string | null>(null); // SN of the barcode currently being processed
+  const loadedFromRemoteScanRef = useRef(false); // true when currentItem was loaded via cross-device pending-scan poll
   const [lastAdjustment, setLastAdjustment] = useState<{ delta: number; parentTitle: string } | null>(null);
   const [manualTransformModal, setManualTransformModal] = useState(false);
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
@@ -2519,6 +2520,14 @@ export default function ScalePage() {
         setTransformationOptions(null);
         setSelectedTransformVariantId(null);
         setTransformSourceItem(null);
+        // If loaded from a remote scan, auto-clear so the laptop goes back to idle and polls for the next scan
+        if (loadedFromRemoteScanRef.current) {
+          loadedFromRemoteScanRef.current = false;
+          setCurrentItem(null);
+          setWeightRanges([]);
+          setAutoDetect(null);
+          resetPrinted();
+        }
       }
     }
   };
@@ -2620,6 +2629,7 @@ export default function ScalePage() {
     setWastageWarning(null);
     setLookupLoading(true);
     currentScannedSnRef.current = null;
+    loadedFromRemoteScanRef.current = false;
 
     let plaintext = scanned;
     if (isEncryptedQr(scanned)) {
@@ -2888,6 +2898,7 @@ export default function ScalePage() {
           vendorName:   data.vendorName ?? undefined,
         };
 
+        loadedFromRemoteScanRef.current = true;
         currentScannedSnRef.current = data.sn ?? null;
         setCurrentItem(remoteItem);
         setWasQrScanned(true);
@@ -2963,6 +2974,7 @@ export default function ScalePage() {
     setSelectedTransformVariantId(null);
     setTransformSourceItem(null);
     setRemoteScanBanner(false);
+    loadedFromRemoteScanRef.current = false;
     currentScannedSnRef.current = null;
     resetPrinted();
   };
