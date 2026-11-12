@@ -2837,6 +2837,7 @@ export default function ScalePage() {
           }
         }
       } catch { /* non-fatal */ }
+      lastSyncedQtyRef.current = 0;
       setProcessingSession({
         poId: snPoId,
         poLineItemId: snPoLineItemId,
@@ -2951,6 +2952,7 @@ export default function ScalePage() {
                   sessData.variantBreakdown && typeof sessData.variantBreakdown === 'object'
                     ? (sessData.variantBreakdown as Record<string, number>)
                     : {};
+                lastSyncedQtyRef.current = 0;
                 setProcessingSession({
                   poId:             data.poId ?? '',
                   poLineItemId:     sessData.poLineItemId,
