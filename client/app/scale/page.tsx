@@ -2908,16 +2908,19 @@ export default function ScalePage() {
             if (sessRes.ok) {
               const sessData = await sessRes.json();
               if (sessData?.poLineItemId) {
-                const breakdown: Record<string, number> = {};
-                try { Object.assign(breakdown, JSON.parse(sessData.variantBreakdown ?? '{}')); } catch {}
+                // variantBreakdown arrives as an already-parsed object from the server
+                const breakdown: Record<string, number> =
+                  sessData.variantBreakdown && typeof sessData.variantBreakdown === 'object'
+                    ? (sessData.variantBreakdown as Record<string, number>)
+                    : {};
                 setProcessingSession({
-                  poId:             sessData.poId ?? data.poId ?? '',
+                  poId:             data.poId ?? '',
                   poLineItemId:     sessData.poLineItemId,
                   poQty:            sessData.poQty ?? 0,
-                  mainVariantId:    sessData.mainVariantId ?? data.variantId,
-                  mainProductTitle: sessData.mainProductTitle ?? data.productTitle,
-                  vendorName:       sessData.vendorName ?? data.vendorName ?? '',
-                  lotNo:            sessData.lotNo ?? data.lotNo ?? '',
+                  mainVariantId:    data.variantId,
+                  mainProductTitle: data.productTitle,
+                  vendorName:       data.vendorName ?? '',
+                  lotNo:            data.lotNo ?? '',
                   sessionQty:       0,
                   cumulativeQty:    sessData.cumulativeQty ?? 0,
                   variantBreakdown: breakdown,
