@@ -1,0 +1,3 @@
+<linker>
+  <assembly fullname="KioskSetup" preserve="all" />
+</linker>

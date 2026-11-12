@@ -990,6 +990,22 @@ export default function ScaleSettingsPage() {
                 Keep the Scale &amp; Print page open on this device to receive and execute remote print jobs.
               </p>
             )}
+
+            {/* Kiosk print setup */}
+            <div className="flex flex-col gap-1.5 pt-1 border-t border-[var(--border-color)]">
+              <p className="text-xs font-semibold text-[var(--text-primary)]">Silent Printing (Windows)</p>
+              <p className="text-xs text-slate-500">
+                Run this once to patch Chrome and PWA shortcuts with <code className="font-mono bg-[var(--bg-input)] px-1 rounded">--kiosk-printing</code> so labels print directly to the default printer without a dialog.
+              </p>
+              <a
+                href="/downloads/setup-kiosk-printing.exe"
+                download="setup-kiosk-printing.exe"
+                className="inline-flex items-center gap-2 self-start px-3 py-2 rounded-xl bg-[var(--bg-input)] border border-[var(--border-color)] text-sm font-semibold text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+              >
+                <Printer className="w-3.5 h-3.5 text-slate-500" />
+                Download Kiosk Setup (.exe)
+              </a>
+            </div>
           </div>
         </div>
 

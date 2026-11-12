@@ -9,6 +9,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build kiosk setup exe
+        run: |
+          dotnet publish tools/kiosk-setup/KioskSetup.csproj \
+            -c Release -r win-x64 --self-contained \
+            -p:PublishSingleFile=true -p:PublishTrimmed=true \
+            -o ./kiosk-build
+          mkdir -p client/public/downloads
+          cp ./kiosk-build/setup-kiosk-printing.exe client/public/downloads/setup-kiosk-printing.exe
+
       - name: Deploy to Azure Static Web Apps (Test)
         uses: Azure/static-web-apps-deploy@v1
         with:
