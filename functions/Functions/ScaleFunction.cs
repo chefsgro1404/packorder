@@ -795,6 +795,8 @@ public class ScaleFunction
             return await ResponseHelper.WriteSuccess(req, new
             {
                 found        = true,
+                sn           = label.Sn,
+                qrPayload    = label.QrPayload,
                 variantId    = variantId,
                 productTitle = label.ProductTitle,
                 plu          = label.Plu,

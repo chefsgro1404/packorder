@@ -1252,6 +1252,10 @@ export default function ScalePage() {
   const [transformSourceItem, setTransformSourceItem] = useState<CurrentItem | null>(null);
   const [remoteScanBanner, setRemoteScanBanner] = useState(false);
   const [pendingScanSent, setPendingScanSent] = useState(false);
+  const [snSearchOpen, setSnSearchOpen] = useState(false);
+  const [snSearchQuery, setSnSearchQuery] = useState('');
+  const [snSearchResult, setSnSearchResult] = useState<{ sn: string; qrPayload: string; productTitle: string } | null | 'not-found'>(null);
+  const [snSearchLoading, setSnSearchLoading] = useState(false);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem, markTransferred } = usePurchaseOrders();
   const { enqueueAndRun } = useOperationQueue();
@@ -2883,9 +2887,9 @@ export default function ScalePage() {
     }
   }, [lookupProduct, fetchLineItems, lotProducts]);
 
-  // Cross-device sync: scale-connected device polls for scans from a mobile device
+  // Cross-device sync: scale-connected OR printer device polls for scans from a mobile device
   useEffect(() => {
-    if (scale.state === 'disconnected') return;
+    if (scale.state === 'disconnected' && !isPrinterDevice) return;
     if (currentItem !== null) return;
 
     let claimed = false;
@@ -2965,7 +2969,7 @@ export default function ScalePage() {
     }, 2500);
 
     return () => { clearInterval(id); claimed = true; };
-  }, [scale.state, currentItem]);
+  }, [scale.state, currentItem, isPrinterDevice]);
 
   const scaleStatus =
     scale.state === 'receiving' || scale.state === 'processing'
@@ -3244,7 +3248,7 @@ export default function ScalePage() {
                   {/* Process Label CTA — scan a previously printed label to reprocess/transform */}
                   {!qrScanOpen ? (
                     <button
-                      onClick={() => { setQrScanError(null); setQrScanOpen(true); }}
+                      onClick={() => { setQrScanError(null); setQrScanOpen(true); setSnSearchOpen(false); }}
                       className="w-full flex items-center gap-3 bg-amber-50 hover:bg-amber-100 border border-amber-200 dark:bg-amber-950/60 dark:hover:bg-amber-900/50 dark:border-amber-800/40 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
                     >
                       <div className="w-8 h-8 rounded-lg bg-amber-200 dark:bg-amber-900/50 flex items-center justify-center flex-shrink-0">
@@ -3279,6 +3283,119 @@ export default function ScalePage() {
                         <p className="text-xs text-rose-400 bg-rose-950/40 rounded-lg px-2 py-1.5">{qrScanError}</p>
                       )}
                       <BarcodeScanner onScan={handleQrScan} active={qrScanOpen} />
+                    </div>
+                  )}
+
+                  {/* Manual SN entry — search print history or look up by SN */}
+                  {!snSearchOpen ? (
+                    <button
+                      onClick={() => { setSnSearchOpen(true); setSnSearchQuery(''); setSnSearchResult(null); setQrScanOpen(false); setQrScanError(null); }}
+                      className="w-full flex items-center gap-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 dark:bg-slate-900/40 dark:hover:bg-slate-800/50 dark:border-slate-700/40 rounded-xl px-4 py-3 transition-colors active:scale-[0.99]"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-slate-200 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+                        <Tag className="w-4 h-4 text-slate-500" />
+                      </div>
+                      <div className="text-left flex-1 min-w-0">
+                        <p className="text-sm font-bold text-slate-700 dark:text-slate-200 leading-tight">Enter SN Manually</p>
+                        <p className="text-xs text-slate-500 leading-tight">Type a serial number to process without scanning</p>
+                      </div>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-2 rounded-xl border border-slate-200 dark:border-slate-700/40 bg-slate-50 dark:bg-slate-900/40 px-3 py-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Tag className="w-3.5 h-3.5 text-slate-500" />
+                          <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Enter Serial Number</p>
+                        </div>
+                        <button
+                          onClick={() => { setSnSearchOpen(false); setSnSearchQuery(''); setSnSearchResult(null); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={snSearchQuery}
+                          onChange={e => { setSnSearchQuery(e.target.value); setSnSearchResult(null); }}
+                          onKeyDown={async e => {
+                            if (e.key !== 'Enter' || !snSearchQuery.trim()) return;
+                            const q = snSearchQuery.trim();
+                            const local = printHistory.find(r => r.sn?.toLowerCase().includes(q.toLowerCase()));
+                            if (local) { setSnSearchResult({ sn: local.sn ?? '', qrPayload: local.qrPayload, productTitle: local.productTitle }); return; }
+                            setSnSearchLoading(true);
+                            try {
+                              const res = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(q)}`);
+                              const data = res.ok ? await res.json() : null;
+                              setSnSearchResult(data?.found && data.qrPayload ? { sn: data.sn, qrPayload: data.qrPayload, productTitle: data.productTitle } : 'not-found');
+                            } catch { setSnSearchResult('not-found'); }
+                            finally { setSnSearchLoading(false); }
+                          }}
+                          placeholder="e.g. test-chicken-100003"
+                          autoFocus
+                          className="flex-1 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        />
+                        <button
+                          disabled={!snSearchQuery.trim() || snSearchLoading}
+                          onClick={async () => {
+                            const q = snSearchQuery.trim();
+                            if (!q) return;
+                            const local = printHistory.find(r => r.sn?.toLowerCase().includes(q.toLowerCase()));
+                            if (local) { setSnSearchResult({ sn: local.sn ?? '', qrPayload: local.qrPayload, productTitle: local.productTitle }); return; }
+                            setSnSearchLoading(true);
+                            try {
+                              const res = await fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(q)}`);
+                              const data = res.ok ? await res.json() : null;
+                              setSnSearchResult(data?.found && data.qrPayload ? { sn: data.sn, qrPayload: data.qrPayload, productTitle: data.productTitle } : 'not-found');
+                            } catch { setSnSearchResult('not-found'); }
+                            finally { setSnSearchLoading(false); }
+                          }}
+                          className="px-3 py-2 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 text-sm font-semibold disabled:opacity-40 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+                        >
+                          {snSearchLoading ? '…' : 'Find'}
+                        </button>
+                      </div>
+
+                      {/* Instant matches from recent history */}
+                      {!snSearchResult && snSearchQuery.length >= 3 && (() => {
+                        const matches = printHistory.filter(r => r.sn?.toLowerCase().includes(snSearchQuery.toLowerCase()));
+                        return matches.length > 0 ? (
+                          <div className="flex flex-col gap-1">
+                            {matches.slice(0, 5).map(r => (
+                              <button
+                                key={r.sn}
+                                onClick={() => { setSnSearchOpen(false); handleQrScan(r.qrPayload); }}
+                                className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--bg-card)] hover:bg-[var(--bg-input)] text-left transition-colors"
+                              >
+                                <div>
+                                  <p className="text-xs font-semibold text-[var(--text-primary)]">{r.productTitle}</p>
+                                  <p className="text-[11px] text-slate-500 font-mono">{r.sn}</p>
+                                </div>
+                                <ArrowRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                              </button>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
+
+                      {/* API lookup result */}
+                      {snSearchResult === 'not-found' && (
+                        <p className="text-xs text-rose-400 px-1">No label found for that SN.</p>
+                      )}
+                      {snSearchResult && snSearchResult !== 'not-found' && (
+                        <button
+                          onClick={() => { setSnSearchOpen(false); handleQrScan(snSearchResult.qrPayload); }}
+                          className="flex items-center justify-between px-3 py-2 rounded-lg bg-[var(--bg-card)] hover:bg-[var(--bg-input)] text-left transition-colors"
+                        >
+                          <div>
+                            <p className="text-xs font-semibold text-[var(--text-primary)]">{snSearchResult.productTitle}</p>
+                            <p className="text-[11px] text-slate-500 font-mono">{snSearchResult.sn}</p>
+                          </div>
+                          <ArrowRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
