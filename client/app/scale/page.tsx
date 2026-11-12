@@ -1390,12 +1390,31 @@ export default function ScalePage() {
           }
         }
       } catch { /* non-fatal — print still proceeds with input product title */ }
-      // Fetch the inventory mapping for the matched output variant now — the state-based
-      // inventoryMapping is stale here (captured from before the variant switched).
+      // For categorical products the mapping is always 1:1 weight-based — no metafield needed.
+      // Fetch inventory IDs directly for parent and child then build the mapping ourselves.
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
-        const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(matchedTier.variantId)}`);
-        if (mapRes.ok) matchedMapping = await mapRes.json();
+        const [parentInvRes, childInvRes] = await Promise.all([
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(itemWithVariant.variantId!)}`),
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(matchedTier.variantId)}`),
+        ]);
+        if (parentInvRes.ok && childInvRes.ok) {
+          const [parentInv, childInv] = await Promise.all([parentInvRes.json(), childInvRes.json()]);
+          if (parentInv.inventoryItemId && parentInv.locationId) {
+            matchedMapping = {
+              found: true,
+              isWeighted: true,
+              weightPerUnit: 1,
+              parentInventoryId: parentInv.inventoryItemId,
+              parentProductHandle: '',
+              parentProductTitle: itemWithVariant.productTitle,
+              parentLocationId: parentInv.locationId,
+              childInventoryItemId: childInv.inventoryItemId ?? null,
+              parentUnits: 1,
+              childUnits: 1,
+            };
+          }
+        }
       } catch { /* non-fatal — print still proceeds without adjustment */ }
       setCurrentItem(itemWithVariant);
       await printItem(itemWithVariant, { mapping: matchedMapping, isCategorical: true });
@@ -2259,8 +2278,27 @@ export default function ScalePage() {
       } catch { /* non-fatal */ }
       let matchedMapping: InventoryMappingInfo | null = null;
       try {
-        const mapRes = await fetch(`/api/scale/inventory-mapping?variantId=${encodeURIComponent(activeMatch.variantId)}`);
-        if (mapRes.ok) matchedMapping = await mapRes.json();
+        const [parentInvRes, childInvRes] = await Promise.all([
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(item.variantId!)}`),
+          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(activeMatch.variantId)}`),
+        ]);
+        if (parentInvRes.ok && childInvRes.ok) {
+          const [parentInv, childInv] = await Promise.all([parentInvRes.json(), childInvRes.json()]);
+          if (parentInv.inventoryItemId && parentInv.locationId) {
+            matchedMapping = {
+              found: true,
+              isWeighted: true,
+              weightPerUnit: 1,
+              parentInventoryId: parentInv.inventoryItemId,
+              parentProductHandle: '',
+              parentProductTitle: item.productTitle,
+              parentLocationId: parentInv.locationId,
+              childInventoryItemId: childInv.inventoryItemId ?? null,
+              parentUnits: 1,
+              childUnits: 1,
+            };
+          }
+        }
       } catch { /* non-fatal */ }
       setCurrentItem(itemWithVariant);
       // Block the auto-print timer from firing a second print for the same item
