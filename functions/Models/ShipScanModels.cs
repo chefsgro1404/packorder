@@ -775,6 +775,8 @@ public class PrintedLabelEntity : ITableEntity
     // Ship-page stamp — set when this label is successfully scanned out on the ship page
     public DateTimeOffset? ShippedAt { get; set; }
     public string? ShippedOrderId { get; set; }
+    // Scale-processing stamp — set when this label has been processed (transformed/counted) on the scale page
+    public DateTimeOffset? ProcessedAt { get; set; }
     public DateTimeOffset? Timestamp { get; set; }
     public ETag ETag { get; set; }
 }

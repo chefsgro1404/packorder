@@ -752,7 +752,7 @@ public class ScaleFunction
 
     [Function("ScaleLookupBySn")]
     public async Task<HttpResponseData> LookupBySn(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/lookup-by-sn")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "patch", "options", Route = "scale/lookup-by-sn")]
         HttpRequestData req)
     {
         if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
@@ -768,6 +768,13 @@ public class ScaleFunction
             var sn = qs.TryGetValue("sn", out var s) ? s?.Trim() : "";
             if (string.IsNullOrWhiteSpace(sn))
                 return await ResponseHelper.WriteError(req, "sn is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            // PATCH — mark this label as processed (non-lot barcodes can only be used once)
+            if (req.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase))
+            {
+                await _tableStorage.MarkLabelProcessedAsync(sn);
+                return await ResponseHelper.WriteSuccess(req, new { ok = true }, _allowedOrigins);
+            }
 
             var label = await _tableStorage.GetPrintedLabelBySnAsync(sn);
             if (label == null)
@@ -795,6 +802,7 @@ public class ScaleFunction
                 vendorName   = label.VendorName,
                 lotNo        = label.LotNo,
                 itemWeight   = label.ItemWeight,
+                processedAt  = label.ProcessedAt?.ToString("o"),
             }, _allowedOrigins);
         }
         catch (Exception ex)

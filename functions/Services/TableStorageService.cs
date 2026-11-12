@@ -1017,6 +1017,15 @@ public class TableStorageService
         return true;
     }
 
+    public async Task<bool> MarkLabelProcessedAsync(string sn)
+    {
+        var entity = await GetPrintedLabelBySnAsync(sn);
+        if (entity == null) return false;
+        entity.ProcessedAt = DateTimeOffset.UtcNow;
+        await _printedLabels.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+        return true;
+    }
+
     // ─── QR label scan-duplicate detection ───────────────────────────────────
 
     public async Task<ScannedLabelEntity?> GetScannedLabelAsync(string sn)

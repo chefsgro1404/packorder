@@ -1076,11 +1076,15 @@ function BulkPrintResultPanel({
 function TransformationPanel({
   options,
   currentItem,
+  sourceItem,
+  selectedVariantId,
   onSelect,
   onManualTransform,
 }: {
   options: TransformationOption[];
   currentItem: CurrentItem;
+  sourceItem?: CurrentItem | null;
+  selectedVariantId?: string | null;
   onSelect: (opt: TransformationOption) => void;
   onManualTransform?: () => void;
 }) {
@@ -1091,39 +1095,48 @@ function TransformationPanel({
         <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">Transformation Ready</p>
       </div>
 
-      {/* Source */}
+      {/* Source — always shows the original scanned item, not the transformed child */}
       <div className="bg-violet-100 dark:bg-violet-900/20 rounded-lg px-2.5 py-2">
         <p className="text-[10px] font-semibold text-violet-500 dark:text-violet-400/60 uppercase tracking-wider mb-1">Source</p>
-        <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{currentItem.productTitle}</p>
-        {currentItem.plu && currentItem.plu !== 'N/A' && (
-          <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">{currentItem.plu}</p>
+        <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{(sourceItem ?? currentItem).productTitle}</p>
+        {(sourceItem ?? currentItem).plu && (sourceItem ?? currentItem).plu !== 'N/A' && (
+          <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">{(sourceItem ?? currentItem).plu}</p>
         )}
       </div>
 
       {options.length > 0 ? (
         /* One button per output option — tap to apply immediately */
         <div className="flex flex-col gap-1.5">
-          {options.map((opt) => (
-            <button
-              key={opt.variantId}
-              onClick={() => onSelect(opt)}
-              className="w-full flex items-center justify-between gap-2 bg-violet-100 dark:bg-violet-900/20 hover:bg-violet-200 dark:hover:bg-violet-700/40 active:bg-violet-200 dark:active:bg-violet-600/50 rounded-lg px-2.5 py-2 transition-colors text-left"
-            >
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight truncate">{opt.title}</p>
-                {opt.isSelf ? (
-                  <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">
-                    Count as-is · no inventory change
-                  </p>
-                ) : (opt.weightPerUnit ?? 0) > 0 ? (
-                  <p className="text-[10px] text-violet-500 dark:text-violet-400/50 mt-0.5">
-                    {opt.weightPerUnit} unit{(opt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
-                  </p>
-                ) : null}
-              </div>
-              <ArrowRight className="w-3.5 h-3.5 text-violet-600 dark:text-violet-500 flex-shrink-0" />
-            </button>
-          ))}
+          {options.map((opt) => {
+            const isSelected = selectedVariantId === opt.variantId;
+            return (
+              <button
+                key={opt.variantId}
+                onClick={() => onSelect(opt)}
+                className={`w-full flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 transition-colors text-left ${
+                  isSelected
+                    ? 'bg-violet-600 dark:bg-violet-700 hover:bg-violet-700 dark:hover:bg-violet-600'
+                    : 'bg-violet-100 dark:bg-violet-900/20 hover:bg-violet-200 dark:hover:bg-violet-700/40 active:bg-violet-200 dark:active:bg-violet-600/50'
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className={`text-xs font-semibold leading-tight truncate ${isSelected ? 'text-white' : 'text-violet-900 dark:text-violet-200'}`}>{opt.title}</p>
+                  {opt.isSelf ? (
+                    <p className={`text-[10px] mt-0.5 ${isSelected ? 'text-violet-200' : 'text-violet-500 dark:text-violet-400/50'}`}>
+                      Count as-is · no inventory change
+                    </p>
+                  ) : (opt.weightPerUnit ?? 0) > 0 ? (
+                    <p className={`text-[10px] mt-0.5 ${isSelected ? 'text-violet-200' : 'text-violet-500 dark:text-violet-400/50'}`}>
+                      {opt.weightPerUnit} unit{(opt.weightPerUnit ?? 1) !== 1 ? 's' : ''} → 1 label
+                    </p>
+                  ) : null}
+                </div>
+                {isSelected
+                  ? <Check className="w-3.5 h-3.5 text-white flex-shrink-0" />
+                  : <ArrowRight className="w-3.5 h-3.5 text-violet-600 dark:text-violet-500 flex-shrink-0" />}
+              </button>
+            );
+          })}
         </div>
       ) : (
         // No configured children — default to same product (A→A), allow searching
@@ -1173,6 +1186,8 @@ export default function ScalePage() {
   const [inventoryMapping, setInventoryMapping] = useState<InventoryMappingInfo | null>(null);
   const [inventoryMappingOverride, setInventoryMappingOverride] = useState<InventoryMappingInfo | null>(null);
   const skipNextInventoryFetch = useRef(false);
+  const keepTransformOpts = useRef(false);     // suppress options re-fetch when user selects a transformation
+  const currentScannedSnRef = useRef<string | null>(null); // SN of the barcode currently being processed
   const [lastAdjustment, setLastAdjustment] = useState<{ delta: number; parentTitle: string } | null>(null);
   const [manualTransformModal, setManualTransformModal] = useState(false);
   const [remotePrintJob, setRemotePrintJob] = useState<PrintJob | null>(null);
@@ -1231,6 +1246,8 @@ export default function ScalePage() {
   const [qrScanError, setQrScanError] = useState<string | null>(null);
   const [transformationOptions, setTransformationOptions] = useState<TransformationOption[] | null>(null);
   const [wasQrScanned, setWasQrScanned] = useState(false);
+  const [selectedTransformVariantId, setSelectedTransformVariantId] = useState<string | null>(null);
+  const [transformSourceItem, setTransformSourceItem] = useState<CurrentItem | null>(null);
   const { isPrinterDevice, togglePrinterDevice, createJob, getJob, listQueuedJobs, claimJob, completeJob, failJob } = usePrintQueue();
   const { orders: poOrders, loading: poLoading, error: poError, fetchLineItems, refreshLineItems, approve: approvePoItem, markTransferred } = usePurchaseOrders();
   const { enqueueAndRun } = useOperationQueue();
@@ -1341,14 +1358,18 @@ export default function ScalePage() {
   }, [currentItem?.variantId]);
 
   // Fetch transformation options (source → output) when variant changes.
-  // After a QR scan, always show the panel (even with empty options) so staff
-  // can search for an output product manually, including A→A transformations.
+  // After a QR scan, always show the panel so staff can pick an output or count as-is.
   // Categorical products (weightRanges.length > 0) never show transformation.
+  // When keepTransformOpts ref is set, the user just selected a transformation — skip the
+  // re-fetch caused by the resulting variantId change so the panel stays intact for reselection.
   useEffect(() => {
     const variantId = currentItem?.variantId;
-    if (!variantId) { setTransformationOptions(null); return; }
-    if (weightRanges.length > 0) { setTransformationOptions(null); return; }
-    setTransformationOptions(null); // clear stale options immediately before fetch
+    if (!variantId) { setTransformationOptions(null); setTransformSourceItem(null); return; }
+    if (weightRanges.length > 0) { setTransformationOptions(null); setTransformSourceItem(null); return; }
+    if (keepTransformOpts.current) { keepTransformOpts.current = false; return; }
+    const capturedSource = currentItem;
+    setTransformSourceItem(capturedSource);
+    setTransformationOptions(null); // clear stale options before fetch
     let cancelled = false;
     (async () => {
       try {
@@ -1357,40 +1378,31 @@ export default function ScalePage() {
         const data = await res.json();
         if (!cancelled) {
           let opts: TransformationOption[] = Array.isArray(data?.options) && data.options.length > 0 ? data.options : [];
-          // For lot products scanned via QR, prepend a "count this bag as-is" self option
-          if (wasQrScanned && currentItem?.productId && lotProducts.has(currentItem.productId) && currentItem?.variantId) {
+          // For any QR-scanned product, prepend a "count/reprint as-is" self option
+          if (wasQrScanned && capturedSource.variantId && !opts.some(o => o.isSelf)) {
             opts = [{
-              variantId: currentItem.variantId,
-              title: currentItem.productTitle,
-              productTitle: currentItem.productTitle,
+              variantId: capturedSource.variantId,
+              title: capturedSource.productTitle,
+              productTitle: capturedSource.productTitle,
               inventoryItemId: '',
               parentInventoryItemId: '',
               locationId: '',
               isSelf: true,
-            }, ...opts.filter(o => o.variantId !== currentItem?.variantId)];
+            }, ...opts.filter(o => o.variantId !== capturedSource.variantId)];
           }
           setTransformationOptions(wasQrScanned ? opts : null);
         }
       } catch {
         if (!cancelled) {
-          if (wasQrScanned && currentItem?.productId && lotProducts.has(currentItem.productId) && currentItem?.variantId) {
-            setTransformationOptions([{
-              variantId: currentItem.variantId,
-              title: currentItem.productTitle,
-              productTitle: currentItem.productTitle,
-              inventoryItemId: '',
-              parentInventoryItemId: '',
-              locationId: '',
-              isSelf: true,
-            }]);
-          } else {
-            setTransformationOptions(wasQrScanned ? [] : null);
-          }
+          const selfOpts: TransformationOption[] = wasQrScanned && capturedSource.variantId
+            ? [{ variantId: capturedSource.variantId, title: capturedSource.productTitle, productTitle: capturedSource.productTitle, inventoryItemId: '', parentInventoryItemId: '', locationId: '', isSelf: true }]
+            : [];
+          setTransformationOptions(wasQrScanned ? selfOpts : null);
         }
       }
     })();
     return () => { cancelled = true; };
-  }, [currentItem?.variantId, currentItem?.productId, wasQrScanned, weightRanges, lotProducts]);
+  }, [currentItem?.variantId, wasQrScanned, weightRanges]);
 
   // Save session + weight ranges to localStorage whenever they change.
   // Never deletes here — explicit closeSession handles that — so the save-on-mount
@@ -2049,10 +2061,18 @@ export default function ScalePage() {
   const handleTransformationSelect = useCallback((opt: TransformationOption) => {
     if (!currentItem) return;
 
-    // Self option — count the bag without inventory adjustment; just clear the panel
+    // Self option — count/reprint as-is without inventory adjustment.
+    // Panel stays open for lot products (can re-select); closes for non-lot (single-use barcode).
     if (opt.isSelf) {
-      setWasQrScanned(false);
-      setTransformationOptions(null);
+      const isLot = currentItem.productId ? lotProducts.has(currentItem.productId) : false;
+      setSelectedTransformVariantId(opt.variantId);
+      setInventoryMappingOverride(null);
+      if (!isLot) {
+        setWasQrScanned(false);
+        setTransformationOptions(null);
+        setTransformSourceItem(null);
+        setSelectedTransformVariantId(null);
+      }
       resetPrinted();
       return;
     }
@@ -2061,32 +2081,31 @@ export default function ScalePage() {
     const locId = opt.locationId || DEFAULT_LOCATION;
 
     // Build an inventory mapping override from the child option's metafield data.
-    // The parent's inventoryItemId, isWeighted, and weightPerUnit all come from
-    // the child variant's metafield (returned by the transformation-options endpoint).
     // We must capture this now — once currentItem.variantId switches to the child,
-    // the inventory-mapping effect would re-fetch for the child (which has no parent
-    // metafield) and overwrite inventoryMapping with { found: false }.
+    // the inventory-mapping effect would re-fetch for the child and overwrite the mapping.
+    const sourceTitle = transformSourceItem?.productTitle ?? currentItem.productTitle;
     const override: InventoryMappingInfo = {
       found: true,
       isWeighted: opt.isWeighted ?? false,
       weightPerUnit: opt.weightPerUnit ?? 0,
       parentInventoryId: opt.parentInventoryItemId || '',
       parentProductHandle: '',
-      parentProductTitle: currentItem.productTitle,
+      parentProductTitle: sourceTitle,
       parentLocationId: locId,
       childInventoryItemId: opt.inventoryItemId || '',
       parentUnits: opt.parentUnits ?? 1,
       childUnits: opt.childUnits ?? 1,
     };
 
-    // Derive child product/variant titles from the option.
-    // opt.productTitle = actual product title (always); opt.title = display title (may be variant title).
     const childProductTitle = opt.productTitle || opt.title;
     const childVariantTitle = (opt.productTitle && opt.title !== opt.productTitle && opt.title !== 'Default Title')
       ? opt.title : null;
 
+    // Suppress the transformation-options re-fetch triggered by variantId change:
+    // the panel should keep existing options so the user can reselect if needed.
+    keepTransformOpts.current = true;
     skipNextInventoryFetch.current = true;
-    setWasQrScanned(false);  // transformation applied — suppress panel re-appearing for the output product
+    setSelectedTransformVariantId(opt.variantId);
     setInventoryMappingOverride(override);
     setInventoryMapping(override);
     setCurrentItem({
@@ -2096,9 +2115,9 @@ export default function ScalePage() {
       itemName: childProductTitle,
       variantTitle: childVariantTitle,
     });
-    setTransformationOptions(null);
+    // Panel stays visible — wasQrScanned stays true, transformationOptions unchanged
     resetPrinted();
-  }, [currentItem, resetPrinted]);
+  }, [currentItem, transformSourceItem, lotProducts, resetPrinted]);
 
   const handleManualTransformConfirm = useCallback(async (
     childVariant: { variantId: string; productTitle: string; variantTitle: string | null; inventoryItemId: string },
@@ -2134,6 +2153,8 @@ export default function ScalePage() {
 
     skipNextInventoryFetch.current = true;
     setWasQrScanned(false);
+    setSelectedTransformVariantId(null);
+    setTransformSourceItem(null);
     setInventoryMappingOverride(override);
     setInventoryMapping(override);
     setCurrentItem({
@@ -2477,6 +2498,26 @@ export default function ScalePage() {
     } else if (processingSession) {
       incrementSessionCounter(item);
     }
+    // Post-print: handle panel state based on whether this was a QR-scanned barcode
+    if (wasQrScanned) {
+      const isLot = currentItem?.productId ? lotProducts.has(currentItem.productId) : false;
+      if (isLot) {
+        // Lot barcodes are reusable — just clear the selection so user picks again for next unit
+        setSelectedTransformVariantId(null);
+      } else {
+        // Non-lot: mark barcode as processed and clear scan state to require a new scan
+        if (currentScannedSnRef.current) {
+          fetch(`/api/scale/lookup-by-sn?sn=${encodeURIComponent(currentScannedSnRef.current)}`, {
+            method: 'PATCH',
+          }).catch(() => {});
+          currentScannedSnRef.current = null;
+        }
+        setWasQrScanned(false);
+        setTransformationOptions(null);
+        setSelectedTransformVariantId(null);
+        setTransformSourceItem(null);
+      }
+    }
   };
 
   const handleReprint = async (record: PrintedLabel) => {
@@ -2643,6 +2684,16 @@ export default function ScalePage() {
             snPoLineItemId = snData.poLineItemId ?? null;
             snVendorName = snData.vendorName ?? null;
             snLotNo = snData.lotNo ?? null;
+            // Block already-processed non-lot barcodes — lot barcodes are exempt (reusable)
+            if (snData.processedAt) {
+              const isLotBySn = snPoLineItemId ? (item.productId ? lotProducts.has(item.productId) : true) : false;
+              if (!isLotBySn) {
+                setQrScanError('This barcode has already been processed and cannot be used again.');
+                setLookupLoading(false);
+                setQrScanOpen(true);
+                return;
+              }
+            }
           }
         }
       } catch (err) {
@@ -2690,6 +2741,10 @@ export default function ScalePage() {
           // Prefer by-variant result; fall back to title-lookup ranges if by-variant came back empty
           sessionRules = byVariantRules.length > 0 ? byVariantRules : titleWeightRanges;
           hasAdjustments = !!rulesData?.hasAdjustments;
+          // Set productId from by-variant when not already known (e.g. N/A products like beef/chicken)
+          if (rulesData?.productId && !item.productId) {
+            item = { ...item, productId: rulesData.productId };
+          }
           isLotProduct = item.productId ? lotProducts.has(item.productId) : false;
           // Promote item to found using registry data — covers PLU:N/A products resolved via SN
           if (rulesData?.found) {
@@ -2762,6 +2817,9 @@ export default function ScalePage() {
       item = { ...item, itemWeight: '' };
     }
 
+    currentScannedSnRef.current = sn;
+    setSelectedTransformVariantId(null);
+    setTransformSourceItem(null);
     setWasQrScanned(true);
     setCurrentItem(item);
     setLookupLoading(false);
@@ -2789,6 +2847,9 @@ export default function ScalePage() {
     setRequiresTierSelect(false);
     setNoMatchWeightLbs(null);
     setWasQrScanned(false);
+    setSelectedTransformVariantId(null);
+    setTransformSourceItem(null);
+    currentScannedSnRef.current = null;
     resetPrinted();
   };
 
@@ -3282,6 +3343,8 @@ export default function ScalePage() {
                     <TransformationPanel
                       options={transformationOptions}
                       currentItem={currentItem}
+                      sourceItem={transformSourceItem}
+                      selectedVariantId={selectedTransformVariantId}
                       onSelect={handleTransformationSelect}
                       onManualTransform={() => setManualTransformModal(true)}
                     />
