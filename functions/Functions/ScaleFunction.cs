@@ -1134,17 +1134,18 @@ public class ScaleFunction
                 var sessionStatus = lastSession?.SessionStatus ?? "none";
                 var poQty         = lastSession?.PoQty ?? 0;
 
+                // Use the most-recent record's breakdown — each save contains the full cumulative state,
+                // so summing across records would double-count when auto-saves are in play.
                 var breakdown = new Dictionary<string, int>();
-                foreach (var session in sessions)
+                try
                 {
-                    try
-                    {
-                        var bd = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, int>>(session.VariantBreakdown ?? "{}") ?? new();
-                        foreach (var kv in bd)
-                            breakdown[kv.Key] = breakdown.GetValueOrDefault(kv.Key) + kv.Value;
-                    }
-                    catch { }
+                    var latestWithBreakdown = sessions
+                        .OrderByDescending(s => s.ProcessedAt)
+                        .FirstOrDefault(s => !string.IsNullOrWhiteSpace(s.VariantBreakdown) && s.VariantBreakdown != "{}");
+                    if (latestWithBreakdown?.VariantBreakdown != null)
+                        breakdown = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, int>>(latestWithBreakdown.VariantBreakdown) ?? new();
                 }
+                catch { }
 
                 return await ResponseHelper.WriteSuccess(req, new
                 {
