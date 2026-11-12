@@ -2616,6 +2616,7 @@ export default function ScalePage() {
     setQrScanError(null);
     setWastageWarning(null);
     setLookupLoading(true);
+    currentScannedSnRef.current = null;
 
     let plaintext = scanned;
     if (isEncryptedQr(scanned)) {
