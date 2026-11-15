@@ -17,6 +17,7 @@ import {
   Scale,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   Package,
   Copy,
   Check,
@@ -491,13 +492,50 @@ function PrintHistory({
   loading,
   canPrint,
   onReprint,
+  poOrders,
+  lineItemsCache,
+  onPrintMore,
 }: {
   records: PrintedLabel[];
   loading: boolean;
   canPrint: boolean;
   onReprint: (r: PrintedLabel) => void;
+  poOrders: PurchaseOrder[];
+  lineItemsCache: Record<string, PurchaseOrderLineItem[]>;
+  onPrintMore: (sample: PrintedLabel) => void;
 }) {
   const [open, setOpen] = useState(true);
+  const [openPos, setOpenPos] = useState<Record<string, boolean>>({});
+  const [openProducts, setOpenProducts] = useState<Record<string, boolean>>({});
+
+  // Group records: PO → product → barcodes
+  type ProductGroup = { key: string; poLineItemId: string | null; variantId: string | null; productTitle: string; variantTitle: string | null; records: PrintedLabel[] };
+  type PoGroup = { poId: string; poName: string; vendor: string; products: ProductGroup[] };
+
+  const poMap = new Map<string, PoGroup>();
+  const directRecords: PrintedLabel[] = [];
+
+  for (const r of records) {
+    if (!r.poId) { directRecords.push(r); continue; }
+    if (!poMap.has(r.poId)) {
+      const po = poOrders.find(p => p.id === r.poId || p.poId === r.poId);
+      poMap.set(r.poId, { poId: r.poId, poName: po?.poName ?? r.poId, vendor: po?.vendor ?? r.vendorName ?? '', products: [] });
+    }
+    const poGroup = poMap.get(r.poId)!;
+    const productKey = r.poLineItemId ?? r.variantId ?? r.productTitle;
+    let productGroup = poGroup.products.find(p => p.key === productKey);
+    if (!productGroup) {
+      productGroup = { key: productKey, poLineItemId: r.poLineItemId ?? null, variantId: r.variantId ?? null, productTitle: r.productTitle, variantTitle: null, records: [] };
+      poGroup.products.push(productGroup);
+    }
+    productGroup.records.push(r);
+  }
+
+  const poGroups = Array.from(poMap.values());
+  const totalBarcodes = records.length;
+
+  const togglePo = (poId: string) => setOpenPos(prev => ({ ...prev, [poId]: !prev[poId] }));
+  const toggleProduct = (key: string) => setOpenProducts(prev => ({ ...prev, [key]: !prev[key] }));
 
   return (
     <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-page)]">
@@ -508,8 +546,8 @@ function PrintHistory({
         <div className="flex items-center gap-2">
           <History className="w-4 h-4 text-slate-500" />
           <span className="text-sm font-semibold text-[var(--text-primary)]">Print History</span>
-          {records.length > 0 && (
-            <span className="text-xs text-slate-500">— recent {records.length}</span>
+          {totalBarcodes > 0 && (
+            <span className="text-xs text-slate-500">— {totalBarcodes} barcode{totalBarcodes !== 1 ? 's' : ''}, last 30 days</span>
           )}
         </div>
         {open ? (
@@ -529,40 +567,159 @@ function PrintHistory({
           ) : records.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <History className="w-5 h-5 text-slate-700" />
-              <p className="text-sm text-slate-600">No prints yet</p>
+              <p className="text-sm text-slate-600">No prints in the last 30 days</p>
             </div>
           ) : (
-            <div className="flex flex-col divide-y divide-slate-800/60 max-h-64 overflow-y-auto">
-              {records.map((r, idx) => (
-                <div
-                  key={`${r.id}-${idx}`}
-                  className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--bg-card)] group transition-colors"
-                >
-                  <div className="flex-shrink-0 bg-white rounded-md p-0.5">
-                    <QRCodeSVG
-                      value={r.qrPayload}
-                      size={30}
-                      level="M"
-                      bgColor="#ffffff"
-                      fgColor="#0f172a"
-                    />
+            <div className="flex flex-col divide-y divide-[var(--border-color)]">
+
+              {/* ── PO groups ── */}
+              {poGroups.map(poGroup => {
+                const isPoOpen = openPos[poGroup.poId] ?? false;
+                const totalPoBarcodes = poGroup.products.reduce((s, p) => s + p.records.length, 0);
+                return (
+                  <div key={poGroup.poId}>
+                    <button
+                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--bg-card)] transition-colors text-left"
+                      onClick={() => togglePo(poGroup.poId)}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {isPoOpen ? <ChevronDown className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />}
+                        <span className="text-xs font-semibold text-[var(--text-primary)] truncate">{poGroup.poName}</span>
+                        {poGroup.vendor && <span className="text-xs text-blue-500 font-medium truncate">{poGroup.vendor}</span>}
+                      </div>
+                      <span className="text-xs text-slate-500 flex-shrink-0 ml-2">{poGroup.products.length} product{poGroup.products.length !== 1 ? 's' : ''} · {totalPoBarcodes} barcode{totalPoBarcodes !== 1 ? 's' : ''}</span>
+                    </button>
+
+                    {isPoOpen && (
+                      <div className="border-t border-[var(--border-color)] bg-[var(--bg-card)]/30">
+                        {poGroup.products.map(productGroup => {
+                          const productKey = `${poGroup.poId}:${productGroup.key}`;
+                          const isProductOpen = openProducts[productKey] ?? false;
+                          const lineItems = productGroup.poLineItemId ? (lineItemsCache[poGroup.poId] ?? []) : [];
+                          const li = lineItems.find(x => x.id === productGroup.poLineItemId);
+                          const orderedQty = li?.quantityOrdered ?? null;
+                          const receivedQtyLi = li?.quantityReceived ?? null;
+                          const printedCount = productGroup.records.length;
+                          const isPrintOver = receivedQtyLi !== null ? printedCount > receivedQtyLi : (orderedQty !== null && printedCount > orderedQty);
+                          // discrepancy: PO ordered qty ≠ what was actually received
+                          const hasReceiveDiscrepancy = orderedQty !== null && receivedQtyLi !== null && receivedQtyLi !== orderedQty;
+                          const discrepancyShort = hasReceiveDiscrepancy && receivedQtyLi! < orderedQty!;
+                          const isOver = isPrintOver;
+
+                          return (
+                            <div key={productGroup.key} className="border-b border-[var(--border-color)] last:border-b-0">
+                              <div className="flex items-center px-4 py-2.5 hover:bg-[var(--bg-card)] transition-colors">
+                                <button
+                                  className="flex items-center gap-2 min-w-0 flex-1 text-left"
+                                  onClick={() => toggleProduct(productKey)}
+                                >
+                                  {isProductOpen ? <ChevronDown className="w-3 h-3 text-slate-500 flex-shrink-0" /> : <ChevronRight className="w-3 h-3 text-slate-500 flex-shrink-0" />}
+                                  <div className="flex flex-col min-w-0 flex-1 gap-0.5">
+                                    <span className="text-xs font-medium text-[var(--text-primary)] truncate">{productGroup.productTitle}</span>
+                                    {/* Counts row */}
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      {orderedQty !== null && (
+                                        <span className="text-[10px] text-slate-500">PO: {orderedQty}</span>
+                                      )}
+                                      {receivedQtyLi !== null && (
+                                        <span className="text-[10px] text-slate-500">Rcvd: {receivedQtyLi}</span>
+                                      )}
+                                      <span className="text-[10px] text-slate-500">Printed: {printedCount}</span>
+                                    </div>
+                                    {/* Warning badges */}
+                                    {hasReceiveDiscrepancy && (
+                                      <span className={`self-start text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${discrepancyShort ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400' : 'bg-orange-500/15 text-orange-600 dark:text-orange-400'}`}>
+                                        {discrepancyShort
+                                          ? `${orderedQty! - receivedQtyLi!} short vs PO`
+                                          : `${receivedQtyLi! - orderedQty!} over PO`}
+                                      </span>
+                                    )}
+                                    {isOver && (
+                                      <span className="self-start text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-500/15 text-rose-600 dark:text-rose-400">
+                                        Barcode overage — flagged for analytics
+                                      </span>
+                                    )}
+                                  </div>
+                                </button>
+                                <button
+                                  onClick={() => onPrintMore(productGroup.records[0])}
+                                  className="flex-shrink-0 ml-2 h-6 px-2 rounded-lg text-[10px] font-semibold text-blue-500 hover:bg-blue-500/10 transition-colors"
+                                >
+                                  + Print more
+                                </button>
+                              </div>
+
+                              {isProductOpen && (
+                                <div className="flex flex-col divide-y divide-[var(--border-color)]/50 bg-[var(--bg-page)] pl-7">
+                                  {productGroup.records.map((r, idx) => (
+                                    <div key={`${r.id}-${idx}`} className="flex items-center gap-3 px-3 py-2.5 hover:bg-[var(--bg-card)] group transition-colors">
+                                      <div className="flex-shrink-0 bg-white rounded-md p-0.5">
+                                        <QRCodeSVG value={r.qrPayload} size={24} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs text-slate-500 truncate">
+                                          {r.sn ?? r.plu} · {r.itemWeight && r.itemWeight !== '' ? `${r.itemWeight} · ` : ''}{r.printedAtEst}
+                                        </p>
+                                        {r.lotNo && <p className="text-[10px] text-slate-600 truncate">{r.lotNo}</p>}
+                                      </div>
+                                      <button
+                                        disabled={!canPrint}
+                                        onClick={() => onReprint(r)}
+                                        aria-label={`Reprint ${r.productTitle}`}
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] disabled:opacity-30"
+                                      >
+                                        <RotateCcw className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{r.productTitle}</p>
-                    <p className="text-xs text-slate-500">
-                      PLU {r.plu} · {r.itemWeight} · {r.printedAtEst} EST
-                    </p>
-                  </div>
+                );
+              })}
+
+              {/* ── Direct prints (no PO) ── */}
+              {directRecords.length > 0 && (
+                <div>
                   <button
-                    disabled={!canPrint}
-                    onClick={() => onReprint(r)}
-                    aria-label={`Reprint ${r.productTitle}`}
-                    className="opacity-0 group-hover:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] disabled:opacity-30"
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-[var(--bg-card)] transition-colors text-left"
+                    onClick={() => togglePo('__direct__')}
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-2">
+                      {openPos['__direct__'] ? <ChevronDown className="w-3.5 h-3.5 text-slate-500" /> : <ChevronRight className="w-3.5 h-3.5 text-slate-500" />}
+                      <span className="text-xs font-semibold text-slate-500">Direct prints (no PO)</span>
+                    </div>
+                    <span className="text-xs text-slate-500">{directRecords.length} barcode{directRecords.length !== 1 ? 's' : ''}</span>
                   </button>
+                  {openPos['__direct__'] && (
+                    <div className="border-t border-[var(--border-color)] flex flex-col divide-y divide-[var(--border-color)]/50 max-h-48 overflow-y-auto">
+                      {directRecords.map((r, idx) => (
+                        <div key={`${r.id}-${idx}`} className="flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--bg-card)] group transition-colors">
+                          <div className="flex-shrink-0 bg-white rounded-md p-0.5">
+                            <QRCodeSVG value={r.qrPayload} size={24} level="M" bgColor="#ffffff" fgColor="#0f172a" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium text-[var(--text-primary)] truncate">{r.productTitle}</p>
+                            <p className="text-xs text-slate-500 truncate">{r.sn ?? r.plu} · {r.printedAtEst}</p>
+                          </div>
+                          <button
+                            disabled={!canPrint}
+                            onClick={() => onReprint(r)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity w-6 h-6 flex items-center justify-center rounded-lg text-slate-500 hover:text-[var(--text-primary)] hover:bg-[var(--bg-input)] disabled:opacity-30"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
@@ -1237,12 +1394,9 @@ export default function ScalePage() {
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
   const [bulkInventoryAdjusted, setBulkInventoryAdjusted] = useState<number | null>(null);
   const [lotProducts, setLotProducts] = useState<Set<string>>(new Set());
-  const [lotProductPrompt, setLotProductPrompt] = useState<{
-    item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem;
-    printedCount: number; lotTotalWeightLbs?: number;
-    inventoryItemId?: string; locationId?: string;
-  } | null>(null);
   const [pendingBulkPayloads, setPendingBulkPayloads] = useState<PrintPayload[] | null>(null);
+  const [printMoreModal, setPrintMoreModal] = useState<{ sample: PrintedLabel; po: PurchaseOrder; li: PurchaseOrderLineItem } | null>(null);
+  const [printMoreQty, setPrintMoreQty] = useState('1');
 
   const [qrScanOpen, setQrScanOpen] = useState(false);
   const [qrScanError, setQrScanError] = useState<string | null>(null);
@@ -1287,10 +1441,12 @@ export default function ScalePage() {
   const fetchHistory = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch('/api/scale/print-log');
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const from = thirtyDaysAgo.toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+      const res = await fetch(`/api/scale/print-log?from=${encodeURIComponent(from)}`);
       if (res.ok) {
         const data = await res.json();
-        setPrintHistory((data.labels ?? []).slice(0, 10));
+        setPrintHistory((data.labels ?? []).slice(0, 500));
       } else {
         console.error('[scale] failed to fetch print history:', res.status, await res.text().catch(() => ''));
       }
@@ -1823,13 +1979,15 @@ export default function ScalePage() {
     isLotMethod: boolean,
     inventoryItemId: string | undefined,
     locationId: string | undefined,
+    receivedQty?: number,
   ) => {
     if (printedCount === 0) return;
-    const hasDiscrepancy = printedCount !== li.quantityOrdered;
-    const discrepancyQty = hasDiscrepancy ? (isLotMethod ? 0 : Math.abs(li.quantityOrdered - printedCount)) : null;
-    const discrepancyType = hasDiscrepancy ? (isLotMethod ? 'lot_method' : (printedCount < li.quantityOrdered ? 'short' : 'over')) : null;
-    const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : (isLotMethod ? li.quantityOrdered : printedCount);
-    const inventoryDelta = isLotMethod ? li.quantityOrdered : printedCount;
+    const qtyReceived = receivedQty ?? printedCount;
+    const hasDiscrepancy = qtyReceived !== li.quantityOrdered;
+    const discrepancyQty = hasDiscrepancy ? Math.abs(li.quantityOrdered - qtyReceived) : null;
+    const discrepancyType = hasDiscrepancy ? (qtyReceived < li.quantityOrdered ? 'short' : 'over') : null;
+    const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : (isLotMethod ? li.quantityOrdered : qtyReceived);
+    const inventoryDelta = isLotMethod ? li.quantityOrdered : qtyReceived;
     try {
       await enqueueAndRun(
         'approve-line-item',
@@ -1879,9 +2037,17 @@ export default function ScalePage() {
     expiryDate: string,
     mfgDate: string,
     lotTotalWeightLbs?: number,
+    receivedQty?: number,
   ) => {
     const { item: baseItem, po, li } = modalState;
     const item = weight ? { ...baseItem, itemWeight: weight } : baseItem;
+
+    // Auto-generate lot number when left blank: LOT_Vendor_POName_YYYYMMDD_XXXX
+    const vendorClean = po.vendor.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').toUpperCase() || 'VND';
+    const poRefClean = po.poName.replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_|_$/g, '').toUpperCase() || po.id.slice(-6).toUpperCase();
+    const dateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' }).replace(/-/g, '');
+    const uniqueSuffix = String(Date.now()).slice(-4);
+    const effectiveLotNo = lotNo.trim() || `LOT_${vendorClean}_${poRefClean}_${dateStr}_${uniqueSuffix}`;
 
     setBulkPrintModal(null);
     resetPrinted();
@@ -1925,7 +2091,7 @@ export default function ScalePage() {
           await createJob({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: item.itemWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
         }
         // Log each label; skip PO approval (done once after the full batch)
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true, lotNo || null, expiryDate || null, undefined, mfgDate || null);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true, effectiveLotNo, expiryDate || null, undefined, mfgDate || null);
         results.push({ index: i + 1, sn, qrPayload: encryptedPayload, printedAtEst, status: 'printed' });
       } catch (err) {
         results.push({ index: i + 1, sn: '', qrPayload: '', printedAtEst: '', status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
@@ -1955,10 +2121,11 @@ export default function ScalePage() {
             poId: item.poId ?? null,
             poLineItemId: item.poLineItemId ?? null,
             vendorName: item.vendorName ?? null,
-            lotNo: lotNo || null,
+            lotNo: effectiveLotNo,
             expiryDate: expiryDate || null,
             mfgDate: mfgDate || null,
             quantityOrdered: li.quantityOrdered,
+            quantityReceived: receivedQty ?? printedCount,
             quantityPrinted: printedCount,
             results: results.map(r => ({
               index: r.index,
@@ -1976,20 +2143,17 @@ export default function ScalePage() {
       }
     }
 
-    // Determine lot method: configured lot products, weight-based lot receiving, or Shopify isLotReceiving flag
+    // Determine lot method: configured lot products, weight-based lot receiving, Shopify flag, or barcodes ≠ received
+    const qtyReceived = receivedQty ?? printedCount;
     const productId = item.productId ?? null;
     const isLotReceivingFlag = modalState.isLotReceiving ?? false;
-    const isLotMethod = (productId ? lotProducts.has(productId) : false) || (lotTotalWeightLbs !== undefined) || isLotReceivingFlag;
+    const isLotMethod = (productId ? lotProducts.has(productId) : false)
+      || (lotTotalWeightLbs !== undefined)
+      || isLotReceivingFlag
+      || (printedCount !== qtyReceived);
     const { inventoryItemId: modalInvItemId, locationId: modalLocationId } = modalState;
 
-    // Show first-discrepancy modal when count mismatches and product not yet configured
-    if (!isLotMethod && printedCount !== li.quantityOrdered && productId !== null) {
-      setLotProductPrompt({ item, po, li, printedCount, lotTotalWeightLbs, inventoryItemId: modalInvItemId, locationId: modalLocationId });
-      return;
-    }
-
-    // No prompt needed — apply approval and inventory immediately
-    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, isLotMethod, modalInvItemId, modalLocationId);
+    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, isLotMethod, modalInvItemId, modalLocationId, qtyReceived);
 
     // Start/update a processing session for lot products so the processed/remaining panel shows
     if (isLotMethod && printedCount > 0) {
@@ -2040,31 +2204,16 @@ export default function ScalePage() {
     }
   }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, labelSizeKey, resetPrinted, lotProducts, applyBulkApprovalAndInventory]);
 
-  const handleMarkAsLot = useCallback(async () => {
-    if (!lotProductPrompt) return;
-    const { item, po, li, printedCount, lotTotalWeightLbs, inventoryItemId, locationId } = lotProductPrompt;
-    setLotProductPrompt(null);
-    if (item.productId) {
-      try {
-        await fetch('/api/scale/lot-products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ productId: item.productId, productTitle: item.productTitle }),
-        });
-        setLotProducts(prev => new Set([...prev, item.productId!]));
-      } catch (err) {
-        console.error('[scale] failed to save lot product:', err);
-      }
-    }
-    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, true, inventoryItemId, locationId);
-  }, [lotProductPrompt, applyBulkApprovalAndInventory]);
-
-  const handleDeclineLot = useCallback(async () => {
-    if (!lotProductPrompt) return;
-    const { po, li, printedCount, lotTotalWeightLbs, inventoryItemId, locationId } = lotProductPrompt;
-    setLotProductPrompt(null);
-    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, false, inventoryItemId, locationId);
-  }, [lotProductPrompt, applyBulkApprovalAndInventory]);
+  const handlePrintMore = useCallback((sample: PrintedLabel) => {
+    if (!sample.poId) return;
+    const po = poOrders.find(p => p.id === sample.poId || p.poId === sample.poId);
+    if (!po) return;
+    const lineItems = poLineItemsCache[sample.poId] ?? [];
+    const li = lineItems.find(x => x.id === sample.poLineItemId);
+    if (!li) return;
+    setPrintMoreQty('1');
+    setPrintMoreModal({ sample, po, li });
+  }, [poOrders, poLineItemsCache]);
 
   const handleTransformationSelect = useCallback((opt: TransformationOption) => {
     if (!currentItem) return;
@@ -3739,6 +3888,9 @@ export default function ScalePage() {
               loading={historyLoading}
               canPrint={true}
               onReprint={handleReprint}
+              poOrders={poOrders}
+              lineItemsCache={poLineItemsCache}
+              onPrintMore={handlePrintMore}
             />
 
             {/* ── Device setup ──────────────────────────────────────────────── */}
@@ -3813,8 +3965,9 @@ export default function ScalePage() {
           orderedQuantity={bulkPrintModal.li.quantityOrdered}
           vendorName={bulkPrintModal.item.vendorName}
           isLotReceiving={bulkPrintModal.isLotReceiving}
-          onConfirm={(qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs) =>
-            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs)
+          isLotProduct={bulkPrintModal.item.productId ? lotProducts.has(bulkPrintModal.item.productId) : false}
+          onConfirm={(qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs, receivedQty) =>
+            handleBulkPrint(bulkPrintModal, qty, wt, lotNo, expiryDate, mfgDate, lotTotalWeightLbs, receivedQty)
           }
           onClose={() => setBulkPrintModal(null)}
         />
@@ -3824,42 +3977,68 @@ export default function ScalePage() {
 
       <InstallBanner />
 
-      {/* ── Lot Product Prompt ── */}
-      {lotProductPrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="relative w-full max-w-sm bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl shadow-2xl p-5 flex flex-col gap-4">
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-amber-100 dark:bg-amber-900/60 border border-amber-200 dark:border-amber-800 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-lg">🏷️</span>
+      {/* ── Print More Dialog ── */}
+      {printMoreModal && (() => {
+        const { sample, po, li } = printMoreModal;
+        const parsedQty = parseInt(printMoreQty, 10);
+        const isValid = !isNaN(parsedQty) && parsedQty > 0;
+        const handleConfirm = async () => {
+          if (!isValid) return;
+          setPrintMoreModal(null);
+          const item: CurrentItem = {
+            found: true,
+            productTitle: sample.productTitle,
+            itemName: sample.productTitle,
+            variantTitle: null,
+            itemWeight: sample.itemWeight,
+            plu: sample.plu,
+            itemNumber: sample.itemNumber,
+            poId: sample.poId ?? undefined,
+            poLineItemId: sample.poLineItemId ?? undefined,
+            vendorName: sample.vendorName ?? undefined,
+            variantId: sample.variantId ?? undefined,
+          };
+          await handleBulkPrint(
+            { item, po, li },
+            parsedQty,
+            '',
+            sample.lotNo ?? '',
+            sample.expiryDate ?? '',
+            sample.mfgDate ?? '',
+            undefined,
+            undefined,
+          );
+        };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+              <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Print More Labels</h3>
+              <p className="text-sm text-slate-400 mb-1 leading-snug">{sample.productTitle}</p>
+              <p className="text-xs text-slate-500 mb-4">PO: {po.poName} · {po.vendor}</p>
+              <div className="flex flex-col gap-1.5 mb-4">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">Additional Barcodes</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={printMoreQty}
+                  onChange={e => setPrintMoreQty(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
+                  autoFocus
+                  className="w-full h-11 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors"
+                />
               </div>
-              <div>
-                <p className="text-sm font-bold text-[var(--text-primary)] leading-snug">Is this a lot product?</p>
-                <p className="text-xs text-slate-400 mt-1">
-                  <span className="font-semibold text-amber-700 dark:text-amber-300">{lotProductPrompt.printedCount}</span> barcode{lotProductPrompt.printedCount !== 1 ? 's' : ''} printed,
-                  but PO quantity is <span className="font-semibold text-[var(--text-primary)]">{lotProductPrompt.li.quantityOrdered}</span>.
-                </p>
-                <p className="text-xs text-slate-500 mt-2">
-                  <span className="font-medium text-[var(--text-secondary)]">{lotProductPrompt.item.productTitle}</span> — Lot products (beef, lamb, goat, etc.) use the full PO quantity for inventory since barcodes are batch labels, not unit counts.
-                </p>
+              <div className="flex gap-2">
+                <button onClick={() => setPrintMoreModal(null)} className="flex-1 h-11 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] font-medium transition-colors">Cancel</button>
+                <button onClick={handleConfirm} disabled={!isValid} className="flex-1 h-11 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm text-white font-bold flex items-center justify-center gap-2 transition-colors">
+                  <Printer className="w-4 h-4" />
+                  Print {isValid ? parsedQty : '—'}
+                </button>
               </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={handleMarkAsLot}
-                className="w-full h-11 bg-amber-600 hover:bg-amber-500 rounded-xl text-sm text-white font-bold transition-colors"
-              >
-                Mark as lot product — use PO qty ({lotProductPrompt.li.quantityOrdered})
-              </button>
-              <button
-                onClick={handleDeclineLot}
-                className="w-full h-11 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] font-medium transition-colors"
-              >
-                No — record discrepancy of {Math.abs(lotProductPrompt.li.quantityOrdered - lotProductPrompt.printedCount)}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Session Close Prompt ── */}
       {sessionClosePrompt && processingSession && (() => {

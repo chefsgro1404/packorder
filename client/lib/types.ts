@@ -359,6 +359,8 @@ export interface PrintedLabel {
   variantId?: string | null;
   poId?: string | null;
   poLineItemId?: string | null;
+  vendorName?: string | null;
+  lotNo?: string | null;
   expiryDate: string | null;
   mfgDate: string | null;
 }

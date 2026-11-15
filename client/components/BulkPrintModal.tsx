@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Printer, X, Package, Weight } from 'lucide-react';
+import { Printer, X, Package, Weight, AlertTriangle, Tag } from 'lucide-react';
 
 export interface BulkPrintModalProps {
   productTitle: string;
@@ -9,7 +9,8 @@ export interface BulkPrintModalProps {
   orderedQuantity: number;
   vendorName?: string | null;
   isLotReceiving?: boolean;
-  onConfirm: (quantity: number, weight: string, lotNo: string, expiryDate: string, mfgDate: string, lotTotalWeightLbs?: number) => void;
+  isLotProduct?: boolean;
+  onConfirm: (barcodesToPrint: number, weight: string, lotNo: string, expiryDate: string, mfgDate: string, lotTotalWeightLbs?: number, receivedQty?: number) => void;
   onClose: () => void;
 }
 
@@ -19,28 +20,34 @@ export function BulkPrintModal({
   orderedQuantity,
   vendorName,
   isLotReceiving = false,
+  isLotProduct = false,
   onConfirm,
   onClose,
 }: BulkPrintModalProps) {
-  const [quantity, setQuantity] = useState(String(orderedQuantity));
+  const [receivedQty, setReceivedQty] = useState(String(orderedQuantity));
+  const [barcodesToPrint, setBarcodesToPrint] = useState(String(orderedQuantity));
   const [weight, setWeight] = useState('');
   const [lotNo, setLotNo] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
   const [mfgDate, setMfgDate] = useState('');
 
-  // Lot receiving state (weight-based products: beef, goat, lamb)
+  // Lot receiving state (weight-based products)
   const [totalWeightLbs, setTotalWeightLbs] = useState('');
   const [barcodeCount, setBarcodeCount] = useState(1);
 
-  const parsedQty = parseInt(quantity, 10);
-  const isCountValid = !isNaN(parsedQty) && parsedQty > 0;
-  const delta = isCountValid ? orderedQuantity - parsedQty : 0;
+  const parsedReceived = parseInt(receivedQty, 10);
+  const parsedBarcodes = parseInt(barcodesToPrint, 10);
+  const receivedValid = !isNaN(parsedReceived) && parsedReceived > 0;
+  const barcodesValid = !isNaN(parsedBarcodes) && parsedBarcodes > 0;
+  const barcodesExceedReceived = receivedValid && barcodesValid && parsedBarcodes > parsedReceived;
+  const isAutoLot = isLotProduct || (receivedValid && barcodesValid && parsedBarcodes !== parsedReceived);
+  const hasDiscrepancy = receivedValid && parsedReceived !== orderedQuantity;
 
   const parsedWeight = parseFloat(totalWeightLbs);
   const isWeightValid = !isNaN(parsedWeight) && parsedWeight > 0;
   const weightPerLabel = isWeightValid ? (parsedWeight / barcodeCount).toFixed(2) : null;
 
-  const isValid = isLotReceiving ? isWeightValid : isCountValid;
+  const isValid = isLotReceiving ? isWeightValid : (receivedValid && barcodesValid);
 
   const handleConfirm = () => {
     if (!isValid) return;
@@ -48,7 +55,7 @@ export function BulkPrintModal({
       const labelWeight = `${weightPerLabel} lbs (LOT)`;
       onConfirm(barcodeCount, labelWeight, lotNo.trim(), expiryDate.trim(), mfgDate.trim(), parsedWeight);
     } else {
-      onConfirm(parsedQty, weight.trim(), lotNo.trim(), expiryDate.trim(), mfgDate.trim());
+      onConfirm(parsedBarcodes, weight.trim(), lotNo.trim(), expiryDate.trim(), mfgDate.trim(), undefined, parsedReceived);
     }
   };
 
@@ -141,43 +148,79 @@ export function BulkPrintModal({
             </div>
           </>
         ) : (
-          /* ── Standard receiving: unit count ── */
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              How many received?
-            </label>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              value={quantity}
-              onChange={e => setQuantity(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
-              autoFocus
-              className="w-full h-11 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors"
-            />
-            {isCountValid && delta === 0 && (
-              <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+          /* ── Standard receiving: qty received + barcodes to print ── */
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                  Qty Received
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={receivedQty}
+                  onChange={e => setReceivedQty(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
+                  autoFocus
+                  className="w-full h-11 bg-[var(--bg-input)] border border-[var(--border-color)] rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
+                  Barcodes to Print
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={barcodesToPrint}
+                  onChange={e => setBarcodesToPrint(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }}
+                  className={`w-full h-11 bg-[var(--bg-input)] border rounded-xl px-3 text-base font-semibold text-[var(--text-primary)] focus:outline-none transition-colors ${
+                    barcodesExceedReceived ? 'border-orange-400 focus:border-orange-400' : 'border-[var(--border-color)] focus:border-blue-500'
+                  }`}
+                />
+              </div>
+            </div>
+
+            {/* Status hints */}
+            {barcodesExceedReceived && (
+              <div className="flex items-center gap-1.5 text-xs text-orange-600 dark:text-orange-400">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                Barcodes exceed received — will be flagged for analytics review
+              </div>
+            )}
+            {isAutoLot && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                <Tag className="w-3.5 h-3.5 flex-shrink-0" />
+                {isLotProduct
+                  ? 'Lot product — will always be marked as lot'
+                  : `Will be marked as lot (${parsedBarcodes} barcodes for ${parsedReceived} received)`}
+              </div>
+            )}
+            {hasDiscrepancy && receivedValid && (
+              <div className="flex items-center gap-1.5 text-xs text-violet-600 dark:text-violet-400">
+                <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                {parsedReceived < orderedQuantity
+                  ? `${orderedQuantity - parsedReceived} short vs PO — will be recorded as discrepancy`
+                  : `${parsedReceived - orderedQuantity} over PO — will be recorded as discrepancy`}
+              </div>
+            )}
+            {!hasDiscrepancy && receivedValid && !barcodesExceedReceived && parsedReceived === orderedQuantity && parsedBarcodes === parsedReceived && !isLotProduct && (
+              <div className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400 inline-block" />
                 Full quantity received
-              </p>
-            )}
-            {isCountValid && delta !== 0 && (
-              <p className={`text-xs flex items-center gap-1.5 ${delta > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-violet-600 dark:text-violet-400'}`}>
-                <span className={`w-1.5 h-1.5 rounded-full inline-block ${delta > 0 ? 'bg-amber-600 dark:bg-amber-400' : 'bg-violet-600 dark:bg-violet-400'}`} />
-                {delta > 0
-                  ? `${delta} unit${delta !== 1 ? 's' : ''} short vs PO — printed qty will be added to inventory`
-                  : `${Math.abs(delta)} extra unit${Math.abs(delta) !== 1 ? 's' : ''} vs PO — printed qty will be added to inventory`}
-              </p>
+              </div>
             )}
           </div>
         )}
 
-        {/* Optional lot + date fields (shared by both modes) */}
+        {/* Lot + date fields */}
         <div className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-              Lot No <span className="text-slate-600 normal-case font-normal">(optional)</span>
+              Lot No <span className="text-slate-600 normal-case font-normal">(optional — auto-generated if blank)</span>
             </label>
             <input
               type="text"
@@ -205,7 +248,7 @@ export function BulkPrintModal({
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest">
-                Expiry <span className="text-slate-600 normal-case font-normal">(optional)</span>
+                Expiry
               </label>
               <input
                 type="date"
@@ -263,7 +306,8 @@ export function BulkPrintModal({
             ) : (
               <>
                 <Printer className="w-4 h-4" />
-                Print {isCountValid ? parsedQty : '—'} Label{isCountValid && parsedQty !== 1 ? 's' : ''}
+                Print {barcodesValid ? parsedBarcodes : '—'} Label{barcodesValid && parsedBarcodes !== 1 ? 's' : ''}
+                {isAutoLot ? ' (Lot)' : ''}
               </>
             )}
           </button>
