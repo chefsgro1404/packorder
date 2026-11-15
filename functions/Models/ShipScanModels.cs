@@ -1182,6 +1182,7 @@ public class BulkSessionEntity : ITableEntity
     public string? ExpiryDate { get; set; }
     public string? ManufacturingDate { get; set; }
     public int QuantityOrdered { get; set; }
+    public int QuantityReceived { get; set; }  // what was physically received (may differ from ordered or printed)
     public int QuantityPrinted { get; set; }
     public string Results { get; set; } = "[]"; // JSON: BulkSessionLabelResult[]
     public string SessionDateEst { get; set; } = ""; // yyyy-MM-dd HH:mm:ss EST
@@ -1209,9 +1210,10 @@ public class SaveBulkSessionRequest
     [JsonProperty("lotNo")]           public string? LotNo { get; set; }
     [JsonProperty("expiryDate")]      public string? ExpiryDate { get; set; }
     [JsonProperty("mfgDate")]         public string? MfgDate { get; set; }
-    [JsonProperty("quantityOrdered")] public int QuantityOrdered { get; set; }
-    [JsonProperty("quantityPrinted")] public int QuantityPrinted { get; set; }
-    [JsonProperty("results")]         public List<BulkSessionLabelResult> Results { get; set; } = new();
+    [JsonProperty("quantityOrdered")]   public int QuantityOrdered { get; set; }
+    [JsonProperty("quantityReceived")]  public int QuantityReceived { get; set; }  // what was physically received
+    [JsonProperty("quantityPrinted")]   public int QuantityPrinted { get; set; }
+    [JsonProperty("results")]           public List<BulkSessionLabelResult> Results { get; set; } = new();
     [JsonProperty("sessionDateEst")]  public string SessionDateEst { get; set; } = "";
 }
 

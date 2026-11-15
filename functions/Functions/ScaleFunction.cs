@@ -1272,8 +1272,9 @@ public class ScaleFunction
                     expiryDate    = s.ExpiryDate,
                     mfgDate       = s.ManufacturingDate,
                     quantityOrdered  = s.QuantityOrdered,
+                    quantityReceived = s.QuantityReceived,
                     quantityPrinted  = s.QuantityPrinted,
-                    results       = s.Results,
+                    results          = s.Results,
                     sessionDateEst = s.SessionDateEst,
                 }).ToList();
                 return await ResponseHelper.WriteSuccess(req, new { sessions = sessionDtos, total = sessionDtos.Count }, _allowedOrigins);
@@ -1297,9 +1298,10 @@ public class ScaleFunction
                 LotNo           = request.LotNo,
                 ExpiryDate      = request.ExpiryDate,
                 ManufacturingDate = request.MfgDate,
-                QuantityOrdered = request.QuantityOrdered,
-                QuantityPrinted = request.QuantityPrinted,
-                Results         = JsonConvert.SerializeObject(request.Results),
+                QuantityOrdered  = request.QuantityOrdered,
+                QuantityReceived = request.QuantityReceived,
+                QuantityPrinted  = request.QuantityPrinted,
+                Results          = JsonConvert.SerializeObject(request.Results),
                 SessionDateEst  = request.SessionDateEst,
             };
             await _tableStorage.SaveBulkSessionAsync(entity);
