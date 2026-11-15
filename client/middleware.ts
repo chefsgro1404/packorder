@@ -13,5 +13,7 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/assign/:path*", "/ship/:path*", "/pos/:path*", "/scale/:path*"],
+  // Protect every page except the login root (/), API routes, and Next.js internals.
+  // Adding a new page under any path now requires no middleware change.
+  matcher: ["/((?!$|api/|_next/|favicon.ico|icons/|manifest.json).*)"],
 };
