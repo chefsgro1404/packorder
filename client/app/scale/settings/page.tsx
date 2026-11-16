@@ -144,6 +144,11 @@ export default function ScaleSettingsPage() {
   const [fullSyncResult, setFullSyncResult] = useState<FullSyncResult | null>(null);
   const [fullSyncError, setFullSyncError] = useState<string | null>(null);
 
+  // ── Partial PO sync ──────────────────────────────────────────────────────
+  const [poSyncing, setPoSyncing] = useState(false);
+  const [poSyncResult, setPoSyncResult] = useState<{ synced: number; type: string } | null>(null);
+  const [poSyncError, setPoSyncError] = useState<string | null>(null);
+
   // ── Vendors ─────────────────────────────────────────────────────────────
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [vendorsLoading, setVendorsLoading] = useState(true);
@@ -346,6 +351,28 @@ export default function ScaleSettingsPage() {
       setFullSyncError(err instanceof Error ? err.message : 'Full sync failed');
     } finally {
       setFullSyncing(false);
+    }
+  };
+
+  const handlePoSync = async (type: 'partial' | 'full') => {
+    setPoSyncing(true);
+    setPoSyncResult(null);
+    setPoSyncError(null);
+    try {
+      const res = await fetch('/api/sync/pos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type }),
+      });
+      let data: unknown;
+      try { data = await res.json(); } catch { throw new Error('PO sync timed out — it may still be running.'); }
+      if (!res.ok) throw new Error((data as { error?: string })?.error || 'PO sync failed');
+      const payload = ((data as { data?: { synced: number; type: string } })?.data ?? data) as { synced: number; type: string };
+      setPoSyncResult(payload);
+    } catch (err) {
+      setPoSyncError(err instanceof Error ? err.message : 'PO sync failed');
+    } finally {
+      setPoSyncing(false);
     }
   };
 
@@ -690,6 +717,64 @@ export default function ScaleSettingsPage() {
                 <><RefreshCw className="w-4 h-4" /> Run Full Sync Now</>
               )}
             </button>
+          </div>
+        </div>
+
+        {/* ── PO Sync ───────────────────────────────────────────────────────── */}
+        <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl overflow-hidden">
+          <div className="px-4 pt-4 pb-2 flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 text-teal-400" />
+            <h2 className="text-sm font-semibold text-[var(--text-primary)]">Purchase Order Sync</h2>
+          </div>
+          <div className="px-4 pb-4 flex flex-col gap-3">
+            <p className="text-xs text-slate-500">
+              <strong className="text-[var(--text-secondary)]">Partial</strong> — fetches only the most recent 100 POs from Shopify (fast, use daily).
+              <br />
+              <strong className="text-[var(--text-secondary)]">Full</strong> — fetches every PO across all pages (slow, use when POs are missing or after a long gap).
+              <br />
+              Accepted and received quantities are always preserved on resync.
+            </p>
+
+            {poSyncError && (
+              <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-xl px-3 py-2">
+                <AlertCircle className="w-4 h-4 text-rose-500 dark:text-rose-400 flex-shrink-0" />
+                <p className="text-xs text-rose-700 dark:text-rose-300">{poSyncError}</p>
+              </div>
+            )}
+
+            {poSyncResult && (
+              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900 rounded-xl px-3 py-2">
+                <Check className="w-4 h-4 text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
+                <p className="text-xs text-emerald-700 dark:text-emerald-300">
+                  {poSyncResult.type === 'partial' ? 'Partial' : 'Full'} PO sync complete — {poSyncResult.synced} POs synced
+                </p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => handlePoSync('partial')}
+                disabled={poSyncing}
+                className="flex-1 h-11 flex items-center justify-center gap-2 bg-teal-700 hover:bg-teal-600 disabled:opacity-50 rounded-xl text-sm font-bold text-white transition-all"
+              >
+                {poSyncing ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Syncing…</>
+                ) : (
+                  'Partial PO Sync'
+                )}
+              </button>
+              <button
+                onClick={() => handlePoSync('full')}
+                disabled={poSyncing}
+                className="flex-1 h-11 flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-xl text-sm font-bold text-white transition-all"
+              >
+                {poSyncing ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Syncing…</>
+                ) : (
+                  'Full PO Sync'
+                )}
+              </button>
+            </div>
           </div>
         </div>
 

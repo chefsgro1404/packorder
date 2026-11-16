@@ -431,6 +431,12 @@ public class SyncRequest
     public List<string>? Tags { get; set; }
 }
 
+public class SyncPosRequest
+{
+    [JsonProperty("type")]
+    public string Type { get; set; } = "partial"; // "partial" | "full"
+}
+
 // Webhook REST payload models (Shopify sends numeric IDs, snake_case)
 public class WebhookProduct
 {

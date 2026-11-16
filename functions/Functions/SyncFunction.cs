@@ -191,6 +191,46 @@ public class SyncFunction
         }, _allowedOrigins);
     }
 
+    [Function("SyncPurchaseOrders")]
+    public async Task<HttpResponseData> SyncPos(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "sync/pos")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        try
+        {
+            var body    = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<SyncPosRequest>(body) ?? new SyncPosRequest();
+            bool partial = string.Equals(request.Type, "partial", StringComparison.OrdinalIgnoreCase);
+
+            _logger.LogInformation("PO sync starting — type={Type}", partial ? "partial" : "full");
+
+            // maxPages=1 for partial (first 100 POs, newest first); 0=all for full
+            var pos    = await _shopify.GetInventoryPurchaseOrdersAsync(maxPages: partial ? 1 : 0);
+            var synced = await _tableStorage.SyncInventoryPurchaseOrdersAsync(pos);
+
+            _logger.LogInformation("PO sync complete — type={Type}, synced={Count}", partial ? "partial" : "full", synced);
+
+            return await ResponseHelper.WriteSuccess(req, new
+            {
+                ok     = true,
+                type   = partial ? "partial" : "full",
+                synced,
+            }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PO sync failed");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
     [Function("SyncProducts")]
     public async Task<HttpResponseData> Sync(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "sync")]

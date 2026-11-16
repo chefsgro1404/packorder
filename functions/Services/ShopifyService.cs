@@ -1253,16 +1253,20 @@ public class ShopifyService
           }
         }";
 
-    public async Task<List<GqlInventoryPurchaseOrder>> GetInventoryPurchaseOrdersAsync()
+    // maxPages = 0 → fetch all pages (full sync). maxPages = 1 → fetch only the first page of 100
+    // (partial sync — Shopify returns newest POs first, so this covers recently added POs cheaply).
+    public async Task<List<GqlInventoryPurchaseOrder>> GetInventoryPurchaseOrdersAsync(int maxPages = 0)
     {
         var results = new List<GqlInventoryPurchaseOrder>();
         string? cursor = null;
+        int pagesFetched = 0;
 
         try
         {
             do
             {
                 var data = await GraphQlAsync(ListInventoryPurchaseOrdersQuery, new { cursor }, apiVersionOverride: "unstable");
+                pagesFetched++;
                 var conn  = data["inventoryPurchaseOrders"];
                 if (conn == null) break;
 
@@ -1315,6 +1319,9 @@ public class ShopifyService
                 var pageInfo = conn["pageInfo"];
                 var hasNext  = pageInfo?["hasNextPage"]?.Value<bool>() ?? false;
                 cursor       = hasNext ? pageInfo?["endCursor"]?.ToString() : null;
+
+                if (maxPages > 0 && pagesFetched >= maxPages)
+                    break;
             }
             while (cursor != null);
         }
