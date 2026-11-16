@@ -1249,6 +1249,11 @@ public class RegisterWebhooksRequest
     [JsonProperty("callbackBaseUrl")] public string CallbackBaseUrl { get; set; } = "";
 }
 
+public class SetWebhookSecretRequest
+{
+    [JsonProperty("secret")] public string Secret { get; set; } = "";
+}
+
 // ─── Vendor Management ────────────────────────────────────────────────────────
 
 public class VendorEntity : ITableEntity

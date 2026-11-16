@@ -1,5 +1,6 @@
 using Azure.Data.Tables;
 using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,6 +36,10 @@ var host = new HostBuilder()
         }
 
         services.AddSingleton(tableClient);
+
+        var kvUri = config["KeyVaultUri"];
+        if (!string.IsNullOrEmpty(kvUri))
+            services.AddSingleton(new SecretClient(new Uri(kvUri), new DefaultAzureCredential()));
 
         services.AddSingleton<TableStorageService>();
         services.AddSingleton<AuthService>();

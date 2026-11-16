@@ -190,6 +190,12 @@ export default function ScaleSettingsPage() {
   const [webhooksLoading, setWebhooksLoading] = useState(false);
   const [deletingWebhookId, setDeletingWebhookId] = useState<string | null>(null);
 
+  // ── Webhook secret ────────────────────────────────────────────────────────
+  const [webhookSecret, setWebhookSecret] = useState('');
+  const [webhookSecretSaving, setWebhookSecretSaving] = useState(false);
+  const [webhookSecretSaved, setWebhookSecretSaved] = useState(false);
+  const [webhookSecretError, setWebhookSecretError] = useState<string | null>(null);
+
   const fetchMappings = useCallback(async () => {
     setMappingsLoading(true);
     try {
@@ -459,6 +465,28 @@ export default function ScaleSettingsPage() {
       setWebhookError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
       setWebhookRegistering(false);
+    }
+  };
+
+  const handleSaveWebhookSecret = async () => {
+    if (!webhookSecret.trim()) return;
+    setWebhookSecretSaving(true);
+    setWebhookSecretSaved(false);
+    setWebhookSecretError(null);
+    try {
+      const res = await fetch('/api/webhooks/secret', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: webhookSecret.trim() }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string; data?: { ok?: boolean } };
+      if (!res.ok) throw new Error(data.error ?? 'Failed to save secret');
+      setWebhookSecretSaved(true);
+      setWebhookSecret('');
+    } catch (err) {
+      setWebhookSecretError(err instanceof Error ? err.message : 'Failed to save');
+    } finally {
+      setWebhookSecretSaving(false);
     }
   };
 
@@ -1185,10 +1213,41 @@ export default function ScaleSettingsPage() {
               )}
             </button>
 
-            <p className="text-xs text-slate-500">
-              The <span className="font-mono text-slate-400">ShopifyWebhookSecret</span> in Key Vault must match
-              your Shopify app&apos;s API secret key (admin → Apps → develop apps → your app → API credentials).
-            </p>
+            <div className="border border-[var(--border-color)] rounded-xl p-3 flex flex-col gap-2">
+              <p className="text-xs font-medium text-[var(--text-secondary)]">Webhook Signing Secret</p>
+              <p className="text-xs text-slate-500">
+                Paste the <strong>API secret key</strong> from Shopify Admin → Apps → Develop apps → ShipScan → API credentials.
+                Saved directly to Key Vault — only needed once.
+              </p>
+              {webhookSecretSaved && (
+                <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-900 rounded-lg px-3 py-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                  <p className="text-xs text-emerald-700 dark:text-emerald-300">Signing secret saved to Key Vault</p>
+                </div>
+              )}
+              {webhookSecretError && (
+                <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/50 dark:border-rose-900 rounded-lg px-3 py-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" />
+                  <p className="text-xs text-rose-700 dark:text-rose-300">{webhookSecretError}</p>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={webhookSecret}
+                  onChange={e => { setWebhookSecret(e.target.value); setWebhookSecretSaved(false); setWebhookSecretError(null); }}
+                  placeholder="Shopify API secret key"
+                  className="flex-1 px-3 py-2 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-lg text-[var(--text-primary)] placeholder:text-[var(--text-muted)] text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+                <button
+                  onClick={handleSaveWebhookSecret}
+                  disabled={webhookSecretSaving || !webhookSecret.trim()}
+                  className="px-4 h-10 bg-purple-700 hover:bg-purple-600 disabled:opacity-50 rounded-lg text-xs font-bold text-white transition-all flex-shrink-0"
+                >
+                  {webhookSecretSaving ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

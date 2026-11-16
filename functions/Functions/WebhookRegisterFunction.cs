@@ -1,4 +1,5 @@
 using System.Net;
+using Azure.Security.KeyVault.Secrets;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Configuration;
@@ -17,19 +18,22 @@ public class WebhookRegisterFunction
     private readonly ShopifyService _shopify;
     private readonly string[] _allowedOrigins;
     private readonly string _defaultCallbackBaseUrl;
+    private readonly SecretClient? _secretClient;
 
     public WebhookRegisterFunction(
         ILogger<WebhookRegisterFunction> logger,
         AuthHelper authHelper,
         ShopifyService shopify,
         string[] allowedOrigins,
-        IConfiguration config)
+        IConfiguration config,
+        SecretClient? secretClient = null)
     {
         _logger = logger;
         _authHelper = authHelper;
         _shopify = shopify;
         _allowedOrigins = allowedOrigins;
         _defaultCallbackBaseUrl = config["WebhookCallbackBaseUrl"] ?? "";
+        _secretClient = secretClient;
     }
 
     [Function("WebhookList")]
@@ -109,6 +113,43 @@ public class WebhookRegisterFunction
         {
             _logger.LogError(ex, "Webhook registration failed");
             return await ResponseHelper.WriteError(req, "Webhook registration failed", HttpStatusCode.InternalServerError, _allowedOrigins);
+        }
+    }
+
+    [Function("WebhookSetSecret")]
+    public async Task<HttpResponseData> SetSecret(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", "options", Route = "webhooks/secret")]
+        HttpRequestData req)
+    {
+        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
+            return CorsHelper.Preflight(req, _allowedOrigins);
+
+        var (_, _, authError) = await _authHelper.ValidateRequest(req);
+        if (authError != null)
+            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
+
+        if (_secretClient == null)
+            return await ResponseHelper.WriteError(req,
+                "Key Vault not configured — KeyVaultUri missing from app settings",
+                HttpStatusCode.ServiceUnavailable, _allowedOrigins);
+
+        try
+        {
+            var body    = await req.ReadAsStringAsync() ?? "{}";
+            var request = JsonConvert.DeserializeObject<SetWebhookSecretRequest>(body);
+
+            if (string.IsNullOrWhiteSpace(request?.Secret))
+                return await ResponseHelper.WriteError(req, "secret is required", HttpStatusCode.BadRequest, _allowedOrigins);
+
+            await _secretClient.SetSecretAsync("ShopifyWebhookSecret", request.Secret.Trim());
+
+            _logger.LogInformation("ShopifyWebhookSecret updated in Key Vault");
+            return await ResponseHelper.WriteSuccess(req, new { ok = true }, _allowedOrigins);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update ShopifyWebhookSecret in Key Vault");
+            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
         }
     }
 }
