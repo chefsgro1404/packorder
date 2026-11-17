@@ -36,3 +36,6 @@ obj/
 .vscode/settings.json
 .idea/
 *.user
+
+
+reset_po.py

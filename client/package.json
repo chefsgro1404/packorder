@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@duckdb/node-api": "^2.0.0-r.1",
     "@zxing/browser": "^0.1.4",
     "@zxing/library": "^0.21.3",
     "class-variance-authority": "^0.7.1",
