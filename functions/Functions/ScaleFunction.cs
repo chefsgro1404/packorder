@@ -24,61 +24,9 @@ public class ScaleFunction
         _shopify = shopify; _authHelper = authHelper; _allowedOrigins = allowedOrigins;
     }
 
-    [Function("ScaleLookup")]
-    public async Task<HttpResponseData> Lookup(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "options", Route = "scale/lookup")]
-        HttpRequestData req)
-    {
-        if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
-            return CorsHelper.Preflight(req, _allowedOrigins);
-
-        var (_, _, authError) = await _authHelper.ValidateRequest(req);
-        if (authError != null)
-            return await ResponseHelper.WriteError(req, authError, HttpStatusCode.Unauthorized, _allowedOrigins);
-
-        try
-        {
-            var qs = ParseQueryString(req.Url.Query);
-            var itemNumber = qs.TryGetValue("itemNumber", out var i) ? i : "";
-            if (string.IsNullOrWhiteSpace(itemNumber))
-            {
-                _logger.LogWarning("Scale lookup rejected: missing itemNumber");
-                return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
-            }
-
-            var entity = await _tableStorage.FindProductLookupByItemNumberAsync(itemNumber);
-            if (entity == null)
-            {
-                _logger.LogWarning("Scale lookup miss: item number {ItemNumber} not in productlookup", itemNumber);
-                return await ResponseHelper.WriteSuccess(req, new { found = false, itemNumber }, _allowedOrigins);
-            }
-
-            _logger.LogInformation("Scale lookup hit: item {ItemNumber} -> PLU {Plu} ({ProductTitle})",
-                itemNumber, entity.Plu, entity.ProductTitle);
-
-            return await ResponseHelper.WriteSuccess(req, new
-            {
-                found = true,
-                itemNumber,
-                plu = entity.Plu,
-                productTitle = entity.ProductTitle,
-                variantTitle = entity.VariantTitle,
-                pricePerLb = entity.PricePerLb,
-                productId = entity.ProductId,
-                variantId = entity.VariantId,
-                noWeight = entity.NoWeight,
-            }, _allowedOrigins);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Scale lookup failed");
-            return await ResponseHelper.WriteError(req, ex.Message, HttpStatusCode.InternalServerError, _allowedOrigins);
-        }
-    }
-
     [Function("ScaleProducts")]
     public async Task<HttpResponseData> Products(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", "patch", "delete", "options", Route = "scale/products")]
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "delete", "options", Route = "scale/products")]
         HttpRequestData req)
     {
         if (req.Method.Equals("OPTIONS", StringComparison.OrdinalIgnoreCase))
@@ -117,6 +65,8 @@ public class ScaleFunction
                 return await ResponseHelper.WriteSuccess(req, new { products, total = products.Count }, _allowedOrigins);
             }
 
+            // Only legacy slot rows (no variant, keyed by an old scale item number) are deleted here,
+            // so they can be cleaned up — scale item numbers no longer select products.
             if (req.Method.Equals("DELETE", StringComparison.OrdinalIgnoreCase))
             {
                 var qs = ParseQueryString(req.Url.Query);
@@ -138,95 +88,7 @@ public class ScaleFunction
                 return await ResponseHelper.WriteSuccess(req, new { ok = true }, _allowedOrigins);
             }
 
-            // POST (create) and PATCH (update) share the same upsert body
-            var body = await req.ReadAsStringAsync() ?? "{}";
-            var request = JsonConvert.DeserializeObject<UpsertProductLookupRequest>(body);
-
-            if (string.IsNullOrWhiteSpace(request?.ItemNumber))
-            {
-                _logger.LogWarning("Scale product upsert rejected: missing itemNumber");
-                return await ResponseHelper.WriteError(req, "itemNumber is required", HttpStatusCode.BadRequest, _allowedOrigins);
-            }
-            if (int.TryParse(request.ItemNumber, out var parsedZero) && parsedZero == 0)
-            {
-                _logger.LogWarning("Scale product upsert rejected: item number 0 is reserved");
-                return await ResponseHelper.WriteError(req, "Item number 0 is reserved as a placeholder and can't be mapped to a product", HttpStatusCode.BadRequest, _allowedOrigins);
-            }
-            if (string.IsNullOrWhiteSpace(request.Plu))
-            {
-                _logger.LogWarning("Scale product upsert rejected: missing plu for item {ItemNumber}", request.ItemNumber);
-                return await ResponseHelper.WriteError(req, "plu is required", HttpStatusCode.BadRequest, _allowedOrigins);
-            }
-            if (string.IsNullOrWhiteSpace(request.ProductTitle))
-            {
-                _logger.LogWarning("Scale product upsert rejected: missing productTitle for item {ItemNumber}", request.ItemNumber);
-                return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
-            }
-
-            var isPatch = req.Method.Equals("PATCH", StringComparison.OrdinalIgnoreCase);
-            var lookupKey = isPatch ? (request.PreviousItemNumber ?? request.ItemNumber) : request.ItemNumber;
-            var existing = await _tableStorage.GetProductLookupAsync(lookupKey);
-
-            if (isPatch)
-            {
-                if (existing == null)
-                {
-                    _logger.LogWarning("Scale product update failed: item {ItemNumber} not found", lookupKey);
-                    return await ResponseHelper.WriteError(req, "Product not found", HttpStatusCode.NotFound, _allowedOrigins);
-                }
-            }
-            else
-            {
-                // Numeric-aware: catches "03" colliding with an existing "3", not just an exact string match.
-                var duplicate = existing ?? await _tableStorage.FindProductLookupByItemNumberAsync(request.ItemNumber);
-                if (duplicate != null)
-                {
-                    _logger.LogWarning("Scale product create rejected: item {ItemNumber} already mapped", request.ItemNumber);
-                    return await ResponseHelper.WriteError(req, "Item number already mapped", HttpStatusCode.Conflict, _allowedOrigins);
-                }
-            }
-
-            // Renaming the slot (item number changed during edit) — re-key the row, since
-            // RowKey can't be updated in place. Block it if the new number is already used
-            // by a different row (numeric-aware: "3" and "03" are the same slot).
-            var isRename = isPatch && !string.Equals(lookupKey, request.ItemNumber, StringComparison.OrdinalIgnoreCase);
-            if (isRename)
-            {
-                var collision = await _tableStorage.FindProductLookupByItemNumberAsync(request.ItemNumber);
-                if (collision != null && collision.RowKey != existing!.RowKey)
-                {
-                    _logger.LogWarning("Scale product rename rejected: item {ItemNumber} already mapped to {Title}", request.ItemNumber, collision.ProductTitle);
-                    return await ResponseHelper.WriteError(req, $"Item number {request.ItemNumber} is already mapped to {collision.ProductTitle}", HttpStatusCode.Conflict, _allowedOrigins);
-                }
-            }
-
-            var entityToSave = new ProductLookupEntity
-            {
-                RowKey = request.ItemNumber,
-                ItemNumber = request.ItemNumber,
-                Plu = request.Plu,
-                ProductTitle = request.ProductTitle,
-                PricePerLb = request.PricePerLb,
-                Pinned = request.Pinned ?? existing?.Pinned ?? false,
-                ProductId = existing?.ProductId,
-                VariantId = existing?.VariantId,
-                VariantTitle = existing?.VariantTitle,
-                ImageUrl = existing?.ImageUrl,
-            };
-            await _tableStorage.UpsertProductLookupAsync(entityToSave);
-            if (isRename)
-                await _tableStorage.DeleteProductLookupAsync(lookupKey);
-
-            _logger.LogInformation("Scale product {Action}: item {ItemNumber} -> PLU {Plu} ({ProductTitle})",
-                existing == null ? "created" : isRename ? "renamed" : "updated", entityToSave.RowKey, entityToSave.Plu, entityToSave.ProductTitle);
-
-            return await ResponseHelper.WriteSuccess(req, new
-            {
-                itemNumber = entityToSave.RowKey,
-                plu = entityToSave.Plu,
-                productTitle = entityToSave.ProductTitle,
-                pricePerLb = entityToSave.PricePerLb,
-            }, _allowedOrigins);
+            return await ResponseHelper.WriteError(req, "Method not allowed", HttpStatusCode.MethodNotAllowed, _allowedOrigins);
         }
         catch (Exception ex)
         {
@@ -358,7 +220,6 @@ public class ScaleFunction
                     productTitle = entity.ProductTitle,
                     variantTitle = entity.VariantTitle,
                     imageUrl = entity.ImageUrl,
-                    itemNumber = entity.ItemNumber,
                     plu = entity.Plu,
                     pricePerLb = entity.PricePerLb,
                     pinned = entity.Pinned,
@@ -375,8 +236,6 @@ public class ScaleFunction
 
             if (string.IsNullOrWhiteSpace(request?.ProductId) || string.IsNullOrWhiteSpace(request.VariantId))
                 return await ResponseHelper.WriteError(req, "productId and variantId are required", HttpStatusCode.BadRequest, _allowedOrigins);
-            if (!string.IsNullOrWhiteSpace(request.ItemNumber) && int.TryParse(request.ItemNumber, out var byVariantZero) && byVariantZero == 0)
-                return await ResponseHelper.WriteError(req, "Item number 0 is reserved as a placeholder and can't be mapped to a product", HttpStatusCode.BadRequest, _allowedOrigins);
             if (string.IsNullOrWhiteSpace(request.ProductTitle))
                 return await ResponseHelper.WriteError(req, "productTitle is required", HttpStatusCode.BadRequest, _allowedOrigins);
 
@@ -411,19 +270,14 @@ public class ScaleFunction
                 ProductTitle = request.ProductTitle,
                 VariantTitle = request.VariantTitle,
                 ImageUrl = request.ImageUrl,
-                ItemNumber = string.IsNullOrWhiteSpace(request.ItemNumber) ? null : request.ItemNumber.Trim(),
+                ItemNumber = null, // scale item numbers no longer select products — saving clears any old slot
                 Plu = newPlu,
                 PricePerLb = request.PricePerLb,
                 Pinned = request.Pinned,
                 NoWeight = request.NoWeight,
             };
 
-            var (ok, conflictMessage) = await _tableStorage.UpsertScaleProductAsync(entityToSave);
-            if (!ok)
-            {
-                _logger.LogWarning("Scale product upsert rejected: {Message}", conflictMessage);
-                return await ResponseHelper.WriteError(req, conflictMessage ?? "Conflict", HttpStatusCode.Conflict, _allowedOrigins);
-            }
+            await _tableStorage.UpsertProductLookupAsync(entityToSave);
 
             _logger.LogInformation("Scale product (by variant) saved: variant {VariantId} ({ProductTitle})",
                 request.VariantId, request.ProductTitle);
@@ -435,7 +289,6 @@ public class ScaleFunction
                 productTitle = entityToSave.ProductTitle,
                 variantTitle = entityToSave.VariantTitle,
                 imageUrl = entityToSave.ImageUrl,
-                itemNumber = entityToSave.ItemNumber,
                 plu = entityToSave.Plu,
                 pricePerLb = entityToSave.PricePerLb,
                 pinned = entityToSave.Pinned,

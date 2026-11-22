@@ -40,7 +40,7 @@ import { useRouter } from 'next/navigation';
 import { useScale, type ParsedReading } from '@/hooks/useScale';
 import { usePrintLabel } from '@/hooks/usePrintLabel';
 import { PrintLabelPortal, type PrintPayload } from '@/components/PrintLabelPortal';
-import { UnmappedItemModal } from '@/components/UnmappedItemModal';
+import { PickProductModal } from '@/components/PickProductModal';
 import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
@@ -59,7 +59,6 @@ import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, getLabelConfig, type LabelS
 import { InstallBanner } from '@/components/InstallBanner';
 
 interface CurrentItem {
-  itemNumber: string;
   itemName: string;
   itemWeight: string;
   plu: string;
@@ -73,11 +72,6 @@ interface CurrentItem {
   poLineItemId?: string | null;
   poQuantityOrdered?: number;
   vendorName?: string | null;
-}
-
-function isPlaceholderItemNumber(itemNumber: string): boolean {
-  const trimmed = itemNumber.trim();
-  return trimmed === '' || /^0+$/.test(trimmed);
 }
 
 // ─── Status indicator dot ────────────────────────────────────────────────────
@@ -266,7 +260,7 @@ function LabelPreview({
         <div className="flex items-center gap-2 bg-amber-950/40 border border-amber-900 rounded-xl px-3 py-2.5">
           <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
           <p className="text-xs text-amber-300">
-            Item {item.itemNumber} isn&apos;t mapped. Printed with a placeholder PLU — map it under Select Product, or open that product directly next time to print from there.
+            Product not found in the catalog — the label prints without a PLU. Pick it under Select Product to print it with its PLU.
           </p>
         </div>
       )}
@@ -1337,7 +1331,8 @@ export default function ScalePage() {
   const [devTapCount, setDevTapCount] = useState(0);
   const [devModeUnlocked, setDevModeUnlocked] = useState(false);
   const devTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [unmappedPrompt, setUnmappedPrompt] = useState<{ itemNumber: string; weight: string } | null>(null);
+  // Scale weight received with no product loaded — staff pick the product to print
+  const [pickProductPrompt, setPickProductPrompt] = useState<{ weight: string } | null>(null);
   const [printError, setPrintError] = useState<string | null>(null);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
   const [manualWeight, setManualWeight] = useState('');
@@ -1385,6 +1380,7 @@ export default function ScalePage() {
   const [sessionClosePrompt, setSessionClosePrompt] = useState(false);
   const [wastageWarning, setWastageWarning] = useState<string | null>(null);
   const [autoPrintPending, setAutoPrintPending] = useState(false);
+  const [weightReadingSeq, setWeightReadingSeq] = useState(0);
   // When a scale reading falls outside all ranges, latch this flag so the user MUST
   // explicitly select a tier before auto-print resumes — scale re-reads that happen
   // to land back in-range are not enough to unblock printing.
@@ -1454,43 +1450,6 @@ export default function ScalePage() {
       console.error('[scale] failed to fetch print history:', err);
     } finally {
       setHistoryLoading(false);
-    }
-  }, []);
-
-  const lookupProduct = useCallback(async (reading: ParsedReading): Promise<CurrentItem> => {
-    const fallback: CurrentItem = {
-      itemNumber: reading.itemNumber ?? '',
-      itemName: reading.itemName,
-      itemWeight: reading.itemWeight,
-      plu: '',
-      productTitle: reading.itemName,
-      found: false,
-    };
-
-    if (!reading.itemNumber) {
-      console.warn('[scale] reading has no item number, skipping product lookup:', reading.itemName);
-      return fallback;
-    }
-
-    try {
-      const res = await fetch(`/api/scale/lookup?itemNumber=${encodeURIComponent(reading.itemNumber)}`);
-      if (!res.ok) {
-        console.error('[scale] product lookup request failed:', res.status, await res.text().catch(() => ''));
-        return fallback;
-      }
-      const data = await res.json();
-      if (!data.found) return fallback;
-      return {
-        ...fallback,
-        plu: data.plu,
-        productTitle: data.productTitle,
-        variantTitle: data.variantTitle && data.variantTitle !== 'Default Title' ? data.variantTitle : null,
-        variantId: data.variantId ?? null,
-        found: true,
-      };
-    } catch (err) {
-      console.error('[scale] product lookup errored:', err);
-      return fallback;
     }
   }, []);
 
@@ -1612,7 +1571,8 @@ export default function ScalePage() {
     setNoMatchWeightLbs(null);
   }, [currentItem?.variantId]);
 
-  // Run auto-detection when weight is available and ranges are loaded
+  // Run auto-detection when weight is available and ranges are loaded.
+  // weightReadingSeq re-runs it when the scale sends the same weight twice in a row.
   useEffect(() => {
     if (weightRanges.length === 0 || !currentItem?.itemWeight) {
       if (weightRanges.length > 0 && !currentItem?.itemWeight) {
@@ -1628,7 +1588,7 @@ export default function ScalePage() {
       setRequiresTierSelect(true);
       setNoMatchWeightLbs(lbs);
     }
-  }, [weightRanges, currentItem?.itemWeight]);
+  }, [weightRanges, currentItem?.itemWeight, weightReadingSeq]);
 
   // Auto-print when a categorical match is found and a processing session is active
   useEffect(() => {
@@ -1759,7 +1719,6 @@ export default function ScalePage() {
     mfgDate?: string | null,
   ) => {
     const printLogPayload = {
-      itemNumber: item.itemNumber,
       plu: item.found ? item.plu : 'N/A',
       productTitle: item.productTitle,
       itemWeight: item.itemWeight,
@@ -1790,7 +1749,7 @@ export default function ScalePage() {
         },
       );
     } catch (err) {
-      console.error('[scale] failed to log printed label:', err, '| item:', item.itemNumber, '| sn:', sn);
+      console.error('[scale] failed to log printed label:', err, '| product:', item.productTitle, '| sn:', sn);
     }
 
     // Auto-approve PO line item if this print was for one (skipped during bulk print — approved in bulk after)
@@ -1938,7 +1897,6 @@ export default function ScalePage() {
     }
 
     const resolvedItem: CurrentItem = {
-      itemNumber: '',
       itemName: productTitle,
       itemWeight: '',
       plu,
@@ -2422,109 +2380,44 @@ export default function ScalePage() {
     });
   }, [inventoryMappingOverride, inventoryMapping]);
 
+  // The scale only supplies the weight — its item number and price are discarded by the parser.
+  // The product is always the one staff loaded (barcode scan, catalog, PO item, transformation).
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
-      // Item 0 (or 00, 000 …) means "same product, new weight".
-      // If a product is already loaded, reuse it with the new weight.
-      // If nothing is loaded, prompt staff to search and pick a product.
-      if (isPlaceholderItemNumber(reading.itemNumber ?? '')) {
-        if (currentItem) {
-          // Preserve PO context when scale fires with placeholder item number
-          const updated = { ...currentItem, itemWeight: reading.itemWeight };
-          setCurrentItem(updated);
-          setManualWeight('');
-          // Categorical mode: new weight triggers the auto-detect effect — don't print yet,
-          // let staff confirm the matched tier in the banner before pressing Print.
-          if (weightRanges.length > 0) return;
-          await printItem(updated);
-          // Standard processing session: update counter by childDelta (not flat +1)
-          if (processingSession) incrementSessionCounter(updated);
-        } else {
-          setUnmappedPrompt({ itemNumber: reading.itemNumber ?? '0', weight: reading.itemWeight });
-        }
+      if (!currentItem) {
+        setPickProductPrompt({ weight: reading.itemWeight });
         return;
       }
-      resetPrinted();
-      setWasQrScanned(false);
-      setLookupLoading(true);
-      const item = await lookupProduct(reading);
-      setLookupLoading(false);
-      // Unmapped item number — pause instead of silently printing a placeholder. Staff get a
-      // prompt to search the catalog and, if useful, map this item number on the spot.
-      if (!item.found && item.itemNumber) {
-        setUnmappedPrompt({ itemNumber: item.itemNumber, weight: item.itemWeight });
-        return;
-      }
-      setWeightRanges([]);
-      setCurrentItem(item);
-      // If the product has weight ranges (categorical), fetch them and run auto-detection
-      // before printing. In categorical mode we show confirmation UI instead of auto-printing.
-      if (item.found && item.variantId) {
-        try {
-          const rulesRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
-          if (rulesRes.ok) {
-            const rulesData = await rulesRes.json();
-            const rules: WeightRangeRule[] = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
-            if (rules.length > 0) {
-              setWeightRanges(rules);
-              // Don't auto-print — show confirmation UI
-              return;
-            }
-          }
-        } catch {
-          // ignore — proceed with normal print
-        }
-      }
-      await printItem(item);
+      // Preserve PO context — only the weight comes from the scale
+      const updated = { ...currentItem, itemWeight: reading.itemWeight };
+      setCurrentItem(updated);
+      setManualWeight('');
+      setWeightReadingSeq(n => n + 1);
+      // Categorical mode: new weight triggers the auto-detect effect — it auto-prints the
+      // matched tier in a processing session; otherwise staff confirm it with Print.
+      if (weightRanges.length > 0) return;
+      await printItem(updated);
+      // Standard processing session: update counter by childDelta (not flat +1)
+      if (processingSession) incrementSessionCounter(updated);
     },
-    [lookupProduct, printItem, resetPrinted, currentItem, processingSession, incrementSessionCounter]
+    [printItem, currentItem, processingSession, incrementSessionCounter, weightRanges]
   );
 
-  const handleUnmappedResolved = useCallback(
-    async (
-      chosen: { productId: string; productTitle: string; variantId: string; variantTitle: string | null; imageUrl: string | null; plu: string },
-      mapping: { save: boolean; pricePerLb: number }
-    ) => {
-      if (!unmappedPrompt) return;
-      if (mapping.save) {
-        try {
-          const res = await fetch('/api/scale/products/by-variant', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              productId: chosen.productId,
-              variantId: chosen.variantId,
-              productTitle: chosen.productTitle,
-              variantTitle: chosen.variantTitle,
-              imageUrl: chosen.imageUrl,
-              itemNumber: unmappedPrompt.itemNumber,
-              plu: chosen.plu,
-              pricePerLb: mapping.pricePerLb,
-              pinned: false,
-            }),
-          });
-          if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            console.error('[scale] failed to save item mapping:', data.error || res.status);
-          }
-        } catch (err) {
-          console.error('[scale] failed to save item mapping:', err);
-        }
-      }
-
+  const handlePickedProduct = useCallback(
+    async (chosen: { productId: string; productTitle: string; variantId: string; variantTitle: string | null; imageUrl: string | null; plu: string }) => {
+      if (!pickProductPrompt) return;
       const item: CurrentItem = {
-        itemNumber: unmappedPrompt.itemNumber,
         itemName: chosen.productTitle,
-        itemWeight: unmappedPrompt.weight,
+        itemWeight: pickProductPrompt.weight,
         plu: chosen.plu,
         productTitle: chosen.productTitle,
         variantTitle: chosen.variantTitle && chosen.variantTitle !== 'Default Title' ? chosen.variantTitle : null,
         variantId: chosen.variantId ?? null,
         found: true,
       };
-      setUnmappedPrompt(null);
+      setPickProductPrompt(null);
       setCurrentItem(item);
-      // Check weight ranges in case user resolved to a categorical product
+      // Check weight ranges in case user picked a categorical product
       if (item.variantId) {
         try {
           const wr = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
@@ -2537,7 +2430,7 @@ export default function ScalePage() {
       }
       await printItem(item);
     },
-    [unmappedPrompt, printItem]
+    [pickProductPrompt, printItem]
   );
 
   const scale = useScale(handleReading);
@@ -2714,7 +2607,6 @@ export default function ScalePage() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        itemNumber: record.itemNumber,
         plu: record.plu,
         productTitle: record.productTitle,
         itemWeight: record.itemWeight,
@@ -2829,25 +2721,15 @@ export default function ScalePage() {
     const snPart = parts.find(p => p.startsWith('SN:'));
     const sn = snPart ? snPart.replace('SN:', '').trim() : null;
 
-    // PLU: N/A products (chicken, beef, fish) have no scale item number — skip PLU lookup entirely.
-    // SN lookup is the primary resolver for all QR-scanned products.
-    let item: CurrentItem = plu !== 'N/A'
-      ? await lookupProduct({
-          itemNumber: plu,
-          itemName: titlePart,
-          itemWeight: weightPart,
-          qrPayload: '',
-          rawBuffer: '',
-          timestamp: new Date(),
-        })
-      : {
-          itemNumber: '',
-          itemName: titlePart,
-          itemWeight: weightPart,
-          plu: '',
-          productTitle: titlePart,
-          found: false,
-        };
+    // Resolved below by SN (primary), then title, then the product registry by variant —
+    // never by scale item number.
+    let item: CurrentItem = {
+      itemName: titlePart,
+      itemWeight: weightPart,
+      plu: plu !== 'N/A' ? plu : '',
+      productTitle: titlePart,
+      found: false,
+    };
 
     // Primary: SN-based lookup — resolves variantId and PO context from the original print log entry.
     // Always run when SN is present to capture PO context for session auto-start even if variantId is known.
@@ -3020,7 +2902,6 @@ export default function ScalePage() {
           productId:        item.productId ?? null,
           productTitle:     item.productTitle,
           variantTitle:     item.variantTitle ?? null,
-          itemNumber:       item.itemNumber ?? null,
           plu:              item.plu ?? null,
           sn:               sn ?? null,
           poId:             snPoId ?? null,
@@ -3035,7 +2916,7 @@ export default function ScalePage() {
         setTimeout(() => setPendingScanSent(false), 3000);
       }).catch(() => {});
     }
-  }, [lookupProduct, fetchLineItems, lotProducts]);
+  }, [fetchLineItems, lotProducts]);
 
   // Cross-device sync: scale-connected OR printer device polls for scans from a mobile device
   useEffect(() => {
@@ -3056,7 +2937,6 @@ export default function ScalePage() {
         fetch('/api/scale/pending-scan', { method: 'DELETE' }).catch(() => {});
 
         const remoteItem: CurrentItem = {
-          itemNumber:   data.itemNumber ?? '',
           itemName:     data.productTitle,
           itemWeight:   '',
           plu:          data.plu ?? '',
@@ -3924,7 +3804,6 @@ export default function ScalePage() {
                     <p>portLabel: <span className="text-[var(--text-primary)]">{scale.portLabel ?? 'null'}</span></p>
                     <p>chunkCount: <span className="text-[var(--text-primary)]">{scale.chunkCount}</span></p>
                     <p>error: <span className="text-[var(--text-primary)]">{scale.error ?? 'null'}</span></p>
-                    <p>lastReading.itemNumber: <span className="text-[var(--text-primary)]">{scale.lastReading?.itemNumber || '(none)'}</span></p>
                     <p>lastReading.itemWeight: <span className="text-[var(--text-primary)]">{scale.lastReading?.itemWeight || '(none)'}</span></p>
                     <p className="break-all">lastRawBuffer: <span className="text-[var(--text-primary)]">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
                   </div>
@@ -3940,13 +3819,11 @@ export default function ScalePage() {
 
       </main>
 
-      {unmappedPrompt && (
-        <UnmappedItemModal
-          itemNumber={unmappedPrompt.itemNumber}
-          weight={unmappedPrompt.weight}
-          hideSave={isPlaceholderItemNumber(unmappedPrompt.itemNumber)}
-          onClose={() => setUnmappedPrompt(null)}
-          onResolved={handleUnmappedResolved}
+      {pickProductPrompt && (
+        <PickProductModal
+          weight={pickProductPrompt.weight}
+          onClose={() => setPickProductPrompt(null)}
+          onResolved={handlePickedProduct}
         />
       )}
 
@@ -3992,7 +3869,6 @@ export default function ScalePage() {
             variantTitle: null,
             itemWeight: sample.itemWeight,
             plu: sample.plu,
-            itemNumber: sample.itemNumber,
             poId: sample.poId ?? undefined,
             poLineItemId: sample.poLineItemId ?? undefined,
             vendorName: sample.vendorName ?? undefined,

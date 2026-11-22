@@ -306,7 +306,7 @@ export interface WeightRangeRule {
 // ─── Scale & Print Mode ───────────────────────────────────────────────────────
 
 export interface ProductLookup {
-  itemNumber: string | null;
+  itemNumber: string | null; // legacy slot rows only — identifies them for deletion
   plu: string;
   productTitle: string;
   pricePerLb: number;
@@ -317,16 +317,6 @@ export interface ProductLookup {
   pinned?: boolean;
 }
 
-export interface ProductLookupResult {
-  found: boolean;
-  itemNumber: string;
-  plu?: string;
-  productTitle?: string;
-  pricePerLb?: number;
-  productId?: string | null;
-  variantId?: string | null;
-}
-
 export interface ScaleProduct {
   found: boolean;
   productId?: string;
@@ -334,7 +324,6 @@ export interface ScaleProduct {
   productTitle?: string;
   variantTitle?: string | null;
   imageUrl?: string | null;
-  itemNumber?: string | null;
   plu?: string;
   pricePerLb?: number;
   pinned?: boolean;

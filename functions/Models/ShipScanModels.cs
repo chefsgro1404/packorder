@@ -723,7 +723,7 @@ public class ProductLookupEntity : ITableEntity
     public string Plu { get; set; } = "";
     public string ProductTitle { get; set; } = "";
     public double PricePerLb { get; set; }
-    public string? ItemNumber { get; set; }        // optional scale slot; mirrors RowKey when RowKey is numeric
+    public string? ItemNumber { get; set; }        // legacy scale slot — no longer read; cleared when the product is saved
     public string? ProductId { get; set; }          // full GID, set when created via the product picker
     public string? VariantId { get; set; }          // full GID
     public string? VariantTitle { get; set; }
@@ -734,16 +734,6 @@ public class ProductLookupEntity : ITableEntity
     public ETag ETag { get; set; }
 }
 
-public class UpsertProductLookupRequest
-{
-    [JsonProperty("itemNumber")]         public string ItemNumber { get; set; } = "";
-    [JsonProperty("previousItemNumber")] public string? PreviousItemNumber { get; set; }
-    [JsonProperty("plu")]                public string Plu { get; set; } = "";
-    [JsonProperty("productTitle")]       public string ProductTitle { get; set; } = "";
-    [JsonProperty("pricePerLb")]         public double PricePerLb { get; set; }
-    [JsonProperty("pinned")]             public bool? Pinned { get; set; }
-}
-
 public class UpsertScaleProductRequest
 {
     [JsonProperty("productId")]     public string ProductId { get; set; } = "";
@@ -751,7 +741,6 @@ public class UpsertScaleProductRequest
     [JsonProperty("productTitle")]  public string ProductTitle { get; set; } = "";
     [JsonProperty("variantTitle")]  public string? VariantTitle { get; set; }
     [JsonProperty("imageUrl")]      public string? ImageUrl { get; set; }
-    [JsonProperty("itemNumber")]    public string? ItemNumber { get; set; }
     [JsonProperty("plu")]           public string Plu { get; set; } = "";
     [JsonProperty("pricePerLb")]    public double PricePerLb { get; set; }
     [JsonProperty("pinned")]        public bool Pinned { get; set; }

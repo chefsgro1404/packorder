@@ -13,21 +13,18 @@ interface ChosenVariant {
   plu: string;
 }
 
-export interface UnmappedItemModalProps {
-  itemNumber: string;
+// Shown when the scale sends a weight but no product is loaded — staff pick the product to print.
+export interface PickProductModalProps {
   weight: string;
   onClose: () => void;
-  onResolved: (chosen: ChosenVariant, mapping: { save: boolean; pricePerLb: number }) => void;
-  /** When true: hides the "save mapping" option — used for item-0 reads with no current product */
-  hideSave?: boolean;
+  onResolved: (chosen: ChosenVariant) => void;
 }
 
-export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hideSave = false }: UnmappedItemModalProps) {
+export function PickProductModal({ weight, onClose, onResolved }: PickProductModalProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<AssignProduct[]>([]);
   const [searching, setSearching] = useState(false);
   const [chosen, setChosen] = useState<{ product: AssignProduct; variant: AssignVariant } | null>(null);
-  const [pricePerLb, setPricePerLb] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const runSearch = useCallback(async (q: string) => {
@@ -71,7 +68,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
             <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-              {hideSave ? 'No product loaded' : <>Item {itemNumber} isn&apos;t mapped</>}
+              No product loaded
             </h2>
           </div>
           <button onClick={onClose} aria-label="Close">
@@ -79,10 +76,7 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
           </button>
         </div>
         <p className="text-xs text-slate-400">
-          {hideSave
-            ? <>Scale weight is <span className="text-[var(--text-secondary)] font-medium">{weight}</span>. Search the catalog to find the product and print a label.</>
-            : <>The scale recalled item {itemNumber} ({weight}), but it has no product mapped. Search the catalog to find it.</>
-          }
+          Scale weight is <span className="text-[var(--text-secondary)] font-medium">{weight}</span>. Search the catalog to find the product and print a label.
         </p>
 
         {!chosenVariant && (
@@ -127,46 +121,13 @@ export function UnmappedItemModal({ itemNumber, weight, onClose, onResolved, hid
               <p className="text-sm font-medium text-[var(--text-primary)] truncate">{chosenVariant.productTitle}</p>
               <p className="text-xs text-slate-500">{chosenVariant.variantTitle || 'Default'} · PLU {chosenVariant.plu || 'N/A'}</p>
             </div>
-            {!hideSave && (
-              <div>
-                <label className="block text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">
-                  Price per lb ($) — optional, only used if you save this mapping
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={pricePerLb}
-                  onChange={(e) => setPricePerLb(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-            )}
             <div className="flex flex-col gap-2">
-              {hideSave ? (
-                <button
-                  onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
-                  className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold text-white transition-all"
-                >
-                  <Check className="w-4 h-4" /> Print Label
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => onResolved(chosenVariant, { save: true, pricePerLb: parseFloat(pricePerLb) || 0 })}
-                    className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold text-white transition-all"
-                  >
-                    <Check className="w-4 h-4" /> Map Item {itemNumber} &amp; Print
-                  </button>
-                  <button
-                    onClick={() => onResolved(chosenVariant, { save: false, pricePerLb: 0 })}
-                    className="w-full h-10 flex items-center justify-center gap-2 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] rounded-xl text-sm text-[var(--text-secondary)] transition-all"
-                  >
-                    Print Only (don&apos;t save mapping)
-                  </button>
-                </>
-              )}
+              <button
+                onClick={() => onResolved(chosenVariant)}
+                className="w-full h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-bold text-white transition-all"
+              >
+                <Check className="w-4 h-4" /> Print Label
+              </button>
               <button
                 onClick={() => setChosen(null)}
                 className="w-full h-9 flex items-center justify-center text-xs text-slate-500 hover:text-[var(--text-secondary)] transition-colors"

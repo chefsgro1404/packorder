@@ -2,28 +2,15 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Plus, Pencil, Trash2, X, Check, AlertCircle, Package, RefreshCw, Search, Pin, PinOff } from 'lucide-react';
+import { ArrowLeft, Trash2, X, AlertCircle, Package, RefreshCw, Search, Pin, PinOff } from 'lucide-react';
 import { ProductLookup, AssignProduct } from '@/lib/types';
 import { stripGid } from '@/lib/scaleLabel';
-
-interface FormState {
-  itemNumber: string;
-  plu: string;
-  productTitle: string;
-  pricePerLb: string;
-}
-
-const emptyForm: FormState = { itemNumber: '', plu: '', productTitle: '', pricePerLb: '' };
 
 export default function ScaleProductsPage() {
   const router = useRouter();
   const [products, setProducts] = useState<ProductLookup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
-  const [editingItemNumber, setEditingItemNumber] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [saving, setSaving] = useState(false);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [pinningKey, setPinningKey] = useState<string | null>(null);
 
@@ -77,61 +64,7 @@ export default function ScaleProductsPage() {
     debounceRef.current = setTimeout(() => runSearch(value), 300);
   };
 
-  const openAddForm = () => {
-    setEditingItemNumber(null);
-    setForm(emptyForm);
-    setShowForm(true);
-  };
-
-  const openEditForm = (p: ProductLookup) => {
-    setEditingItemNumber(p.itemNumber);
-    setForm({
-      itemNumber: p.itemNumber ?? '',
-      plu: p.plu,
-      productTitle: p.productTitle,
-      pricePerLb: String(p.pricePerLb),
-    });
-    setShowForm(true);
-  };
-
-  const closeForm = () => {
-    setShowForm(false);
-    setEditingItemNumber(null);
-    setForm(emptyForm);
-  };
-
-  const handleSave = async () => {
-    if (!form.itemNumber.trim() || !form.plu.trim() || !form.productTitle.trim()) {
-      setError('Item number, PLU, and product title are required.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      const res = await fetch('/api/scale/products', {
-        method: editingItemNumber ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          itemNumber: form.itemNumber.trim(),
-          previousItemNumber: editingItemNumber,
-          plu: form.plu.trim(),
-          productTitle: form.productTitle.trim(),
-          pricePerLb: parseFloat(form.pricePerLb) || 0,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Save failed');
-      }
-      closeForm();
-      await fetchProducts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Save failed');
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  // Legacy slot rows (no variant) are keyed by their old scale item number — kept only so they can be deleted
   const handleDelete = async (p: ProductLookup) => {
     const key = p.variantId ?? p.itemNumber ?? '';
     setDeletingKey(key);
@@ -153,41 +86,25 @@ export default function ScaleProductsPage() {
   };
 
   const handleTogglePin = async (p: ProductLookup) => {
-    const key = p.variantId ?? p.itemNumber ?? '';
-    setPinningKey(key);
+    if (!p.variantId) return;
+    setPinningKey(p.variantId);
     setError(null);
     try {
-      if (p.variantId) {
-        const res = await fetch('/api/scale/products/by-variant', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            productId: p.productId,
-            variantId: p.variantId,
-            productTitle: p.productTitle,
-            variantTitle: p.variantTitle,
-            imageUrl: p.imageUrl,
-            itemNumber: p.itemNumber,
-            plu: p.plu,
-            pricePerLb: p.pricePerLb,
-            pinned: !p.pinned,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to update pin');
-      } else {
-        const res = await fetch('/api/scale/products', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            itemNumber: p.itemNumber,
-            plu: p.plu,
-            productTitle: p.productTitle,
-            pricePerLb: p.pricePerLb,
-            pinned: !p.pinned,
-          }),
-        });
-        if (!res.ok) throw new Error('Failed to update pin');
-      }
+      const res = await fetch('/api/scale/products/by-variant', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: p.productId,
+          variantId: p.variantId,
+          productTitle: p.productTitle,
+          variantTitle: p.variantTitle,
+          imageUrl: p.imageUrl,
+          plu: p.plu,
+          pricePerLb: p.pricePerLb,
+          pinned: !p.pinned,
+        }),
+      });
+      if (!res.ok) throw new Error('Failed to update pin');
       await fetchProducts();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update pin');
@@ -213,12 +130,6 @@ export default function ScaleProductsPage() {
           <h1 className="text-base font-bold text-[var(--text-primary)] leading-tight">Select Product</h1>
           <p className="text-xs text-[var(--text-muted)] leading-tight">Search the catalog or pick a saved product</p>
         </div>
-        <button
-          onClick={openAddForm}
-          className="flex items-center gap-1.5 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] transition-colors px-3 py-2 rounded-xl text-sm font-semibold text-[var(--text-secondary)]"
-        >
-          <Plus className="w-4 h-4" /> Slot Only
-        </button>
       </div>
 
       <div className="px-4 py-5 flex flex-col gap-4">
@@ -268,90 +179,6 @@ export default function ScaleProductsPage() {
           )}
         </div>
 
-        {/* Legacy slot-only add/edit form */}
-        {showForm && (
-          <div className="border border-[var(--border-color)] rounded-2xl bg-[var(--bg-card)] p-4 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-                {editingItemNumber ? `Edit Item ${editingItemNumber}` : 'Map a Scale Slot'}
-              </h2>
-              <button onClick={closeForm} aria-label="Cancel">
-                <X className="w-4 h-4 text-[var(--text-muted)]" />
-              </button>
-            </div>
-
-            <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
-                Scale Item Number
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={form.itemNumber}
-                onChange={(e) => setForm((f) => ({ ...f, itemNumber: e.target.value }))}
-                placeholder="e.g. 12345"
-                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">PLU</label>
-              <input
-                type="text"
-                value={form.plu}
-                onChange={(e) => setForm((f) => ({ ...f, plu: e.target.value }))}
-                placeholder="e.g. 4011"
-                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
-                Product Title
-              </label>
-              <input
-                type="text"
-                value={form.productTitle}
-                onChange={(e) => setForm((f) => ({ ...f, productTitle: e.target.value }))}
-                placeholder="e.g. Ground Beef 80/20"
-                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
-                Price per lb ($)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.pricePerLb}
-                onChange={(e) => setForm((f) => ({ ...f, pricePerLb: e.target.value }))}
-                placeholder="0.00"
-                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="flex gap-2 mt-1">
-              <button
-                onClick={closeForm}
-                className="flex-1 h-11 flex items-center justify-center gap-2 bg-[var(--bg-elevated)] hover:bg-[var(--bg-input)] rounded-xl text-sm text-[var(--text-secondary)] transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex-1 h-11 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-sm font-bold transition-all"
-              >
-                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                {editingItemNumber ? 'Save Changes' : 'Save Slot'}
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Mapped/saved products */}
         <div className="border border-[var(--border-color)] rounded-2xl overflow-hidden bg-[var(--bg-card)]">
           {loading ? (
@@ -380,26 +207,19 @@ export default function ScaleProductsPage() {
                         <p className="text-xs text-[var(--text-secondary)] truncate">{p.variantTitle}</p>
                       )}
                       <p className="text-xs text-[var(--text-muted)]">
-                        {p.itemNumber ? `Item ${p.itemNumber} · ` : ''}PLU {p.plu} · ${p.pricePerLb.toFixed(2)}/lb
+                        PLU {p.plu} · ${p.pricePerLb.toFixed(2)}/lb
                       </p>
                     </div>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleTogglePin(p); }}
-                      disabled={pinningKey === key}
-                      aria-label={p.pinned ? `Unpin ${p.productTitle}` : `Pin ${p.productTitle}`}
-                      className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${
-                        p.pinned ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
-                      }`}
-                    >
-                      {p.pinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
-                    </button>
-                    {!p.variantId && (
+                    {p.variantId && (
                       <button
-                        onClick={(e) => { e.stopPropagation(); openEditForm(p); }}
-                        aria-label={`Edit ${p.productTitle}`}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+                        onClick={(e) => { e.stopPropagation(); handleTogglePin(p); }}
+                        disabled={pinningKey === key}
+                        aria-label={p.pinned ? `Unpin ${p.productTitle}` : `Pin ${p.productTitle}`}
+                        className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors disabled:opacity-40 ${
+                          p.pinned ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
+                        }`}
                       >
-                        <Pencil className="w-3.5 h-3.5" />
+                        {p.pinned ? <Pin className="w-3.5 h-3.5" /> : <PinOff className="w-3.5 h-3.5" />}
                       </button>
                     )}
                     <button

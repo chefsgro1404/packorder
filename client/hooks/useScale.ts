@@ -3,11 +3,9 @@
 import { useEffect, useState } from 'react';
 import { parseScaleBuffer } from '@/lib/scaleParser';
 
+// Weight only — the scale's item number and price are discarded by the parser.
 export interface ParsedReading {
-  itemName: string;
-  itemNumber: string;
   itemWeight: string;
-  qrPayload: string;
   rawBuffer: string;
   timestamp: Date;
 }
@@ -136,28 +134,22 @@ async function startListening(p: SerialPort) {
       const result = parseScaleBuffer(buffer);
       console.log(`[scale] received ${chunks} chunk(s), ${buffer.length} bytes:`, JSON.stringify(buffer));
 
-      // itemName/itemNumber are allowed to be empty — a weight-only signal (no PLU
-      // recall) is valid input for pages that already know the product, e.g.
-      // /scale/products/[id]. Only the weight itself is required.
-      if (result.success && result.itemWeight && result.qrPayload) {
+      if (result.success && result.itemWeight) {
         const parsedReading: ParsedReading = {
-          itemName: result.itemName ?? '',
-          itemNumber: result.itemNumber ?? '',
           itemWeight: result.itemWeight,
-          qrPayload: result.qrPayload,
           rawBuffer: buffer,
           timestamp: new Date(),
         };
-        console.log('[scale] parsed reading:', parsedReading.itemName || '(weight-only)', parsedReading.itemNumber || '(no item)', parsedReading.itemWeight,
+        console.log('[scale] parsed reading:', parsedReading.itemWeight,
           '— listener active:', onReadingCallback != null);
         setSnapshot({ lastReading: parsedReading, error: null });
         onReadingCallback?.(parsedReading);
       } else if (result.error === 'OVERLOAD') {
         console.warn('[scale] OVERLOAD reported by scale');
         setSnapshot({ error: 'Scale overload — remove excess weight and try again.' });
-      } else if (result.error === 'NO_ITEM') {
-        console.warn('[scale] no ITEM line found in buffer:', JSON.stringify(buffer));
-        setSnapshot({ error: 'No item data received. Trigger the scale again.' });
+      } else if (result.error === 'NO_WEIGHT') {
+        console.warn('[scale] no weight found in buffer:', JSON.stringify(buffer));
+        setSnapshot({ error: 'No weight received. Trigger the scale again.' });
       } else {
         console.error('[scale] failed to parse buffer:', JSON.stringify(buffer), 'error:', result.error);
         setSnapshot({ error: 'Could not parse scale data. Try again.' });

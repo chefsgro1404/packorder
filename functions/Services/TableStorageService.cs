@@ -876,19 +876,6 @@ public class TableStorageService
 
     // ─── Scale & Print: product lookup ───────────────────────────────────────
 
-    public async Task<ProductLookupEntity?> GetProductLookupAsync(string itemNumber)
-    {
-        try
-        {
-            var response = await _productLookup.GetEntityAsync<ProductLookupEntity>("product", itemNumber);
-            return response.Value;
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            return null;
-        }
-    }
-
     public async Task<List<ProductLookupEntity>> ListProductLookupsAsync()
     {
         var results = new List<ProductLookupEntity>();
@@ -902,11 +889,12 @@ public class TableStorageService
         await _productLookup.UpsertEntityAsync(entity, TableUpdateMode.Replace);
     }
 
-    public async Task<bool> DeleteProductLookupAsync(string itemNumber)
+    // Deletes a row by its RowKey — used to clean up legacy slot rows keyed by an old item number
+    public async Task<bool> DeleteProductLookupAsync(string rowKey)
     {
         try
         {
-            await _productLookup.DeleteEntityAsync("product", itemNumber);
+            await _productLookup.DeleteEntityAsync("product", rowKey);
             return true;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
@@ -915,7 +903,7 @@ public class TableStorageService
         }
     }
 
-    // ─── Scale & Print: product lookup by variant (optional item-number slot) ──
+    // ─── Scale & Print: product lookup by variant ─────────────────────────────
 
     public static string VariantRowKey(string variantId) => $"v:{StripGid(variantId)}";
 
@@ -930,42 +918,6 @@ public class TableStorageService
         {
             return null;
         }
-    }
-
-    // The scale reports item numbers as raw digits straight off its display (e.g. "ITEM 03"
-    // for slot 3), which won't string-equal a staff-typed "3" — compare numerically so a
-    // leading zero on either side doesn't cause a lookup miss.
-    private static bool ItemNumbersMatch(string? a, string? b)
-    {
-        if (string.IsNullOrWhiteSpace(a) || string.IsNullOrWhiteSpace(b)) return false;
-        if (int.TryParse(a, out var ai) && int.TryParse(b, out var bi)) return ai == bi;
-        return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
-    }
-
-    public async Task<ProductLookupEntity?> FindProductLookupByItemNumberAsync(string itemNumber)
-    {
-        var all = await ListProductLookupsAsync();
-        return all.FirstOrDefault(e =>
-            ItemNumbersMatch(e.ItemNumber, itemNumber) ||
-            // Rows written before the ItemNumber column existed have no value there at all
-            // (Table Storage is schemaless) — for those, RowKey itself is the item number.
-            (string.IsNullOrEmpty(e.ItemNumber) && ItemNumbersMatch(e.RowKey, itemNumber)));
-    }
-
-    public async Task<(bool ok, string? conflictMessage)> UpsertScaleProductAsync(ProductLookupEntity entity)
-    {
-        if (!string.IsNullOrWhiteSpace(entity.ItemNumber))
-        {
-            var all = await ListProductLookupsAsync();
-            var collision = all.FirstOrDefault(e =>
-                e.RowKey != entity.RowKey &&
-                ItemNumbersMatch(e.ItemNumber, entity.ItemNumber));
-            if (collision != null)
-                return (false, $"Item number {entity.ItemNumber} is already mapped to {collision.ProductTitle}");
-        }
-
-        await _productLookup.UpsertEntityAsync(entity, TableUpdateMode.Replace);
-        return (true, null);
     }
 
     public async Task<bool> DeleteProductLookupByVariantAsync(string variantId)

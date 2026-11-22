@@ -34,13 +34,6 @@ import { validateWeightRanges } from '@/lib/weightCategory';
 import { applyMappings } from '@/lib/textMappings';
 import { LABEL_SIZE_OPTIONS, LABEL_SIZE_STORAGE_KEY, type LabelSizeKey } from '@/lib/labelSizes';
 
-interface ItemConflict {
-  itemNumber: string;
-  weight: string;
-  mappedPlu: string;
-  mappedTitle: string;
-}
-
 export default function ScaleProductDetailPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
@@ -62,7 +55,6 @@ export default function ScaleProductDetailPage() {
   const [productTitle, setProductTitle] = useState('');
   const [variantTitle, setVariantTitle] = useState<string | null>(null);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [itemNumber, setItemNumber] = useState('');
   const [plu, setPlu] = useState('');
   const [pricePerLb, setPricePerLb] = useState('');
   const [pinned, setPinned] = useState(false);
@@ -105,7 +97,6 @@ export default function ScaleProductDetailPage() {
           setProductTitle(saved.productTitle ?? '');
           setVariantTitle(saved.variantTitle ?? null);
           setImageUrl(saved.imageUrl ?? null);
-          setItemNumber(saved.itemNumber ?? '');
           setPlu(saved.plu ?? '');
           setPricePerLb(saved.pricePerLb != null ? String(saved.pricePerLb) : '');
           setPinned(!!saved.pinned);
@@ -138,7 +129,6 @@ export default function ScaleProductDetailPage() {
         setProductTitle(live.productTitle ?? '');
         setVariantTitle(live.variantTitle && live.variantTitle !== 'Default Title' ? live.variantTitle : null);
         setImageUrl(live.imageUrl ?? null);
-        setItemNumber('');
         setPlu(live.barcode ?? '');
         setPricePerLb('');
         setPinned(false);
@@ -167,7 +157,6 @@ export default function ScaleProductDetailPage() {
           productTitle,
           variantTitle,
           imageUrl,
-          itemNumber: itemNumber.trim() || null,
           plu: plu.trim(),
           pricePerLb: parseFloat(pricePerLb) || 0,
           pinned: overridePinned ?? pinned,
@@ -184,7 +173,7 @@ export default function ScaleProductDetailPage() {
     } finally {
       setSaving(false);
     }
-  }, [productId, variantId, productTitle, variantTitle, imageUrl, itemNumber, plu, pricePerLb, pinned, noWeight]);
+  }, [productId, variantId, productTitle, variantTitle, imageUrl, plu, pricePerLb, pinned, noWeight]);
 
   const handleSaveWeightRanges = useCallback(async () => {
     if (!productId) return;
@@ -209,13 +198,12 @@ export default function ScaleProductDetailPage() {
     }
   }, [productId, weightRanges]);
 
-  const logPrintedLabel = useCallback(async (logItemNumber: string, logPlu: string, logTitle: string, weight: string | null | undefined, qrPayload: string, printedAtEst: string, sn: string) => {
+  const logPrintedLabel = useCallback(async (logPlu: string, logTitle: string, weight: string | null | undefined, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
       await fetch('/api/scale/print-log', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          itemNumber: logItemNumber,
           plu: logPlu || 'N/A',
           productTitle: logTitle,
           itemWeight: weight,
@@ -229,19 +217,15 @@ export default function ScaleProductDetailPage() {
     }
   }, []);
 
-  // override lets a conflict resolution print a *different* product's PLU/title (the one
-  // mapped to the recalled item number) instead of this page's own opened product.
   const printForWeight = useCallback(
-    async (weight?: string | null, override?: { itemNumber: string; plu: string | null; productTitle: string }) => {
+    async (weight?: string | null) => {
       if (isPrinting.current) return;
       isPrinting.current = true;
       try {
-        const rawTitle = override?.productTitle ?? productTitle;
-        const rawVariant = override ? null : variantTitle;
-        const snPlu = override?.plu ?? plu;
+        const snPlu = plu;
         // Apply label abbreviation mappings before embedding in QR/display
-        const mappedTitle   = applyMappings(rawTitle, textMappings);
-        const mappedVariant = rawVariant ? applyMappings(rawVariant, textMappings) : rawVariant;
+        const mappedTitle   = applyMappings(productTitle, textMappings);
+        const mappedVariant = variantTitle ? applyMappings(variantTitle, textMappings) : variantTitle;
         const sn = await fetchNextSn(variantId || null, snPlu || null, mappedTitle, mappedVariant);
         const plainPayload = buildQrPayload({
           plu: snPlu || null,
@@ -264,15 +248,15 @@ export default function ScaleProductDetailPage() {
         }, sn, encryptedPayload);
         setManualWeight('');
         setPrintCount((n) => n + 1);
-        await logPrintedLabel(override?.itemNumber ?? (itemNumber || ''), snPlu, override?.productTitle ?? displayTitle, weight, encryptedPayload, printedAtEst, sn);
+        await logPrintedLabel(snPlu, displayTitle, weight, encryptedPayload, printedAtEst, sn);
       } finally {
         isPrinting.current = false;
       }
     },
-    [triggerPrint, plu, productTitle, variantTitle, displayTitle, itemNumber, logPrintedLabel, variantId, textMappings]
+    [triggerPrint, plu, productTitle, variantTitle, displayTitle, logPrintedLabel, variantId, textMappings]
   );
 
-  // Item number is always ignored on this page — the product is already chosen by opening this URL.
+  // The product is already chosen by opening this URL — readings only carry the weight.
   // When noWeight is on, scale signals are ignored — staff prints manually via the button.
   const handleReading = useCallback(
     async (reading: ParsedReading) => {
@@ -498,20 +482,6 @@ export default function ScaleProductDetailPage() {
 
             <div>
               <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
-                Scale Item Number (optional)
-              </label>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={itemNumber}
-                onChange={(e) => setItemNumber(e.target.value)}
-                placeholder="No slot assigned"
-                className="w-full px-3 py-2.5 bg-[var(--bg-page)] border border-[var(--border-color)] rounded-xl text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs text-[var(--text-muted)] mb-1 font-medium uppercase tracking-wide">
                 PLU (Shopify barcode)
               </label>
               <input
@@ -695,7 +665,6 @@ export default function ScaleProductDetailPage() {
                 <p>portLabel: <span className="text-[var(--text-primary)]">{scale.portLabel ?? 'null'}</span></p>
                 <p>chunkCount: <span className="text-[var(--text-primary)]">{scale.chunkCount}</span></p>
                 <p>error: <span className="text-[var(--text-primary)]">{scale.error ?? 'null'}</span></p>
-                <p>lastReading.itemNumber: <span className="text-[var(--text-primary)]">{scale.lastReading?.itemNumber || '(none)'}</span></p>
                 <p>lastReading.itemWeight: <span className="text-[var(--text-primary)]">{scale.lastReading?.itemWeight || '(none)'}</span></p>
                 <p>lastReading.timestamp: <span className="text-[var(--text-primary)]">{scale.lastReading?.timestamp ? formatEst(scale.lastReading.timestamp) : '(none)'}</span></p>
                 <p className="break-all">lastRawBuffer: <span className="text-[var(--text-primary)]">{scale.lastRawBuffer ? JSON.stringify(scale.lastRawBuffer) : '(none)'}</span></p>
