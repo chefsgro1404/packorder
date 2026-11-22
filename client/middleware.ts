@@ -15,5 +15,8 @@ export function middleware(request: NextRequest) {
 export const config = {
   // Protect every page except the login root (/), API routes, and Next.js internals.
   // Adding a new page under any path now requires no middleware change.
-  matcher: ["/((?!$|api/|_next/|favicon.ico|icons/|manifest.json).*)"],
+  // Paths with a file extension (sw.js, workbox-*.js, manifest.json, icons, downloads, and the
+  // platform's warm-up probe /robots933456.txt) are never redirected — a 307 to the login page
+  // breaks the service worker and the Azure SWA warm-up check.
+  matcher: ["/((?!api/|_next/|.*\\..*).+)"],
 };
