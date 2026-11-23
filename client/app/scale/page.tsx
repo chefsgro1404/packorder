@@ -47,6 +47,7 @@ import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
 import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption, WeightRangeRule } from '@/lib/types';
 import { matchWeightRange, parseWeightToLbs } from '@/lib/weightCategory';
+import { planPoReceiving, sessionQtyBasis } from '@/lib/poReceiving';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
 import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
 import { BarcodeScanner } from '@/components/BarcodeScanner';
@@ -1380,6 +1381,8 @@ export default function ScalePage() {
   const [sessionClosePrompt, setSessionClosePrompt] = useState(false);
   const [wastageWarning, setWastageWarning] = useState<string | null>(null);
   const [autoPrintPending, setAutoPrintPending] = useState(false);
+  // True while a categorical tier print (auto or manual) is running, so the other can't double-print
+  const categoricalPrintBusy = useRef(false);
   const [weightReadingSeq, setWeightReadingSeq] = useState(0);
   // When a scale reading falls outside all ranges, latch this flag so the user MUST
   // explicitly select a tier before auto-print resumes — scale re-reads that happen
@@ -1590,80 +1593,92 @@ export default function ScalePage() {
     }
   }, [weightRanges, currentItem?.itemWeight, weightReadingSeq]);
 
-  // Auto-print when a categorical match is found and a processing session is active
+  // Auto-print when a categorical match is found and a processing session is active.
+  // The in-flight guard is a ref, not state: putting autoPrintPending in the deps made the
+  // effect re-run as soon as it set the flag, and that cleanup cancelled the 1.5s timer.
+  // Every new detection (including the same weight twice) restarts the countdown.
+  // Paused while the close prompt is open (received qty reached) until staff close or cancel it.
   useEffect(() => {
-    if (!autoDetect?.matched || !processingSession || autoPrintPending || requiresTierSelect) return;
+    if (!autoDetect?.matched || !processingSession || requiresTierSelect || sessionClosePrompt || categoricalPrintBusy.current) return;
     setAutoPrintPending(true);
     const matchedTier = autoDetect.matched;
     const timer = setTimeout(async () => {
-      if (!currentItem) { setAutoPrintPending(false); return; }
-      let itemWithVariant: CurrentItem = {
-        ...currentItem,
-        variantId: matchedTier.variantId,
-        variantTitle: matchedTier.label,
-      };
-      // Fetch matched tier's own PLU + productTitle so the barcode is printed for the
-      // correct output variant, not the original scanned input product.
+      if (!currentItem || categoricalPrintBusy.current) { setAutoPrintPending(false); return; }
+      categoricalPrintBusy.current = true;
       try {
-        const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(matchedTier.variantId)}`);
-        if (tierRes.ok) {
-          const tierData = await tierRes.json();
-          console.log('[scale] auto-print tier by-variant response:', tierData);
-          if (tierData?.found) {
-            const tierPT = tierData.productTitle ?? itemWithVariant.productTitle;
-            // Avoid "X - X" on the label when tier label matches the product title exactly
-            const tierVT = itemWithVariant.variantTitle === tierPT ? null : itemWithVariant.variantTitle;
-            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierPT, variantTitle: tierVT, found: true };
+        let itemWithVariant: CurrentItem = {
+          ...currentItem,
+          variantId: matchedTier.variantId,
+          variantTitle: matchedTier.label,
+        };
+        // Fetch matched tier's own PLU + productTitle so the barcode is printed for the
+        // correct output variant, not the original scanned input product.
+        try {
+          const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(matchedTier.variantId)}`);
+          if (tierRes.ok) {
+            const tierData = await tierRes.json();
+            console.log('[scale] auto-print tier by-variant response:', tierData);
+            if (tierData?.found) {
+              const tierPT = tierData.productTitle ?? itemWithVariant.productTitle;
+              // Avoid "X - X" on the label when tier label matches the product title exactly
+              const tierVT = itemWithVariant.variantTitle === tierPT ? null : itemWithVariant.variantTitle;
+              itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierPT, variantTitle: tierVT, found: true };
+            }
           }
-        }
-      } catch { /* non-fatal — print still proceeds with input product title */ }
-      // For categorical products the mapping is always 1:1 weight-based — no metafield needed.
-      // Fetch inventory IDs directly for parent and child then build the mapping ourselves.
-      let matchedMapping: InventoryMappingInfo | null = null;
-      try {
-        const [parentInvRes, childInvRes] = await Promise.all([
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(processingSession.mainVariantId)}`),
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(matchedTier.variantId)}`),
-        ]);
-        if (parentInvRes.ok && childInvRes.ok) {
-          const [parentInv, childInv] = await Promise.all([parentInvRes.json(), childInvRes.json()]);
-          if (parentInv.inventoryItemId && parentInv.locationId) {
-            matchedMapping = {
-              found: true,
-              isWeighted: true,
-              weightPerUnit: 1,
-              parentInventoryId: parentInv.inventoryItemId,
-              parentProductHandle: '',
-              parentProductTitle: itemWithVariant.productTitle,
-              parentLocationId: parentInv.locationId,
-              childInventoryItemId: childInv.inventoryItemId ?? null,
-              parentUnits: 1,
-              childUnits: 1,
-            };
+        } catch { /* non-fatal — print still proceeds with input product title */ }
+        // For categorical products the mapping is always 1:1 weight-based — no metafield needed.
+        // Fetch inventory IDs directly for parent and child then build the mapping ourselves.
+        let matchedMapping: InventoryMappingInfo | null = null;
+        try {
+          const [parentInvRes, childInvRes] = await Promise.all([
+            fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(processingSession.mainVariantId)}`),
+            fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(matchedTier.variantId)}`),
+          ]);
+          if (parentInvRes.ok && childInvRes.ok) {
+            const [parentInv, childInv] = await Promise.all([parentInvRes.json(), childInvRes.json()]);
+            if (parentInv.inventoryItemId && parentInv.locationId) {
+              matchedMapping = {
+                found: true,
+                isWeighted: true,
+                weightPerUnit: 1,
+                parentInventoryId: parentInv.inventoryItemId,
+                parentProductHandle: '',
+                parentProductTitle: itemWithVariant.productTitle,
+                parentLocationId: parentInv.locationId,
+                childInventoryItemId: childInv.inventoryItemId ?? null,
+                parentUnits: 1,
+                childUnits: 1,
+              };
+            }
           }
-        }
-      } catch { /* non-fatal — print still proceeds without adjustment */ }
-      setCurrentItem(itemWithVariant);
-      await printItem(itemWithVariant, { mapping: matchedMapping, isCategorical: true });
-      const consumed = autoDetect?.weightLbs && autoDetect.weightLbs > 0 ? Math.round(autoDetect.weightLbs) : 1;
-      setProcessingSession(prev => {
-        if (!prev) return null;
-        const breakdown = { ...prev.variantBreakdown };
-        breakdown[matchedTier.label] = (breakdown[matchedTier.label] ?? 0) + consumed;
-        const newSessionQty = prev.sessionQty + consumed;
-        const newTotal = prev.cumulativeQty + newSessionQty;
-        if (newTotal >= prev.poQty) {
-          // All units accounted for — auto-open close prompt
-          setTimeout(() => setSessionClosePrompt(true), 300);
-        }
-        return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
-      });
-      setAutoDetect(null);
-      setAutoPrintPending(false);
+        } catch { /* non-fatal — print still proceeds without adjustment */ }
+        setCurrentItem(itemWithVariant);
+        await printItem(itemWithVariant, { mapping: matchedMapping, isCategorical: true });
+        const consumed = autoDetect?.weightLbs && autoDetect.weightLbs > 0 ? Math.round(autoDetect.weightLbs) : 1;
+        setProcessingSession(prev => {
+          if (!prev) return null;
+          const breakdown = { ...prev.variantBreakdown };
+          breakdown[matchedTier.label] = (breakdown[matchedTier.label] ?? 0) + consumed;
+          const newSessionQty = prev.sessionQty + consumed;
+          const newTotal = prev.cumulativeQty + newSessionQty;
+          if (newTotal >= prev.poQty) {
+            // All units accounted for — auto-open close prompt
+            setTimeout(() => setSessionClosePrompt(true), 300);
+          }
+          return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
+        });
+        setAutoDetect(null);
+      } finally {
+        categoricalPrintBusy.current = false;
+        setAutoPrintPending(false);
+      }
     }, 1500);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (!categoricalPrintBusy.current) setAutoPrintPending(false);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoDetect?.matched?.variantId, !!processingSession, autoPrintPending]);
+  }, [autoDetect, !!processingSession, requiresTierSelect, sessionClosePrompt]);
 
   // Poll status of an in-progress remote print job (non-printer device watching its queued job)
   useEffect(() => {
@@ -1712,7 +1727,6 @@ export default function ScalePage() {
     printedAtEst: string,
     sn: string,
     mapping?: InventoryMappingInfo | null,
-    skipPoApproval?: boolean,
     lotNo?: string | null,
     expiryDate?: string | null,
     isCategorical?: boolean,
@@ -1752,29 +1766,9 @@ export default function ScalePage() {
       console.error('[scale] failed to log printed label:', err, '| product:', item.productTitle, '| sn:', sn);
     }
 
-    // Auto-approve PO line item if this print was for one (skipped during bulk print — approved in bulk after)
-    if (!skipPoApproval && item.poId && item.poLineItemId) {
-      const poId = item.poId;
-      const poLineItemId = item.poLineItemId;
-      try {
-        await enqueueAndRun(
-          'approve-line-item',
-          { poId, lineItemId: poLineItemId, quantityReceived: 1, forceApprove: false },
-          `${poId}:approve-line-item:${poLineItemId}:${sn}`,
-          async () => {
-            const ok = await approvePoItem(poId, poLineItemId, 1);
-            if (!ok) throw new Error('approve-line-item failed');
-          },
-        );
-      } catch (err) {
-        console.error('[scale] PO approval failed:', err);
-      }
-      // Always refresh after approval (whether fresh run or idempotent skip)
-      try {
-        const fresh = await refreshLineItems(poId);
-        setPoLineItemsCache(prev => ({ ...prev, [poId]: fresh }));
-      } catch { /* non-fatal */ }
-    }
+    // No PO approval here. The PO ids on the label are for traceability only — the received qty
+    // is set once, from the counted qty, when the line is accepted in the bulk print. Approving
+    // +1 per label made every processed (QR-scanned) label count as another unit received.
 
     // Adjust parent product inventory for wet/transformation products, then increase child inventory
     if (mapping?.found && mapping.parentInventoryId && mapping.parentLocationId) {
@@ -1847,7 +1841,7 @@ export default function ScalePage() {
         }
       }
     }
-  }, [fetchHistory, approvePoItem, refreshLineItems, enqueueAndRun]);
+  }, [fetchHistory, enqueueAndRun]);
 
   const handlePoToggle = useCallback(async (poId: string) => {
     setExpandedPoId(prev => (prev === poId ? null : poId));
@@ -1911,10 +1905,11 @@ export default function ScalePage() {
       vendorName: po.vendor ?? null,
     };
 
-    // Fetch inventoryItemId now so the modal can show the adjustment checkbox before printing
+    // Fetch inventoryItemId now so receiving can add the counted qty to Shopify — lot receiving
+    // included, since processing later deducts each weighed item from this same variant
     let inventoryItemId: string | undefined;
     let locationId: string | undefined;
-    if (resolvedItem.variantId && !isLotReceiving) {
+    if (resolvedItem.variantId) {
       try {
         const invRes = await fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(resolvedItem.variantId)}`);
         if (invRes.ok) {
@@ -1929,23 +1924,19 @@ export default function ScalePage() {
     setLookupLoading(false);
   }, []);
 
+  // The counted qty (not the PO qty) is approved on the PO and added to Shopify; a mismatch
+  // with the PO is recorded as a discrepancy alongside it.
   const applyBulkApprovalAndInventory = useCallback(async (
     po: PurchaseOrder,
     li: PurchaseOrderLineItem,
     printedCount: number,
-    lotTotalWeightLbs: number | undefined,
-    isLotMethod: boolean,
     inventoryItemId: string | undefined,
     locationId: string | undefined,
-    receivedQty?: number,
+    plan: ReturnType<typeof planPoReceiving>,
   ) => {
     if (printedCount === 0) return;
-    const qtyReceived = receivedQty ?? printedCount;
-    const hasDiscrepancy = qtyReceived !== li.quantityOrdered;
-    const discrepancyQty = hasDiscrepancy ? Math.abs(li.quantityOrdered - qtyReceived) : null;
-    const discrepancyType = hasDiscrepancy ? (qtyReceived < li.quantityOrdered ? 'short' : 'over') : null;
-    const approvalQty = lotTotalWeightLbs !== undefined ? lotTotalWeightLbs : (isLotMethod ? li.quantityOrdered : qtyReceived);
-    const inventoryDelta = isLotMethod ? li.quantityOrdered : qtyReceived;
+    const { receivedQty: approvalQty, discrepancyQty, discrepancyType } = plan;
+    const inventoryDelta = approvalQty;
     try {
       await enqueueAndRun(
         'approve-line-item',
@@ -2049,7 +2040,7 @@ export default function ScalePage() {
           await createJob({ plu: item.found ? item.plu : null, productTitle: mappedTitle, variantTitle: mappedVariant ?? null, itemWeight: item.itemWeight, qrPayload: encryptedPayload, sn, labelSizeKey, printedAtEst }, 'label');
         }
         // Log each label; skip PO approval (done once after the full batch)
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, true, effectiveLotNo, expiryDate || null, undefined, mfgDate || null);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, null, effectiveLotNo, expiryDate || null, undefined, mfgDate || null);
         results.push({ index: i + 1, sn, qrPayload: encryptedPayload, printedAtEst, status: 'printed' });
       } catch (err) {
         results.push({ index: i + 1, sn: '', qrPayload: '', printedAtEst: '', status: 'failed', error: err instanceof Error ? err.message : 'Unknown error' });
@@ -2065,6 +2056,7 @@ export default function ScalePage() {
     }
 
     const printedCount = results.filter(r => r.status === 'printed').length;
+    const plan = planPoReceiving({ orderedQty: li.quantityOrdered, printedCount, receivedQty, lotTotalWeightLbs });
 
     // Save bulk session history
     if (printedCount > 0) {
@@ -2083,7 +2075,7 @@ export default function ScalePage() {
             expiryDate: expiryDate || null,
             mfgDate: mfgDate || null,
             quantityOrdered: li.quantityOrdered,
-            quantityReceived: receivedQty ?? printedCount,
+            quantityReceived: plan.receivedQty,
             quantityPrinted: printedCount,
             results: results.map(r => ({
               index: r.index,
@@ -2101,66 +2093,13 @@ export default function ScalePage() {
       }
     }
 
-    // Determine lot method: configured lot products, weight-based lot receiving, Shopify flag, or barcodes ≠ received
-    const qtyReceived = receivedQty ?? printedCount;
-    const productId = item.productId ?? null;
-    const isLotReceivingFlag = modalState.isLotReceiving ?? false;
-    const isLotMethod = (productId ? lotProducts.has(productId) : false)
-      || (lotTotalWeightLbs !== undefined)
-      || isLotReceivingFlag
-      || (printedCount !== qtyReceived);
     const { inventoryItemId: modalInvItemId, locationId: modalLocationId } = modalState;
 
-    await applyBulkApprovalAndInventory(po, li, printedCount, lotTotalWeightLbs, isLotMethod, modalInvItemId, modalLocationId, qtyReceived);
+    await applyBulkApprovalAndInventory(po, li, printedCount, modalInvItemId, modalLocationId, plan);
 
-    // Start/update a processing session for lot products so the processed/remaining panel shows
-    if (isLotMethod && printedCount > 0) {
-      try {
-        await fetch('/api/scale/processing-session', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            poId: po.id,
-            poLineItemId: li.id,
-            poQty: li.quantityOrdered,
-            mainVariantId: item.variantId ?? '',
-            mainProductTitle: item.productTitle ?? '',
-            vendorName: item.vendorName ?? '',
-            lotNo: lotNo || '',
-            sessionQty: printedCount,
-            wastageQty: 0,
-            sessionStatus: 'partial',
-            variantBreakdown: {},
-          }),
-        });
-      } catch { /* non-fatal */ }
-      let priorCumulative = 0;
-      let priorBreakdown: Record<string, number> = {};
-      try {
-        const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(li.id)}`);
-        if (sessRes.ok) {
-          const sessData = await sessRes.json();
-          if (sessData?.sessionCount > 0) {
-            priorCumulative = sessData.cumulativeQty ?? 0;
-            priorBreakdown = sessData.variantBreakdown ?? {};
-          }
-        }
-      } catch { /* non-fatal */ }
-      lastSyncedQtyRef.current = 0;
-      setProcessingSession({
-        poId: po.id,
-        poLineItemId: li.id,
-        poQty: li.quantityOrdered,
-        mainVariantId: item.variantId ?? '',
-        mainProductTitle: item.productTitle ?? '',
-        vendorName: item.vendorName ?? '',
-        lotNo: lotNo || '',
-        sessionQty: 0,
-        cumulativeQty: priorCumulative,
-        variantBreakdown: priorBreakdown,
-      });
-    }
-  }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, labelSizeKey, resetPrinted, lotProducts, applyBulkApprovalAndInventory]);
+    // Accepting never starts processing. A processing session only starts when a printed
+    // batch barcode is scanned on this page, and only processed labels count towards it.
+  }, [textMappings, isPrinterDevice, batchPrint, createJob, logPrintedLabel, labelSizeKey, resetPrinted, applyBulkApprovalAndInventory]);
 
   const handlePrintMore = useCallback((sample: PrintedLabel) => {
     if (!sample.poId) return;
@@ -2330,7 +2269,7 @@ export default function ScalePage() {
           variantTitle: mappedVariant,
           itemWeight: item.itemWeight,
         }, sn, encryptedPayload);
-        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping, undefined, undefined, undefined, isCategorical);
+        await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping, undefined, undefined, isCategorical);
       } else {
         const printedAtEst = formatEst(new Date());
         const jobPayload: PrintJobPayload = {
@@ -2346,7 +2285,7 @@ export default function ScalePage() {
         const job = await createJob(jobPayload, 'label');
         if (job) {
           setRemotePrintJob(job);
-          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping, undefined, undefined, undefined, isCategorical);
+          await logPrintedLabel(item, encryptedPayload, printedAtEst, sn, effectiveMapping, undefined, undefined, isCategorical);
         } else {
           setPrintError('Failed to queue print job — check your connection and try again.');
         }
@@ -2485,61 +2424,66 @@ export default function ScalePage() {
     // could already equal the last tier rather than the original scanned product.
     const parentVariantId = processingSession ? processingSession.mainVariantId : item.variantId!;
     if (activeMatch && parentVariantId !== activeMatch.variantId) {
-      let itemWithVariant: CurrentItem = { ...item, variantId: activeMatch.variantId, variantTitle: activeMatch.label };
-      try {
-        const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(activeMatch.variantId)}`);
-        if (tierRes.ok) {
-          const tierData = await tierRes.json();
-          console.log('[scale] manual print tier by-variant response:', tierData);
-          if (tierData?.found) {
-            const tierPT = tierData.productTitle ?? itemWithVariant.productTitle;
-            // Avoid "X - X" on the label when the tier label matches the product title
-            const tierVT = itemWithVariant.variantTitle === tierPT ? null : itemWithVariant.variantTitle;
-            itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierPT, variantTitle: tierVT, found: true };
-          }
-        }
-      } catch { /* non-fatal */ }
-      let matchedMapping: InventoryMappingInfo | null = null;
-      try {
-        const [parentInvRes, childInvRes] = await Promise.all([
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(parentVariantId)}`),
-          fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(activeMatch.variantId)}`),
-        ]);
-        if (parentInvRes.ok && childInvRes.ok) {
-          const [parentInv, childInv] = await Promise.all([parentInvRes.json(), childInvRes.json()]);
-          if (parentInv.inventoryItemId && parentInv.locationId) {
-            matchedMapping = {
-              found: true,
-              isWeighted: true,
-              weightPerUnit: 1,
-              parentInventoryId: parentInv.inventoryItemId,
-              parentProductHandle: '',
-              parentProductTitle: item.productTitle,
-              parentLocationId: parentInv.locationId,
-              childInventoryItemId: childInv.inventoryItemId ?? null,
-              parentUnits: 1,
-              childUnits: 1,
-            };
-          }
-        }
-      } catch { /* non-fatal */ }
-      setCurrentItem(itemWithVariant);
+      // The auto-print for this weight is already printing — don't print it a second time
+      if (categoricalPrintBusy.current) return;
       // Block the auto-print timer from firing a second print for the same item
-      setAutoPrintPending(true);
-      await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping, isCategorical: true });
-      // Increment session counter by round(weight) — same as inventory delta for categorical
-      const consumed = activeLbs && activeLbs > 0 ? Math.round(activeLbs) : 1;
-      setProcessingSession(prev => {
-        if (!prev) return null;
-        const breakdown = { ...prev.variantBreakdown };
-        breakdown[activeMatch!.label] = (breakdown[activeMatch!.label] ?? 0) + consumed;
-        const newSessionQty = prev.sessionQty + consumed;
-        const newTotal = prev.cumulativeQty + newSessionQty;
-        if (newTotal >= prev.poQty) setTimeout(() => setSessionClosePrompt(true), 300);
-        return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
-      });
-      setAutoDetect(null);
-      setAutoPrintPending(false);
+      categoricalPrintBusy.current = true;
+      try {
+        let itemWithVariant: CurrentItem = { ...item, variantId: activeMatch.variantId, variantTitle: activeMatch.label };
+        try {
+          const tierRes = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(activeMatch.variantId)}`);
+          if (tierRes.ok) {
+            const tierData = await tierRes.json();
+            console.log('[scale] manual print tier by-variant response:', tierData);
+            if (tierData?.found) {
+              const tierPT = tierData.productTitle ?? itemWithVariant.productTitle;
+              // Avoid "X - X" on the label when the tier label matches the product title
+              const tierVT = itemWithVariant.variantTitle === tierPT ? null : itemWithVariant.variantTitle;
+              itemWithVariant = { ...itemWithVariant, plu: tierData.plu ?? itemWithVariant.plu, productTitle: tierPT, variantTitle: tierVT, found: true };
+            }
+          }
+        } catch { /* non-fatal */ }
+        let matchedMapping: InventoryMappingInfo | null = null;
+        try {
+          const [parentInvRes, childInvRes] = await Promise.all([
+            fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(parentVariantId)}`),
+            fetch(`/api/scale/variant-inventory?variantId=${encodeURIComponent(activeMatch.variantId)}`),
+          ]);
+          if (parentInvRes.ok && childInvRes.ok) {
+            const [parentInv, childInv] = await Promise.all([parentInvRes.json(), childInvRes.json()]);
+            if (parentInv.inventoryItemId && parentInv.locationId) {
+              matchedMapping = {
+                found: true,
+                isWeighted: true,
+                weightPerUnit: 1,
+                parentInventoryId: parentInv.inventoryItemId,
+                parentProductHandle: '',
+                parentProductTitle: item.productTitle,
+                parentLocationId: parentInv.locationId,
+                childInventoryItemId: childInv.inventoryItemId ?? null,
+                parentUnits: 1,
+                childUnits: 1,
+              };
+            }
+          }
+        } catch { /* non-fatal */ }
+        setCurrentItem(itemWithVariant);
+        await printItem(itemWithVariant, { forceDialog: true, mapping: matchedMapping, isCategorical: true });
+        // Increment session counter by round(weight) — same as inventory delta for categorical
+        const consumed = activeLbs && activeLbs > 0 ? Math.round(activeLbs) : 1;
+        setProcessingSession(prev => {
+          if (!prev) return null;
+          const breakdown = { ...prev.variantBreakdown };
+          breakdown[activeMatch!.label] = (breakdown[activeMatch!.label] ?? 0) + consumed;
+          const newSessionQty = prev.sessionQty + consumed;
+          const newTotal = prev.cumulativeQty + newSessionQty;
+          if (newTotal >= prev.poQty) setTimeout(() => setSessionClosePrompt(true), 300);
+          return { ...prev, sessionQty: newSessionQty, variantBreakdown: breakdown };
+        });
+        setAutoDetect(null);
+      } finally {
+        categoricalPrintBusy.current = false;
+      }
       return;
     }
     await printItem(item, { forceDialog: true });
@@ -2849,7 +2793,8 @@ export default function ScalePage() {
       try {
         const lineItems = await fetchLineItems(snPoId);
         const li = lineItems.find(x => x.id === snPoLineItemId);
-        poQty = li?.quantityOrdered ?? 0;
+        // Work through what was received (the counted qty), not the PO qty
+        poQty = sessionQtyBasis(li);
       } catch { /* non-fatal */ }
       try {
         const sessRes = await fetch(`/api/scale/processing-session?poLineItemId=${encodeURIComponent(snPoLineItemId)}`);
@@ -2975,7 +2920,7 @@ export default function ScalePage() {
               const sessData = await sessRes.json();
               if (sessData?.poLineItemId) {
                 const li = lineItems.find(x => x.id === data.poLineItemId);
-                const poQty = li?.quantityOrdered ?? sessData.poQty ?? 0;
+                const poQty = li ? sessionQtyBasis(li) : (sessData.poQty ?? 0);
                 // variantBreakdown arrives as an already-parsed object from the server
                 const breakdown: Record<string, number> =
                   sessData.variantBreakdown && typeof sessData.variantBreakdown === 'object'
@@ -3510,7 +3455,7 @@ export default function ScalePage() {
                       </div>
                       <p className="text-sm font-medium text-[var(--text-primary)] truncate">{processingSession.mainProductTitle}</p>
                       <div className="flex gap-3 mt-1 text-xs text-slate-400">
-                        <span>PO: <span className="text-[var(--text-primary)] font-semibold">{processingSession.poQty}</span></span>
+                        <span>Received: <span className="text-[var(--text-primary)] font-semibold">{processingSession.poQty}</span></span>
                         <span>Processed: <span className="text-emerald-700 dark:text-emerald-300 font-semibold">{processingSession.cumulativeQty + processingSession.sessionQty}</span></span>
                         <span>Remaining: <span className={`font-semibold ${processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-emerald-700 dark:text-emerald-300'}`}>{Math.max(0, processingSession.poQty - processingSession.cumulativeQty - processingSession.sessionQty)}</span></span>
                       </div>
@@ -3574,8 +3519,10 @@ export default function ScalePage() {
                                 }
                                 setRequiresTierSelect(false);
                                 setNoMatchWeightLbs(null);
+                                // Only the match changes — both print paths take the tier variant from it.
+                                // Changing currentItem.variantId here re-ran the variant-reset effect,
+                                // which wiped this selection before it could be printed.
                                 setAutoDetect({ matched: r, noMatch: false, weightLbs: autoDetect?.weightLbs ?? noMatchWeightLbs ?? 0 });
-                                if (currentItem) setCurrentItem({ ...currentItem, variantId: r.variantId, variantTitle: r.label });
                               }}
                               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
                                 isActive
