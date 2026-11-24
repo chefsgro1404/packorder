@@ -1,13 +1,39 @@
 import type { WeightRangeRule } from './types';
 
+// Weights come from the scale with 2 decimals, or from kg/g conversions with many; compare with a
+// tiny tolerance so 1.9 typed as "1.90 lb" and 0.8618 kg → 1.9000… lbs land on the same boundary.
+const EPS = 1e-9;
+const at = (a: number, b: number) => Math.abs(a - b) <= EPS;
+
 /**
- * Matches a weight (in lbs) against an ordered list of weight range rules.
- * minLbs is inclusive; maxLbs is exclusive. Last tier may have maxLbs=null (no upper bound).
- * Returns the matched rule or null if no range covers the weight.
+ * Every tier a weight falls in. Both ends of a range are included (1.5–1.9 contains 1.5 and 1.9);
+ * maxLbs = null means no upper bound.
+ *
+ * A weight exactly on a shared boundary goes to the lower tier: with 1.5–1.9 and 1.9–2.5, 1.9 is the
+ * first tier and 1.9001 the second. Any other overlap (two tiers with the same or overlapping ranges)
+ * returns every tier it falls in, and staff are asked to choose.
+ */
+export function matchWeightRanges(rules: WeightRangeRule[], weightLbs: number): WeightRangeRule[] {
+  if (rules.length === 0 || !(weightLbs > 0)) return [];
+  const inRange = rules.filter(r => weightLbs >= r.minLbs - EPS && (r.maxLbs == null || weightLbs <= r.maxLbs + EPS));
+  if (inRange.length <= 1) return inRange;
+  // Drop a tier that the weight only touches at its start when another tier ends exactly there
+  return inRange.filter(r =>
+    !(at(weightLbs, r.minLbs) && inRange.some(o => o !== r && o.maxLbs != null && at(weightLbs, o.maxLbs))));
+}
+
+/**
+ * The single tier a weight falls in, or null when it falls in none or in more than one
+ * (use matchWeightRanges to tell those apart).
  */
 export function matchWeightRange(rules: WeightRangeRule[], weightLbs: number): WeightRangeRule | null {
-  if (rules.length === 0 || weightLbs <= 0) return null;
-  return rules.find(r => weightLbs >= r.minLbs && (r.maxLbs === null || weightLbs < r.maxLbs)) ?? null;
+  const matches = matchWeightRanges(rules, weightLbs);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+/** "1.5–1.9 lbs", "2.5+ lbs" — how a tier's range is shown to staff. */
+export function formatWeightRange(rule: Pick<WeightRangeRule, 'minLbs' | 'maxLbs'>): string {
+  return rule.maxLbs == null ? `${rule.minLbs}+ lbs` : `${rule.minLbs}–${rule.maxLbs} lbs`;
 }
 
 /**
@@ -31,8 +57,9 @@ export interface WeightRangeValidation {
 
 /**
  * Validates a set of weight range rules before saving.
- * Errors: missing fields, inverted bounds, overlapping ranges, multiple unbounded tiers.
- * Warnings: gaps between tiers (valid config, but weights in the gap will show "no match").
+ * Errors: missing fields, inverted bounds, and gaps between tiers (a weight in a gap would match
+ * nothing — the next tier should start where the previous one ends).
+ * Warnings: tiers whose ranges overlap (a weight in both asks staff to choose).
  */
 export function validateWeightRanges(rules: WeightRangeRule[]): WeightRangeValidation {
   const errors: string[] = [];
@@ -52,32 +79,38 @@ export function validateWeightRanges(rules: WeightRangeRule[]): WeightRangeValid
     }
   }
 
-  // Multiple unbounded (maxLbs = null) tiers — ambiguous for heavy weights
-  const unbounded = rules.filter(r => r.maxLbs === null || r.maxLbs === undefined);
-  if (unbounded.length > 1) {
-    errors.push(`Only one tier may have no upper bound (found ${unbounded.length}): ${unbounded.map(r => r.label || 'unnamed').join(', ')}`);
-  }
-
   // Overlap and gap detection — only run if per-tier checks pass
   if (errors.length === 0) {
-    // Sort by minLbs to check sequentially
-    const sorted = [...rules].sort((a, b) => a.minLbs - b.minLbs);
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const curr = sorted[i];
-      const next = sorted[i + 1];
-      const currMax = curr.maxLbs ?? Infinity;
+    const sorted = [...rules].sort((a, b) => a.minLbs - b.minLbs || (a.maxLbs ?? Infinity) - (b.maxLbs ?? Infinity));
+    const name = (r: WeightRangeRule) => `"${r.label}" (${formatWeightRange(r)})`;
 
-      if (next.minLbs < currMax) {
-        // next starts before curr ends → overlap
+    // Overlaps: any two tiers sharing more than a single boundary point
+    for (let i = 0; i < sorted.length; i++) {
+      for (let j = i + 1; j < sorted.length; j++) {
+        const a = sorted[i], b = sorted[j];
+        const aMax = a.maxLbs ?? Infinity;
+        if (b.minLbs < aMax - EPS) {
+          const to = Math.min(aMax, b.maxLbs ?? Infinity);
+          warnings.push(
+            `${name(a)} and ${name(b)} overlap: a weight from ${b.minLbs} to ${to === Infinity ? 'any higher weight' : to} matches both, and staff will be asked to choose`
+          );
+        }
+      }
+    }
+
+    // Gaps: the highest end reached so far must reach the next tier's start
+    let reach = sorted[0].maxLbs ?? Infinity;
+    let reachRule = sorted[0];
+    for (let i = 1; i < sorted.length; i++) {
+      const next = sorted[i];
+      if (next.minLbs > reach + EPS) {
         errors.push(
-          `"${curr.label}" (${curr.minLbs}–${curr.maxLbs ?? '∞'}) and "${next.label}" (${next.minLbs}–${next.maxLbs ?? '∞'}) overlap`
-        );
-      } else if (next.minLbs > currMax) {
-        // gap between curr end and next start
-        warnings.push(
-          `Gap between "${curr.label}" and "${next.label}": weights ${currMax}–${next.minLbs} lbs will show "no match"`
+          `Gap between ${name(reachRule)} and ${name(next)}: a weight between ${reach} and ${next.minLbs} would match no tier. ` +
+          `Start "${next.label}" at ${reach} — a weight of exactly ${reach} goes to "${reachRule.label}".`
         );
       }
+      const nextMax = next.maxLbs ?? Infinity;
+      if (nextMax > reach) { reach = nextMax; reachRule = next; }
     }
   }
 

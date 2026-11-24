@@ -45,8 +45,8 @@ import { generateSn, buildQrPayload } from '@/lib/scaleLabel';
 import { encryptQrPayload, isEncryptedQr, decryptQrPayload } from '@/lib/qrEncryption';
 import { fetchNextSn } from '@/lib/snBuilder';
 import { formatEst } from '@/lib/dateFormat';
-import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption, WeightRangeRule } from '@/lib/types';
-import { matchWeightRange, parseWeightToLbs } from '@/lib/weightCategory';
+import { PrintedLabel, TextMapping, PurchaseOrder, PurchaseOrderLineItem, InventoryMappingInfo, PrintJob, PrintJobPayload, TransformationOption, WeightRangeRule, WeightRangeSource } from '@/lib/types';
+import { matchWeightRanges, formatWeightRange, parseWeightToLbs } from '@/lib/weightCategory';
 import { planPoReceiving, sessionQtyBasis } from '@/lib/poReceiving';
 import { BulkPrintModal } from '@/components/BulkPrintModal';
 import { BulkSessionHistoryPanel } from '@/components/BulkSessionHistoryPanel';
@@ -1356,7 +1356,8 @@ export default function ScalePage() {
       return Array.isArray(parsed?.weightRanges) ? parsed.weightRanges : [];
     } catch { return []; }
   });
-  const [autoDetect, setAutoDetect] = useState<{ matched: WeightRangeRule | null; noMatch: boolean; weightLbs: number } | null>(null);
+  // candidates: more than one tier holds this weight (same or overlapping ranges) — staff choose one
+  const [autoDetect, setAutoDetect] = useState<{ matched: WeightRangeRule | null; noMatch: boolean; weightLbs: number; candidates?: WeightRangeRule[] } | null>(null);
   const [processingSession, setProcessingSession] = useState<{
     poId: string;
     poLineItemId: string;
@@ -1388,6 +1389,27 @@ export default function ScalePage() {
   // explicitly select a tier before auto-print resumes — scale re-reads that happen
   // to land back in-range are not enough to unblock printing.
   const [requiresTierSelect, setRequiresTierSelect] = useState(false);
+  // A scanned tier label listed in more than one weight-range setup: staff pick which one applies
+  const [rangeSourcePrompt, setRangeSourcePrompt] = useState<WeightRangeSource[] | null>(null);
+  const rangeSourceResolver = useRef<((s: WeightRangeSource | null) => void) | null>(null);
+  const resolveWeightRanges = useCallback(async (
+    data: { weightRanges?: WeightRangeRule[]; weightRangeSources?: WeightRangeSource[] } | null,
+  ): Promise<WeightRangeRule[]> => {
+    const sources = Array.isArray(data?.weightRangeSources) ? data!.weightRangeSources! : [];
+    if (sources.length > 1) {
+      const chosen = await new Promise<WeightRangeSource | null>(resolve => {
+        rangeSourceResolver.current = resolve;
+        setRangeSourcePrompt(sources);
+      });
+      return chosen?.rules ?? [];
+    }
+    return Array.isArray(data?.weightRanges) ? data!.weightRanges! : [];
+  }, []);
+  const answerRangeSourcePrompt = (s: WeightRangeSource | null) => {
+    rangeSourceResolver.current?.(s);
+    rangeSourceResolver.current = null;
+    setRangeSourcePrompt(null);
+  };
   const [noMatchWeightLbs, setNoMatchWeightLbs] = useState<number | null>(null);
   const [bulkPrintModal, setBulkPrintModal] = useState<{ item: CurrentItem; po: PurchaseOrder; li: PurchaseOrderLineItem; isLotReceiving?: boolean; inventoryItemId?: string; locationId?: string } | null>(null);
   const [bulkPrintResults, setBulkPrintResults] = useState<BulkPrintLabelResult[] | null>(null);
@@ -1585,9 +1607,16 @@ export default function ScalePage() {
     }
     const lbs = parseWeightToLbs(currentItem.itemWeight);
     if (lbs === null) return;
-    const matched = matchWeightRange(weightRanges, lbs);
-    setAutoDetect({ matched, noMatch: matched === null, weightLbs: lbs });
-    if (matched === null) {
+    const matches = matchWeightRanges(weightRanges, lbs);
+    if (matches.length === 1) {
+      setAutoDetect({ matched: matches[0], noMatch: false, weightLbs: lbs });
+    } else if (matches.length > 1) {
+      // Same or overlapping ranges: hold printing until staff pick one of the matching tiers
+      setAutoDetect({ matched: null, noMatch: false, weightLbs: lbs, candidates: matches });
+      setRequiresTierSelect(true);
+      setNoMatchWeightLbs(null);
+    } else {
+      setAutoDetect({ matched: null, noMatch: true, weightLbs: lbs });
       setRequiresTierSelect(true);
       setNoMatchWeightLbs(lbs);
     }
@@ -2362,14 +2391,14 @@ export default function ScalePage() {
           const wr = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(item.variantId)}`);
           if (wr.ok) {
             const wrData = await wr.json();
-            const rules: WeightRangeRule[] = Array.isArray(wrData?.weightRanges) ? wrData.weightRanges : [];
+            const rules = await resolveWeightRanges(wrData);
             if (rules.length > 0) { setWeightRanges(rules); return; }
           }
         } catch { /* non-fatal */ }
       }
       await printItem(item);
     },
-    [pickProductPrompt, printItem]
+    [pickProductPrompt, printItem, resolveWeightRanges]
   );
 
   const scale = useScale(handleReading);
@@ -2415,7 +2444,17 @@ export default function ScalePage() {
     let activeLbs: number | null = autoDetect?.weightLbs ?? null;
     if (!activeMatch && weightRanges.length > 0 && item.itemWeight) {
       const lbs = parseWeightToLbs(item.itemWeight);
-      if (lbs !== null) { activeMatch = matchWeightRange(weightRanges, lbs); activeLbs = lbs; }
+      if (lbs !== null) {
+        const matches = matchWeightRanges(weightRanges, lbs);
+        if (matches.length > 1) {
+          // More than one tier holds this weight — ask instead of guessing
+          setAutoDetect({ matched: null, noMatch: false, weightLbs: lbs, candidates: matches });
+          setRequiresTierSelect(true);
+          return;
+        }
+        activeMatch = matches[0] ?? null;
+        activeLbs = lbs;
+      }
       console.log('[scale] manual print inline match:', { weight: item.itemWeight, lbs, activeMatch });
     }
 
@@ -2748,7 +2787,7 @@ export default function ScalePage() {
         if (rulesRes.ok) {
           const rulesData = await rulesRes.json();
           console.log('[qr] by-variant:', { variantId: item.variantId, weightRangesCount: (rulesData?.weightRanges ?? []).length, found: rulesData?.found });
-          const byVariantRules: WeightRangeRule[] = Array.isArray(rulesData?.weightRanges) ? rulesData.weightRanges : [];
+          const byVariantRules = await resolveWeightRanges(rulesData);
           // Prefer by-variant result; fall back to title-lookup ranges if by-variant came back empty
           sessionRules = byVariantRules.length > 0 ? byVariantRules : titleWeightRanges;
           hasAdjustments = !!rulesData?.hasAdjustments;
@@ -2770,7 +2809,9 @@ export default function ScalePage() {
           }
           if (sessionRules.length > 0 && item.itemWeight) {
             const lbs = parseWeightToLbs(item.itemWeight);
-            const matched = lbs !== null ? matchWeightRange(sessionRules, lbs) : null;
+            // Only when exactly one tier holds the weight; otherwise the tier prompt asks staff
+            const matches = lbs !== null ? matchWeightRanges(sessionRules, lbs) : [];
+            const matched = matches.length === 1 ? matches[0] : null;
             if (matched) {
               item = { ...item, variantId: matched.variantId, variantTitle: matched.label };
             }
@@ -2861,7 +2902,7 @@ export default function ScalePage() {
         setTimeout(() => setPendingScanSent(false), 3000);
       }).catch(() => {});
     }
-  }, [fetchLineItems, lotProducts]);
+  }, [fetchLineItems, lotProducts, resolveWeightRanges]);
 
   // Cross-device sync: scale-connected OR printer device polls for scans from a mobile device
   useEffect(() => {
@@ -3476,8 +3517,23 @@ export default function ScalePage() {
                   {weightRanges.length > 0 && (
                     <div className="flex flex-col gap-2.5">
 
+                      {/* More than one tier holds this weight — staff pick one (same or overlapping ranges) */}
+                      {requiresTierSelect && (autoDetect?.candidates?.length ?? 0) > 1 && (
+                        <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800/60 rounded-xl px-3 py-2.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
+                              {autoDetect!.weightLbs.toFixed(2)} lbs fits {autoDetect!.candidates!.map(c => c.label).join(' and ')}
+                            </p>
+                            <p className="text-[11px] text-amber-600 dark:text-amber-400/70 mt-0.5">
+                              Choose which one this is before printing.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Warning banner for out-of-range — stays visible until user picks a tier or skips */}
-                      {requiresTierSelect && (
+                      {requiresTierSelect && !((autoDetect?.candidates?.length ?? 0) > 1) && (
                         <div className="flex items-start gap-2 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800/60 rounded-xl px-3 py-2.5">
                           <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 flex-shrink-0 mt-0.5" />
                           <div className="flex-1 min-w-0">
@@ -3500,7 +3556,7 @@ export default function ScalePage() {
                               Auto-detected: {autoDetect.matched.label} — {autoDetect.weightLbs.toFixed(2)} lbs
                             </p>
                             <p className="text-[11px] text-emerald-600 dark:text-emerald-400/70 mt-0.5">
-                              ≥{autoDetect.matched.minLbs} lbs{autoDetect.matched.maxLbs != null ? ` · <${autoDetect.matched.maxLbs} lbs` : ''}
+                              {formatWeightRange(autoDetect.matched)}
                             </p>
                           </div>
                         </div>
@@ -3508,13 +3564,16 @@ export default function ScalePage() {
 
                       {/* Full tier button group — all tiers always visible */}
                       <div className={`grid gap-2 ${weightRanges.length <= 2 ? 'grid-cols-2' : weightRanges.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                        {weightRanges.map(r => {
-                          const isActive = autoDetect?.matched?.variantId === r.variantId;
+                        {weightRanges.map((r, i) => {
+                          // By tier, not variant: two tiers may point at the same variant
+                          const isActive = autoDetect?.matched === r;
+                          const isCandidate = !isActive && !!autoDetect?.candidates?.includes(r);
                           return (
                             <button
-                              key={r.variantId}
+                              key={`${r.variantId}-${i}`}
                               onClick={async () => {
-                                if (autoDetect?.noMatch || requiresTierSelect) {
+                                // Choosing between matching tiers isn't an out-of-range override
+                                if (autoDetect?.noMatch || (requiresTierSelect && !autoDetect?.candidates?.length)) {
                                   await logOutOfRangeEvent(`overridden_to:${r.label}`);
                                 }
                                 setRequiresTierSelect(false);
@@ -3527,12 +3586,14 @@ export default function ScalePage() {
                               className={`flex flex-col items-center justify-center gap-0.5 rounded-xl px-2 py-2.5 text-center transition-colors border ${
                                 isActive
                                   ? 'bg-emerald-700 border-emerald-600 text-white'
+                                  : isCandidate
+                                  ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-200'
                                   : 'bg-[var(--bg-input)] border-[var(--border-color)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:border-slate-600'
                               }`}
                             >
                               <span className="text-xs font-bold leading-tight">{r.label}</span>
                               <span className={`text-[10px] leading-tight ${isActive ? 'text-emerald-100' : 'text-slate-500'}`}>
-                                ≥{r.minLbs}{r.maxLbs != null ? `–<${r.maxLbs}` : '+'} lbs
+                                {formatWeightRange(r)}
                               </span>
                             </button>
                           );
@@ -3540,7 +3601,7 @@ export default function ScalePage() {
                       </div>
 
                       {/* Log and skip button for out-of-range */}
-                      {requiresTierSelect && (
+                      {requiresTierSelect && !((autoDetect?.candidates?.length ?? 0) > 1) && (
                         <button
                           onClick={handleSkipOutOfRange}
                           className="w-full flex items-center justify-center gap-2 h-9 bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl text-xs text-slate-400 font-medium transition-colors"
@@ -3864,6 +3925,40 @@ export default function ScalePage() {
       })()}
 
       {/* ── Session Close Prompt ── */}
+      {/* ── Which weight-range setup? (a scanned tier label listed in more than one) ── */}
+      {rangeSourcePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-[var(--bg-card)] border border-[var(--border-color)] rounded-2xl p-5 w-full max-w-sm shadow-2xl">
+            <h3 className="text-base font-semibold text-[var(--text-primary)] mb-1">Which product is this?</h3>
+            <p className="text-sm text-slate-400 mb-3">
+              This label is a weight tier of more than one product. Choose the one you are processing.
+            </p>
+            <div className="flex flex-col gap-2">
+              {rangeSourcePrompt.map((src, i) => (
+                <button
+                  key={`${src.productId}-${src.variantId ?? ''}-${i}`}
+                  onClick={() => answerRangeSourcePrompt(src)}
+                  className="w-full text-left bg-[var(--bg-input)] hover:bg-[var(--bg-elevated)] border border-[var(--border-color)] rounded-xl px-3 py-2.5 transition-colors"
+                >
+                  <p className="text-sm font-medium text-[var(--text-primary)]">
+                    {src.productTitle}{src.variantTitle && src.variantTitle !== 'Default Title' ? ` — ${src.variantTitle}` : ''}
+                  </p>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    {src.rules.map(r => `${r.label} ${formatWeightRange(r)}`).join(' · ')}
+                  </p>
+                </button>
+              ))}
+              <button
+                onClick={() => answerRangeSourcePrompt(null)}
+                className="w-full text-slate-400 text-sm py-2 hover:text-[var(--text-primary)] transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sessionClosePrompt && processingSession && (() => {
         const totalProcessed = processingSession.cumulativeQty + processingSession.sessionQty;
         const unaccounted = Math.max(0, processingSession.poQty - totalProcessed);

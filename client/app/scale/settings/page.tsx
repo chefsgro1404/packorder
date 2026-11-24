@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { useDeadOperations, jobTypeLabel } from '@/hooks/useDeadOperations';
 import { useTheme } from '@/hooks/useTheme';
+import { validateWeightRanges } from '@/lib/weightCategory';
 
 interface WeightRangeRule {
   variantId: string;
@@ -38,6 +39,7 @@ interface WeightRangeRule {
 interface VariantOption {
   variantId: string;
   variantTitle: string;
+  hasOwnRanges?: boolean;
 }
 
 interface WrTierMeta {
@@ -178,7 +180,12 @@ export default function ScaleSettingsPage() {
   const [wrSaved, setWrSaved] = useState(false);
   const [wrProductResults, setWrProductResults] = useState<{ productId: string; productTitle: string }[]>([]);
   const [wrSearching, setWrSearching] = useState(false);
-  const [wrConfiguredProducts, setWrConfiguredProducts] = useState<{ productId: string; productTitle: string; rulesCount: number }[]>([]);
+  const [wrConfiguredProducts, setWrConfiguredProducts] = useState<{ productId: string; productTitle: string; variantId?: string | null; variantTitle?: string | null; rulesCount: number }[]>([]);
+  // A product with several variants keeps ranges per variant; a single-variant product on the product
+  const [wrVariantId, setWrVariantId] = useState('');
+  const [wrVariantOptions, setWrVariantOptions] = useState<VariantOption[]>([]);
+  const [wrSource, setWrSource] = useState<'variant' | 'product' | 'none'>('none');
+  const [wrValidation, setWrValidation] = useState<{ errors: string[]; warnings: string[] }>({ errors: [], warnings: [] });
   const [wrConfiguredLoading, setWrConfiguredLoading] = useState(false);
 
   // ── Webhook registration ─────────────────────────────────────────────────
@@ -565,16 +572,30 @@ export default function ScaleSettingsPage() {
     targetSearch: '', targetResults: [], targetVariants: [], targetProductTitle: '', searching: false,
   });
 
-  const handleWrSelectProduct = async (productId: string, productTitle: string) => {
+  const handleWrSelectProduct = async (productId: string, productTitle: string, variantId?: string | null) => {
     setWrProductId(productId);
     setWrProductTitle(productTitle);
     setWrProductResults([]);
     setWrLoading(true);
     setWrError(null);
+    setWrValidation({ errors: [], warnings: [] });
     try {
-      const res = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(productId)}`);
-      if (!res.ok) throw new Error('Failed to load weight ranges');
-      const data = await res.json();
+      const load = async (vid?: string | null) => {
+        const res = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(productId)}${vid ? `&variantId=${encodeURIComponent(vid)}` : ''}`);
+        if (!res.ok) throw new Error('Failed to load weight ranges');
+        return res.json();
+      };
+      let data = await load(variantId);
+      const options: VariantOption[] = data.variantOptions ?? [];
+      // Several variants: edit one variant at a time (the one asked for, else one that has its own ranges, else the first)
+      let chosen = '';
+      if (options.length > 1) {
+        chosen = variantId || options.find(v => v.hasOwnRanges)?.variantId || options[0].variantId;
+        if (chosen !== variantId) data = await load(chosen);
+      }
+      setWrVariantOptions(options);
+      setWrVariantId(chosen);
+      setWrSource(data.source ?? 'none');
       const rules: WeightRangeRule[] = data.rules ?? [];
       setWrRules(rules);
       // Reverse-lookup each rule's target product so the UI can show its name
@@ -600,6 +621,10 @@ export default function ScaleSettingsPage() {
 
   const handleWrSave = async () => {
     if (!wrProductId) return;
+    // Gaps and missing fields block saving; overlapping tiers are allowed (staff choose at print time)
+    const validation = validateWeightRanges(wrRules);
+    setWrValidation(validation);
+    if (validation.errors.length > 0) return;
     setWrSaving(true);
     setWrError(null);
     setWrSaved(false);
@@ -607,10 +632,11 @@ export default function ScaleSettingsPage() {
       const res = await fetch('/api/scale/weight-ranges', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: wrProductId, rules: wrRules }),
+        body: JSON.stringify({ productId: wrProductId, variantId: wrVariantId || undefined, rules: wrRules }),
       });
       if (!res.ok) throw new Error('Failed to save');
       setWrSaved(true);
+      setWrSource(wrRules.length === 0 ? 'none' : wrVariantId ? 'variant' : 'product');
       setTimeout(() => setWrSaved(false), 2000);
       await fetchConfiguredProducts();
     } catch (e) {
@@ -1259,6 +1285,8 @@ export default function ScaleSettingsPage() {
           </div>
           <p className="text-xs text-slate-400 mb-3">
             Configure size tiers for products like red chicken. Each tier maps a weight range to a specific variant.
+            Both ends are included; a weight exactly where one tier ends and the next starts goes to the lower tier.
+            A product with several variants has its own tiers per variant.
           </p>
 
           {/* Already-configured products */}
@@ -1270,15 +1298,17 @@ export default function ScaleSettingsPage() {
               <div className="flex flex-col gap-1">
                 {wrConfiguredProducts.map(p => (
                   <button
-                    key={p.productId}
-                    onClick={() => handleWrSelectProduct(p.productId, p.productTitle)}
+                    key={`${p.productId}-${p.variantId ?? ''}`}
+                    onClick={() => handleWrSelectProduct(p.productId, p.productTitle, p.variantId)}
                     className={`w-full flex items-center justify-between text-left px-3 py-2 rounded-xl border text-sm transition-colors ${
-                      wrProductId === p.productId
+                      wrProductId === p.productId && (!p.variantId || wrVariantId === p.variantId)
                         ? 'bg-violet-50 border-violet-300 text-violet-800 dark:bg-violet-900/50 dark:border-violet-600 dark:text-violet-200'
                         : 'bg-[var(--bg-input)] border-[var(--border-color)]/60 text-[var(--text-primary)] hover:bg-[var(--bg-input)] hover:border-slate-600'
                     }`}
                   >
-                    <span className="truncate">{p.productTitle}</span>
+                    <span className="truncate">
+                      {p.productTitle}{p.variantTitle && p.variantTitle !== 'Default Title' ? ` — ${p.variantTitle}` : ''}
+                    </span>
                     <span className="text-xs text-slate-500 ml-2 flex-shrink-0">{p.rulesCount} tier{p.rulesCount !== 1 ? 's' : ''}</span>
                   </button>
                 ))}
@@ -1320,7 +1350,28 @@ export default function ScaleSettingsPage() {
 
           {wrProductId && (
             <div>
-              <p className="text-xs text-violet-700 dark:text-violet-300 font-medium mb-3">{wrProductTitle}</p>
+              <p className="text-xs text-violet-700 dark:text-violet-300 font-medium mb-2">{wrProductTitle}</p>
+              {wrVariantOptions.length > 1 && (
+                <div className="mb-3">
+                  <label className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">Ranges for variant</label>
+                  <select
+                    value={wrVariantId}
+                    onChange={e => handleWrSelectProduct(wrProductId, wrProductTitle, e.target.value)}
+                    className="mt-0.5 w-full bg-[var(--bg-input)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] focus:outline-none focus:border-violet-500"
+                  >
+                    {wrVariantOptions.map(v => (
+                      <option key={v.variantId} value={v.variantId}>
+                        {(v.variantTitle || 'Default Title') + (v.hasOwnRanges ? ' (has its own ranges)' : '')}
+                      </option>
+                    ))}
+                  </select>
+                  {wrSource === 'product' && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">
+                      Showing the product&apos;s shared ranges — this variant has none of its own. Saving sets ranges for this variant only.
+                    </p>
+                  )}
+                </div>
+              )}
               {wrLoading ? (
                 <p className="text-xs text-slate-400">Loading…</p>
               ) : (
@@ -1348,14 +1399,14 @@ export default function ScaleSettingsPage() {
                               type="number"
                               value={rule.minLbs}
                               onChange={e => handleWrUpdateRule(idx, 'minLbs', parseFloat(e.target.value) || 0)}
-                              placeholder="Min lbs"
+                              placeholder="From lbs"
                               className="w-24 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                             />
                             <input
                               type="number"
                               value={rule.maxLbs ?? ''}
                               onChange={e => handleWrUpdateRule(idx, 'maxLbs', e.target.value ? parseFloat(e.target.value) : null)}
-                              placeholder="Max lbs (blank = no limit)"
+                              placeholder="To lbs (blank = no limit)"
                               className="flex-1 bg-[var(--bg-card)] border border-[var(--border-color)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-violet-500"
                             />
                           </div>
@@ -1425,6 +1476,17 @@ export default function ScaleSettingsPage() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {wrValidation.errors.length > 0 && (
+            <div className="flex flex-col gap-1 mt-2 bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-800/60 rounded-xl px-3 py-2.5">
+              {wrValidation.errors.map((e, i) => <p key={i} className="text-xs text-rose-700 dark:text-rose-300">• {e}</p>)}
+            </div>
+          )}
+          {wrValidation.warnings.length > 0 && (
+            <div className="flex flex-col gap-1 mt-2 bg-amber-50 border border-amber-200 dark:bg-amber-950/40 dark:border-amber-800/60 rounded-xl px-3 py-2.5">
+              {wrValidation.warnings.map((w, i) => <p key={i} className="text-xs text-amber-700 dark:text-amber-300">• {w}</p>)}
             </div>
           )}
 

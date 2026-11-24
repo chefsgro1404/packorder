@@ -325,6 +325,19 @@ public class TableStorageService
         InvalidateVariantsCache();
     }
 
+    // One variant's own ranges; "[]" clears them so the variant uses the product's ranges again.
+    public async Task<bool> UpdateVariantOwnWeightRangesAsync(string variantId, string weightRangesJson)
+    {
+        var cached = await GetProductVariantByVariantIdAsync(variantId);
+        if (cached == null) return false;
+        // Re-read the row: the cache may be older than the table
+        var entity = (await _productVariants.GetEntityAsync<ProductVariantEntity>(cached.PartitionKey, cached.RowKey)).Value;
+        entity.VariantWeightRanges = weightRangesJson == "[]" ? null : weightRangesJson;
+        await _productVariants.UpdateEntityAsync(entity, entity.ETag, TableUpdateMode.Replace);
+        InvalidateVariantsCache();
+        return true;
+    }
+
     public async Task UpdateProductVariantBarcodeAsync(string productId, string variantId, string barcode)
     {
         var pk = StripGid(productId);

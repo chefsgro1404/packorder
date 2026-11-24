@@ -67,6 +67,12 @@ export default function ScaleProductDetailPage() {
   const [weightRangesErrors, setWeightRangesErrors] = useState<string[]>([]);
   const [weightRangesWarnings, setWeightRangesWarnings] = useState<string[]>([]);
   const [variantOptions, setVariantOptions] = useState<{ variantId: string; variantTitle: string }[]>([]);
+  // Tier variants that belong to other products (categorical tiers are often separate products)
+  const [otherTierOptions, setOtherTierOptions] = useState<{ variantId: string; title: string }[]>([]);
+  // Where the shown ranges come from: this variant's own, the product's (shared by all its variants), or none yet
+  const [weightRangesSource, setWeightRangesSource] = useState<'variant' | 'product' | 'none'>('none');
+  // A product with several variants keeps ranges per variant; a single-variant product keeps them on the product
+  const perVariantRanges = variantOptions.length > 1;
   const [manualWeight, setManualWeight] = useState('');
   const [debugOpen, setDebugOpen] = useState(false);
   const [textMappings, setTextMappings] = useState<TextMapping[]>([]);
@@ -83,6 +89,37 @@ export default function ScaleProductDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // This variant's weight ranges (its own, or the product's when it has none), the product's
+    // variants for the tier dropdown, and the names of tier variants from other products
+    const loadWeightRanges = async (pid: string, vid: string) => {
+      const wr = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(pid)}&variantId=${encodeURIComponent(vid)}`);
+      if (!wr.ok || cancelled) return;
+      const wrData = await wr.json();
+      const options: { variantId: string; variantTitle: string }[] = Array.isArray(wrData.variantOptions) ? wrData.variantOptions : [];
+      // A tier saved as a numeric ID would not match the dropdown's full GID — use the option's form
+      const tail = (id: string) => id.split('/').pop();
+      const rules: WeightRangeRule[] = (Array.isArray(wrData.rules) ? wrData.rules : []).map((r: WeightRangeRule) => {
+        const opt = options.find(o => tail(o.variantId) === tail(r.variantId));
+        return opt ? { ...r, variantId: opt.variantId } : r;
+      });
+      if (cancelled) return;
+      setWeightRanges(rules);
+      setVariantOptions(options);
+      setWeightRangesSource(wrData.source ?? 'none');
+      const own = new Set(options.map(o => tail(o.variantId)));
+      const others = [...new Set(rules.map(r => r.variantId).filter(id => id && !own.has(tail(id))))];
+      const named = await Promise.all(others.map(async id => {
+        try {
+          const r = await fetch(`/api/scale/products/by-variant?variantId=${encodeURIComponent(id)}`);
+          const d = r.ok ? await r.json() : null;
+          const title = d?.found
+            ? `${d.productTitle}${d.variantTitle && d.variantTitle !== 'Default Title' ? ` — ${d.variantTitle}` : ''}`
+            : id.split('/').pop() ?? id;
+          return { variantId: id, title };
+        } catch { return { variantId: id, title: id.split('/').pop() ?? id }; }
+      }));
+      if (!cancelled) setOtherTierOptions(named);
+    };
     (async () => {
       setLoading(true);
       setError(null);
@@ -101,17 +138,7 @@ export default function ScaleProductDetailPage() {
           setPricePerLb(saved.pricePerLb != null ? String(saved.pricePerLb) : '');
           setPinned(!!saved.pinned);
           setNoWeight(!!saved.noWeight);
-          // Load weight ranges for this product (if productId available)
-          if (saved.productId) {
-            const wr = await fetch(`/api/scale/weight-ranges?productId=${encodeURIComponent(saved.productId)}`);
-            if (wr.ok) {
-              const wrData = await wr.json();
-              if (!cancelled) {
-                setWeightRanges(Array.isArray(wrData.data?.rules) ? wrData.data.rules : []);
-                setVariantOptions(Array.isArray(wrData.data?.variantOptions) ? wrData.data.variantOptions : []);
-              }
-            }
-          }
+          if (saved.productId) await loadWeightRanges(saved.productId, saved.variantId ?? routeVariantId);
           return;
         }
 
@@ -132,6 +159,7 @@ export default function ScaleProductDetailPage() {
         setPlu(live.barcode ?? '');
         setPricePerLb('');
         setPinned(false);
+        if (live.productId) await loadWeightRanges(live.productId, live.variantId ?? routeVariantId);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load product');
       } finally {
@@ -186,17 +214,18 @@ export default function ScaleProductDetailPage() {
       const res = await fetch('/api/scale/weight-ranges', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId, rules: weightRanges }),
+        body: JSON.stringify({ productId, variantId: perVariantRanges ? variantId : undefined, rules: weightRanges }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Save failed');
       setWeightRangesSavedAt(new Date());
+      setWeightRangesSource(weightRanges.length === 0 ? 'none' : perVariantRanges ? 'variant' : 'product');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save weight ranges');
     } finally {
       setWeightRangesSaving(false);
     }
-  }, [productId, weightRanges]);
+  }, [productId, variantId, perVariantRanges, weightRanges]);
 
   const logPrintedLabel = useCallback(async (logPlu: string, logTitle: string, weight: string | null | undefined, qrPayload: string, printedAtEst: string, sn: string) => {
     try {
@@ -531,7 +560,18 @@ export default function ScaleProductDetailPage() {
             </div>
             <p className="text-xs text-[var(--text-muted)]">
               Configure weight ranges for automatic variant selection (e.g. Small / Medium / Large chicken).
-              Each range maps a weight interval to a specific product variant.
+              Each range maps a weight interval to a specific product variant. Both ends are included; a weight
+              exactly where one tier ends and the next starts goes to the lower tier (1.5–1.9 and 1.9–2.5: 1.9 is
+              the first, 1.91 the second). If two tiers share a weight, staff are asked to choose.
+            </p>
+            <p className="text-xs text-violet-700 dark:text-violet-300">
+              {perVariantRanges
+                ? weightRangesSource === 'variant'
+                  ? `These ranges are for ${variantTitle ?? 'this variant'} only.`
+                  : weightRangesSource === 'product'
+                  ? `Showing the product's shared ranges — ${variantTitle ?? 'this variant'} has none of its own. Saving here sets ranges for ${variantTitle ?? 'this variant'} only.`
+                  : `No ranges yet. Saving here sets ranges for ${variantTitle ?? 'this variant'} only.`
+                : 'These ranges apply to this product.'}
             </p>
 
             {weightRanges.map((rule, i) => (
@@ -559,7 +599,7 @@ export default function ScaleProductDetailPage() {
                   </div>
                   <div>
                     <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-semibold">Variant</label>
-                    {variantOptions.length > 0 ? (
+                    {variantOptions.length > 0 || otherTierOptions.length > 0 ? (
                       <select
                         value={rule.variantId}
                         onChange={e => { setWeightRanges(prev => prev.map((r, idx) => idx === i ? { ...r, variantId: e.target.value } : r)); setWeightRangesErrors([]); setWeightRangesWarnings([]); }}
@@ -570,6 +610,9 @@ export default function ScaleProductDetailPage() {
                           <option key={v.variantId} value={v.variantId}>
                             {v.variantTitle && v.variantTitle !== 'Default Title' ? v.variantTitle : v.variantId.split('/').pop()}
                           </option>
+                        ))}
+                        {otherTierOptions.map(v => (
+                          <option key={v.variantId} value={v.variantId}>{v.title}</option>
                         ))}
                       </select>
                     ) : (
@@ -583,7 +626,7 @@ export default function ScaleProductDetailPage() {
                     )}
                   </div>
                   <div>
-                    <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-semibold">Min lbs (≥)</label>
+                    <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-semibold">From (lbs)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -595,7 +638,7 @@ export default function ScaleProductDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-semibold">Max lbs (&lt;) — blank = no limit</label>
+                    <label className="text-[10px] text-[var(--text-muted)] uppercase tracking-widest font-semibold">To (lbs) — blank = no limit</label>
                     <input
                       type="number"
                       step="0.01"

@@ -303,6 +303,15 @@ export interface WeightRangeRule {
   maxLbs: number | null;
 }
 
+// One weight-range setup that lists a scanned tier variant — returned when several do, so staff choose
+export interface WeightRangeSource {
+  productId: string;
+  productTitle: string;
+  variantId: string | null;     // set when the setup is a variant's own ranges
+  variantTitle: string | null;
+  rules: WeightRangeRule[];
+}
+
 // ─── Scale & Print Mode ───────────────────────────────────────────────────────
 
 export interface ProductLookup {

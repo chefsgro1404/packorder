@@ -135,6 +135,7 @@ public class ScaleFunction
                 var variantEntity = await _tableStorage.GetProductVariantByVariantIdAsync(variantId);
                 var isLotReceiving = false;
                 List<Models.WeightRangeRule> weightRulesForVariant = new();
+                List<object>? weightRangeSources = null;
                 if (variantEntity != null)
                 {
                     try
@@ -143,49 +144,34 @@ public class ScaleFunction
                         isLotReceiving = tags.Any(t => t.Equals("lot-receiving", StringComparison.OrdinalIgnoreCase));
                     }
                     catch { }
-                    try
-                    {
-                        weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(variantEntity.WeightRanges) ?? new();
-                    }
-                    catch { }
-                    // Pass 1: same-product siblings (handles stale rows from sync timing).
-                    if (weightRulesForVariant.Count == 0 && !string.IsNullOrWhiteSpace(variantEntity.ProductId))
-                    {
-                        try
-                        {
-                            var siblings = await _tableStorage.GetProductVariantsByProductIdAsync(variantEntity.ProductId);
-                            var withRanges = siblings.FirstOrDefault(v =>
-                                !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]");
-                            if (withRanges != null)
-                                weightRulesForVariant = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(withRanges.WeightRanges) ?? new();
-                        }
-                        catch { }
-                    }
-                    // Pass 2: cross-product reverse lookup.
-                    // Categorical products store tiers as separate Shopify products whose variant IDs
-                    // appear inside the PARENT product's WeightRanges JSON.  When a rescan gives us a
-                    // tier variant ID, neither the tier's row nor its siblings carry weight ranges —
-                    // scan every variant in cache for one whose WeightRanges list references this ID.
+                    // This variant's own ranges, else its product's — never a sibling variant's
+                    weightRulesForVariant = WeightRangeHelper.Effective(variantEntity);
+
+                    // Reverse lookup for a rescanned tier label: tiers are separate variants (often other
+                    // products) listed inside a parent's ranges. Collect every parent setup that lists this
+                    // variant; when more than one does, return them all so staff choose which one applies.
                     if (weightRulesForVariant.Count == 0)
                     {
-                        try
-                        {
-                            var strippedQuery = TableStorageService.StripGid(variantId);
-                            var all = await _tableStorage.GetAllProductVariantsAsync();
-                            foreach (var candidate in all)
+                        var strippedQuery = TableStorageService.StripGid(variantId);
+                        var all = await _tableStorage.GetAllProductVariantsAsync();
+                        var parents = all
+                            .Select(c => (Entity: c, Own: WeightRangeHelper.HasOwnRanges(c), Rules: WeightRangeHelper.Effective(c)))
+                            .Where(c => c.Rules.Any(r => TableStorageService.StripGid(r.VariantId) == strippedQuery))
+                            // Product-level ranges are copied onto every variant: one setup per product, or per variant that has its own
+                            .GroupBy(c => c.Own ? $"v:{c.Entity.RowKey}" : $"p:{c.Entity.PartitionKey}")
+                            .Select(g => g.First())
+                            .ToList();
+                        if (parents.Count == 1)
+                            weightRulesForVariant = parents[0].Rules;
+                        else if (parents.Count > 1)
+                            weightRangeSources = parents.Select(c => (object)new
                             {
-                                if (string.IsNullOrWhiteSpace(candidate.WeightRanges) || candidate.WeightRanges == "[]")
-                                    continue;
-                                var candidateRules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(candidate.WeightRanges);
-                                if (candidateRules != null && candidateRules.Any(r =>
-                                    TableStorageService.StripGid(r.VariantId) == strippedQuery))
-                                {
-                                    weightRulesForVariant = candidateRules;
-                                    break;
-                                }
-                            }
-                        }
-                        catch { }
+                                productId = c.Entity.ProductId,
+                                productTitle = c.Entity.ProductTitle,
+                                variantId = c.Own ? c.Entity.VariantId : null,
+                                variantTitle = c.Own ? c.Entity.VariantTitle : null,
+                                rules = c.Rules,
+                            }).ToList();
                     }
                 }
 
@@ -207,9 +193,10 @@ public class ScaleFunction
                             plu = (string?)null,
                             isLotReceiving,
                             weightRanges = weightRulesForVariant,
+                            weightRangeSources,
                             hasAdjustments,
                         }, _allowedOrigins);
-                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving, weightRanges = weightRulesForVariant, hasAdjustments }, _allowedOrigins);
+                    return await ResponseHelper.WriteSuccess(req, new { found = false, isLotReceiving, weightRanges = weightRulesForVariant, weightRangeSources, hasAdjustments }, _allowedOrigins);
                 }
 
                 return await ResponseHelper.WriteSuccess(req, new
@@ -226,6 +213,7 @@ public class ScaleFunction
                     noWeight = entity.NoWeight,
                     isLotReceiving,
                     weightRanges = weightRulesForVariant,
+                    weightRangeSources,
                     hasAdjustments,
                 }, _allowedOrigins);
             }
@@ -569,22 +557,9 @@ public class ScaleFunction
             if (match == null)
                 return await ResponseHelper.WriteSuccess(req, new { found = false }, _allowedOrigins);
 
-            // Also fetch weight ranges so the caller can skip a separate by-variant call.
-            // Check this variant first; if empty, scan siblings (same product) for ranges.
-            List<Models.WeightRangeRule> weightRules = new();
-            try
-            {
-                weightRules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(match.WeightRanges ?? "[]") ?? new();
-                if (weightRules.Count == 0 && !string.IsNullOrWhiteSpace(match.ProductId))
-                {
-                    var siblings = await _tableStorage.GetProductVariantsByProductIdAsync(match.ProductId);
-                    var withRanges = siblings.FirstOrDefault(v =>
-                        !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]");
-                    if (withRanges != null)
-                        weightRules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(withRanges.WeightRanges ?? "[]") ?? new();
-                }
-            }
-            catch { }
+            // Also return weight ranges so the caller can skip a separate by-variant call:
+            // this variant's own ranges, else its product's — never a sibling variant's
+            var weightRules = WeightRangeHelper.Effective(match);
 
             return await ResponseHelper.WriteSuccess(req, new
             {
@@ -835,34 +810,37 @@ public class ScaleFunction
         {
             var qs = ParseQueryString(req.Url.Query);
             var productId = qs.TryGetValue("productId", out var p) ? p : "";
+            var variantId = qs.TryGetValue("variantId", out var vq) ? vq : "";
             var weightStr = qs.TryGetValue("weightLbs", out var w) ? w : "";
 
-            if (string.IsNullOrWhiteSpace(productId))
-                return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
+            if (string.IsNullOrWhiteSpace(productId) && string.IsNullOrWhiteSpace(variantId))
+                return await ResponseHelper.WriteError(req, "productId or variantId is required", HttpStatusCode.BadRequest, _allowedOrigins);
             if (!double.TryParse(weightStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var weightLbs) || weightLbs <= 0)
                 return await ResponseHelper.WriteError(req, "weightLbs must be a positive number", HttpStatusCode.BadRequest, _allowedOrigins);
 
-            // Load weight ranges from local cache first; fall back to live Shopify fetch
-            var variants = await _tableStorage.GetProductVariantsByProductIdAsync(productId);
-            string? weightRangesJson = variants.Count > 0 ? variants[0].WeightRanges : null;
-
-            if (string.IsNullOrWhiteSpace(weightRangesJson) || weightRangesJson == "[]")
+            // The variant's own ranges, else its product's (local cache); live Shopify fetch for the product as a last resort
+            List<Models.WeightRangeRule> rules = new();
+            if (!string.IsNullOrWhiteSpace(variantId))
             {
-                var live = await _shopify.GetProductWeightRangesRawAsync(productId);
-                weightRangesJson = live ?? "[]";
+                var variant = await _tableStorage.GetProductVariantByVariantIdAsync(variantId);
+                if (variant != null) rules = WeightRangeHelper.Effective(variant);
+                if (string.IsNullOrWhiteSpace(productId)) productId = variant?.ProductId ?? "";
             }
+            else
+            {
+                var variants = await _tableStorage.GetProductVariantsByProductIdAsync(productId);
+                if (variants.Count > 0) rules = WeightRangeHelper.Parse(variants[0].WeightRanges);
+            }
+            if (rules.Count == 0 && !string.IsNullOrWhiteSpace(productId))
+                rules = WeightRangeHelper.Parse(await _shopify.GetProductWeightRangesRawAsync(productId));
 
-            List<Models.WeightRangeRule> rules;
-            try { rules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(weightRangesJson!) ?? new(); }
-            catch { rules = new(); }
-
-            if (rules.Count == 0)
+            var matches = WeightRangeHelper.Match(rules, weightLbs);
+            if (matches.Count == 0)
                 return await ResponseHelper.WriteSuccess(req, new { matched = false, weightLbs }, _allowedOrigins);
-
-            // minLbs inclusive, maxLbs exclusive (last tier has null maxLbs = no upper bound)
-            var match = rules.FirstOrDefault(r => weightLbs >= r.MinLbs && (r.MaxLbs == null || weightLbs < r.MaxLbs));
-            if (match == null)
-                return await ResponseHelper.WriteSuccess(req, new { matched = false, weightLbs }, _allowedOrigins);
+            // More than one tier holds this weight (same or overlapping ranges) — the caller must ask
+            if (matches.Count > 1)
+                return await ResponseHelper.WriteSuccess(req, new { matched = false, ambiguous = true, weightLbs, candidates = matches }, _allowedOrigins);
+            var match = matches[0];
 
             return await ResponseHelper.WriteSuccess(req, new
             {
@@ -902,44 +880,34 @@ public class ScaleFunction
 
                 if (string.IsNullOrWhiteSpace(productId))
                 {
-                    // No productId — return all products that have weight ranges configured
-                    var all = await _tableStorage.GetAllProductVariantsAsync();
-                    var configured = all
-                        .Where(v => !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]")
-                        .GroupBy(v => v.PartitionKey)
-                        .Select(g =>
-                        {
-                            var first = g.First();
-                            int rulesCount = 0;
-                            try
-                            {
-                                var parsed = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(first.WeightRanges ?? "[]");
-                                rulesCount = parsed?.Count ?? 0;
-                            }
-                            catch { }
-                            return new { productId = first.ProductId, productTitle = first.ProductTitle, rulesCount };
-                        })
-                        .Where(x => x.rulesCount > 0)
-                        .OrderBy(x => x.productTitle)
+                    // No productId — every setup with ranges: per product, plus per variant with its own
+                    var configured = WeightRangeHelper.ListConfigured(await _tableStorage.GetAllProductVariantsAsync())
+                        .Select(x => new { productId = x.ProductId, productTitle = x.ProductTitle, variantId = x.VariantId,
+                                           variantTitle = x.VariantTitle, rulesCount = x.RulesCount })
                         .ToList();
                     return await ResponseHelper.WriteSuccess(req, new { products = configured }, _allowedOrigins);
                 }
 
                 var variants = await _tableStorage.GetProductVariantsByProductIdAsync(productId);
-                var json = variants.Count > 0 ? variants[0].WeightRanges : null;
+                var productRules = variants.Count > 0 ? WeightRangeHelper.Parse(variants[0].WeightRanges) : new();
+                var variantIdQuery = qs.TryGetValue("variantId", out var vq) ? vq : "";
+                var target = string.IsNullOrWhiteSpace(variantIdQuery) ? null
+                    : variants.FirstOrDefault(v => TableStorageService.StripGid(v.VariantId) == TableStorageService.StripGid(variantIdQuery));
+                var variantRules = target != null ? WeightRangeHelper.Parse(target.VariantWeightRanges) : new();
 
-                List<Models.WeightRangeRule> rules;
-                try { rules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<Models.WeightRangeRule>>(json ?? "[]") ?? new(); }
-                catch { rules = new(); }
+                // A variant with its own ranges uses them; otherwise the product's apply
+                var rules = variantRules.Count > 0 ? variantRules : productRules;
+                var source = variantRules.Count > 0 ? "variant" : productRules.Count > 0 ? "product" : "none";
 
-                // Also return all variants for this product so the frontend can show a name dropdown
+                // All variants of this product, for the tier dropdown and the "which variant" choice
                 var variantOptions = variants.Select(v => new
                 {
                     variantId = v.VariantId,
                     variantTitle = v.VariantTitle,
+                    hasOwnRanges = WeightRangeHelper.HasOwnRanges(v),
                 }).ToList();
 
-                return await ResponseHelper.WriteSuccess(req, new { rules, variantOptions }, _allowedOrigins);
+                return await ResponseHelper.WriteSuccess(req, new { rules, source, productRules, variantRules, variantOptions }, _allowedOrigins);
             }
 
             // PUT — save weight ranges to Shopify and update local cache
@@ -950,6 +918,15 @@ public class ScaleFunction
                 return await ResponseHelper.WriteError(req, "productId is required", HttpStatusCode.BadRequest, _allowedOrigins);
 
             var rulesJson = Newtonsoft.Json.JsonConvert.SerializeObject(request.Rules ?? new List<Models.WeightRangeRule>());
+
+            if (!string.IsNullOrWhiteSpace(request.VariantId))
+            {
+                // This variant only ("[]" clears its own ranges, so it uses the product's again)
+                await _shopify.SetVariantWeightRangesAsync(request.VariantId, rulesJson);
+                await _tableStorage.UpdateVariantOwnWeightRangesAsync(request.VariantId, rulesJson);
+                _logger.LogInformation("Saved weight ranges for variant {VariantId}: {Count} rules", request.VariantId, request.Rules?.Count ?? 0);
+                return await ResponseHelper.WriteSuccess(req, new { ok = true, rules = request.Rules ?? new List<Models.WeightRangeRule>() }, _allowedOrigins);
+            }
 
             // Save to Shopify
             await _shopify.SetProductWeightRangesAsync(request.ProductId, rulesJson);

@@ -1,3 +1,4 @@
+using ShipScan.Functions.Helpers;
 using ShipScan.Functions.Models;
 using Xunit;
 
@@ -29,28 +30,10 @@ public class WeightRangesConfiguredTests
         }).ToList();
     }
 
+    // The endpoint's own listing logic (product-level setups; variant-level ones are covered in WeightRangeHelperTests)
     private static List<(string productId, string productTitle, int rulesCount)> FilterConfigured(
-        List<ProductVariantEntity> all)
-    {
-        return all
-            .Where(v => !string.IsNullOrWhiteSpace(v.WeightRanges) && v.WeightRanges != "[]")
-            .GroupBy(v => v.PartitionKey)
-            .Select(g =>
-            {
-                var first = g.First();
-                int count = 0;
-                try
-                {
-                    var rules = Newtonsoft.Json.JsonConvert.DeserializeObject<List<WeightRangeRule>>(first.WeightRanges ?? "[]");
-                    count = rules?.Count ?? 0;
-                }
-                catch { }
-                return (productId: first.ProductId ?? g.Key, productTitle: first.ProductTitle, rulesCount: count);
-            })
-            .Where(x => x.rulesCount > 0)
-            .OrderBy(x => x.productTitle)
-            .ToList();
-    }
+        List<ProductVariantEntity> all) =>
+        WeightRangeHelper.ListConfigured(all).Select(x => (x.ProductId, x.ProductTitle, x.RulesCount)).ToList();
 
     // ─── Core listing ─────────────────────────────────────────────────────────
 

@@ -400,7 +400,8 @@ public class ProductVariantEntity : ITableEntity
     public string Vendor { get; set; } = "";
     public string Tags { get; set; } = "[]";       // JSON-encoded string array
     public string Collections { get; set; } = "[]"; // JSON-encoded string array of collection titles
-    public string WeightRanges { get; set; } = "[]"; // JSON-encoded WeightRangeRule[] — per-product, same on all variants
+    public string WeightRanges { get; set; } = "[]"; // JSON-encoded WeightRangeRule[] — the product's ranges (custom.weight_ranges on the product), same on all variants
+    public string? VariantWeightRanges { get; set; }   // this variant's own ranges (custom.weight_ranges on the variant); when set, they replace the product's
     public string? Adjustments { get; set; }          // custom.adjustments metafield JSON (null if absent)
     public string? InventoryItemId { get; set; }      // gid://shopify/InventoryItem/xxx — for transformation child lookups
     public string? ImageUrl { get; set; }
@@ -1215,6 +1216,7 @@ public class SaveBulkSessionRequest
 public class SaveWeightRangesRequest
 {
     [JsonProperty("productId")] public string ProductId { get; set; } = "";
+    [JsonProperty("variantId")] public string? VariantId { get; set; } // set → save on this variant only; empty → on the product
     [JsonProperty("rules")]     public List<WeightRangeRule>? Rules { get; set; }
 }
 

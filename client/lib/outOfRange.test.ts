@@ -50,9 +50,9 @@ describe('out-of-range detection', () => {
   });
 
   it('weight at exact tier boundary is handled correctly', () => {
-    // 2.0 is minLbs of Medium and maxLbs of Small — belongs to Medium (minLbs inclusive)
-    const matched = matchWeightRange(exampleRules, 2.0);
-    expect(matched?.label).toBe('Medium');
+    // 2.0 is maxLbs of Small and minLbs of Medium — a shared boundary goes to the lower tier
+    expect(matchWeightRange(exampleRules, 2.0)?.label).toBe('Small');
+    expect(matchWeightRange(exampleRules, 2.0001)?.label).toBe('Medium');
   });
 });
 

@@ -470,6 +470,7 @@ public class ShopifyService
                     id sku barcode title price
                     inventoryItem { id }
                     variantAdj: metafield(namespace: ""custom"", key: ""adjustments"") { value }
+                    variantRanges: metafield(namespace: ""custom"", key: ""weight_ranges"") { value }
                   } }
                 }
               }
@@ -536,6 +537,17 @@ public class ShopifyService
                         ? variantAdjMeta["value"]?.ToString() : null;
                     var effectiveAdj = !string.IsNullOrWhiteSpace(variantAdjRaw) ? variantAdjRaw : productAdjRaw;
 
+                    // Variant-level weight ranges (a variant with its own tiers); the product's apply otherwise
+                    var variantRangesMeta = v["variantRanges"];
+                    var variantRangesRaw = variantRangesMeta != null && variantRangesMeta.Type != JTokenType.Null
+                        ? variantRangesMeta["value"]?.ToString() : null;
+                    string? variantRangesJson = null;
+                    if (!string.IsNullOrWhiteSpace(variantRangesRaw))
+                    {
+                        try { JArray.Parse(variantRangesRaw); variantRangesJson = variantRangesRaw; }
+                        catch { }
+                    }
+
                     results.Add(new Models.ProductVariantEntity
                     {
                         PartitionKey = numericProductId,
@@ -551,6 +563,7 @@ public class ShopifyService
                         Tags = tagsJson,
                         Collections = collectionsJson,
                         WeightRanges = weightRangesJson,
+                        VariantWeightRanges = variantRangesJson,
                         Adjustments = string.IsNullOrWhiteSpace(effectiveAdj) ? null : effectiveAdj,
                         InventoryItemId = v["inventoryItem"]?["id"]?.ToString(),
                         ImageUrl = imageUrl,
@@ -604,9 +617,18 @@ public class ShopifyService
     /// <summary>
     /// Saves weight_ranges JSON to Shopify via metafieldsSet mutation.
     /// </summary>
-    public async Task SetProductWeightRangesAsync(string productId, string weightRangesJson)
+    public Task SetProductWeightRangesAsync(string productId, string weightRangesJson) =>
+        SetWeightRangesMetafieldAsync(productId.StartsWith("gid://") ? productId : $"gid://shopify/Product/{productId}", weightRangesJson);
+
+    /// <summary>
+    /// Saves one variant's own weight_ranges (replaces the product's for that variant). "[]" clears them,
+    /// so the variant uses the product's ranges again.
+    /// </summary>
+    public Task SetVariantWeightRangesAsync(string variantId, string weightRangesJson) =>
+        SetWeightRangesMetafieldAsync(variantId.StartsWith("gid://") ? variantId : $"gid://shopify/ProductVariant/{variantId}", weightRangesJson);
+
+    private async Task SetWeightRangesMetafieldAsync(string gid, string weightRangesJson)
     {
-        var gid = productId.StartsWith("gid://") ? productId : $"gid://shopify/Product/{productId}";
         var data = await GraphQlAsync(SetMetafieldsMutation, new
         {
             metafields = new[]
